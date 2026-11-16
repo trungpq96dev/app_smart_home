@@ -1,0 +1,164 @@
+package vn.smarthome.data
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.Bed
+import androidx.compose.material.icons.filled.Blinds
+import androidx.compose.material.icons.filled.DoorFront
+import androidx.compose.material.icons.filled.Grass
+import androidx.compose.material.icons.filled.Kitchen
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Stairs
+import androidx.compose.material.icons.filled.Weekend
+import vn.smarthome.ui.theme.SH
+import kotlin.math.abs
+import kotlin.random.Random
+
+/**
+ * ====================================================================
+ *  TOAN BO SO LIEU MAU CUA APP NAM TRONG FILE NAY.
+ * ====================================================================
+ *
+ * Day la KHUNG GIAO DIEN: chua noi MQTT / Home Assistant / camera that.
+ * Moi con so o day deu do nguoi viet dat ra cho giao dien nhin duoc, KHONG
+ * phai so do duoc tu thiet bi.
+ *
+ * Khi cam du lieu that vao, sua DUNG MOT CHO: thay cac ham khoi tao ben duoi
+ * bang mot repository doc tu MQTT/HTTP roi do vao HomeViewModel. Phan giao
+ * dien khong phai sua gi.
+ *
+ * Chip "DU LIEU MAU" tren header lay tu hang so IS_DEMO ngay duoi - tat no
+ * khi da co du lieu that.
+ */
+object DemoData {
+
+    const val IS_DEMO = true
+
+    // ---- So lieu tong o Trang chu ----
+    const val indoorTemp = "26.5"
+    const val humidity = "68"
+    const val powerNow = "1.25"
+    const val safetyLabel = "An toàn"
+    const val systemStatus = "Hệ thống hoạt động bình thường"
+
+    // ---- Cac phong ----
+    fun rooms(): List<RoomUi> = listOf(
+        RoomUi(
+            id = "living", name = "Phòng khách", icon = Icons.Filled.Weekend, accent = SH.Amber,
+            lightOn = true, fanOn = false, acOn = true, acTemp = 26, mode = RoomMode.HOME,
+            scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "23:30",
+        ),
+        RoomUi(
+            id = "bed1", name = "Phòng ngủ 1", icon = Icons.Filled.Bed, accent = SH.Purple,
+            lightOn = true, fanOn = false, acOn = true, acTemp = 25, mode = RoomMode.SLEEP,
+            scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "23:00",
+        ),
+        RoomUi(
+            id = "bed2", name = "Phòng ngủ 2", icon = Icons.Filled.Bed, accent = SH.Blue,
+            lightOn = false, fanOn = true, acOn = false, acTemp = 27, mode = RoomMode.AWAY,
+            scheduleOn = false, scheduleLabel = "Tắt đèn lúc", scheduleTime = "22:30",
+        ),
+        RoomUi(
+            id = "bed3", name = "Phòng ngủ 3", icon = Icons.Filled.Bed, accent = SH.Teal,
+            lightOn = false, fanOn = false, acOn = false, acTemp = 26, mode = RoomMode.AWAY,
+            scheduleOn = false, scheduleLabel = "Tắt đèn lúc", scheduleTime = "22:00",
+        ),
+        RoomUi(
+            id = "kitchen", name = "Nhà bếp", icon = Icons.Filled.Kitchen, accent = SH.Green,
+            lightOn = true, fanOn = true, acOn = false, acTemp = 28, mode = RoomMode.HOME,
+            scheduleOn = false, scheduleLabel = "Tắt đèn lúc", scheduleTime = "21:30",
+        ),
+    )
+
+    // ---- O thao tac nhanh ----
+    fun quickItems(): List<QuickItem> = listOf(
+        QuickItem("light", "Đèn", Icons.Filled.Lightbulb, SH.Amber, true),
+        QuickItem("fan", "Quạt", Icons.Filled.Air, SH.Blue, true),
+        QuickItem("ac", "Điều hòa", Icons.Filled.AcUnit, SH.Purple, false),
+        QuickItem("curtain", "Rèm", Icons.Filled.Blinds, SH.Teal, false),
+    )
+
+    // ---- Camera ----
+    fun cameras(): List<CameraFeed> = listOf(
+        CameraFeed("front", "Cửa chính", Icons.Filled.DoorFront, SH.Blue),
+        CameraFeed("yard", "Sân vườn", Icons.Filled.Grass, SH.Green),
+        CameraFeed("kitchen", "Nhà bếp", Icons.Filled.Kitchen, SH.Amber),
+        CameraFeed("hall", "Hành lang", Icons.Filled.Stairs, SH.Purple),
+    )
+
+    /**
+     * Sinh bo so lieu mau cho bieu do. Dung Random co seed co dinh theo
+     * (nhom, khoang) nen moi lan mo app bieu do giong het nhau - khong nhay
+     * lung tung moi lan ve lai.
+     */
+    fun series(kind: StatKind, range: StatRange): StatSeries {
+        val n = range.days
+        val rnd = Random(kind.ordinal * 100 + range.ordinal)
+        val base: Float
+        val spread: Float
+        when (kind) {
+            StatKind.POWER -> { base = 6.2f; spread = 3.4f }
+            StatKind.TEMP -> { base = 27.5f; spread = 3.0f }
+            StatKind.HUMID -> { base = 66f; spread = 12f }
+            StatKind.WATER -> { base = 0.9f; spread = 0.5f }
+            StatKind.GAS -> { base = 72f; spread = 10f }
+        }
+        val bars = List(n) { base + (rnd.nextFloat() - 0.45f) * spread }
+
+        val labels = if (n <= 7) {
+            listOf("T2", "T3", "T4", "T5", "T6", "T7", "CN").take(n)
+        } else {
+            List(n) { i -> if (i % (n / 7) == 0) "${i + 1}" else "" }
+        }
+
+        val sum = bars.sum()
+        val avg = sum / n
+        val delta = ((rnd.nextInt(26) - 14))
+
+        return when (kind) {
+            StatKind.POWER -> StatSeries(
+                kind, fmt(sum), kind.unit, delta, bars, labels,
+                "Công suất hiện tại", "1.25 kW", 0.42f,
+                "Chi phí ước tính", vnd(sum * 2600),
+                "Bình thường", true,
+            )
+            StatKind.TEMP -> StatSeries(
+                kind, fmt(avg), kind.unit, delta, bars, labels,
+                "Nhiệt độ hiện tại", "26.5 °C", 0.55f,
+                "Cao nhất trong kỳ", fmt(bars.max()) + " °C",
+                "Trong ngưỡng", true,
+            )
+            StatKind.HUMID -> StatSeries(
+                kind, fmt(avg), kind.unit, delta, bars, labels,
+                "Độ ẩm hiện tại", "68 %", 0.68f,
+                "Thấp nhất trong kỳ", fmt(bars.min()) + " %",
+                "Trong ngưỡng", true,
+            )
+            StatKind.WATER -> StatSeries(
+                kind, fmt(sum), kind.unit, delta, bars, labels,
+                "Mức bồn trên", "72 %", 0.72f,
+                "Chi phí ước tính", vnd(sum * 11000),
+                "Bơm nghỉ", true,
+            )
+            StatKind.GAS -> StatSeries(
+                kind, fmt(bars.last()), kind.unit, delta, bars, labels,
+                "Bình gas còn lại", fmt(bars.last()) + " %", bars.last() / 100f,
+                "Dự kiến hết sau", "18 ngày",
+                "Không rò rỉ", true,
+            )
+        }
+    }
+
+    private fun fmt(v: Float): String {
+        val r = Math.round(v * 10) / 10.0
+        return if (r == Math.floor(r)) r.toInt().toString() else r.toString()
+    }
+
+    /** 126000 -> "126.000 đ" (dau cham ngan cach hang nghin kieu Viet Nam). */
+    private fun vnd(v: Float): String {
+        val n = Math.round(abs(v) / 1000f) * 1000
+        val s = n.toString().reversed().chunked(3).joinToString(".").reversed()
+        return "$s đ"
+    }
+}

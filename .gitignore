@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Khoa ky - khong bao gio dua len git
+keystore.properties
+*.jks
+*.keystore
+
+# Anh chup tu tablet o muc nay co the lot cua so noi / noi dung ca nhan
+# dang hien tren may. Chi day len cac anh trong docs/device/release/ da soat.
+docs/device/*.png
