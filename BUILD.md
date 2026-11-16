@@ -111,8 +111,18 @@ APK ở `app\build\outputs\apk\release\app-release.apk` — **939 KB**, nhỏ h�
 **Cả hai file đều nằm trong `.gitignore`. Đừng đưa lên git, đừng gửi cho ai.**
 
 > **Mất hai file này là mất khả năng cập nhật app.** Android chỉ cho cài đè khi APK mới ký
-> bằng đúng khoá cũ. Mất khoá thì phải gỡ app rồi cài lại từ đầu. Nên sao lưu chúng ra chỗ
-> khác ngoài ổ D.
+> bằng đúng khoá cũ. Mất khoá thì phải gỡ app rồi cài lại từ đầu.
+
+Đã sao lưu ngày 17/11/2026 vào `C:\Users\Admin\OneDrive\Backup\SmartHome-Keystore\`
+(kèm file `DOC-TRUOC-KHI-DUNG.md` hướng dẫn khôi phục). Thư mục đó đồng bộ lên cloud
+Microsoft, **gồm cả mật khẩu** — nên bật xác thực hai lớp cho tài khoản Microsoft và
+đừng chia sẻ thư mục `Backup` cho ai.
+
+Vân tay chứng chỉ để đối chiếu đúng khoá:
+
+```
+SHA-256: 53:02:C9:04:43:93:52:37:12:65:FE:6F:46:68:BE:69:31:31:E7:6C:29:00:C2:C8:1D:2B:69:60:8D:13:9D:E5
+```
 
 Máy nào không có `keystore.properties` thì release vẫn build được, ký bằng khoá debug —
 để dự án không chết build trên máy khác.
