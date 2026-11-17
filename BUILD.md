@@ -254,16 +254,42 @@ Bật mật khẩu **không làm hỏng luồng WebRTC**: WebView bị hỏi `40
 `onReceivedHttpAuthRequest`, rồi Chromium dùng lại tài khoản đã nhớ cho cả lần bắt tay
 WebSocket `/api/ws`. Đã đo lại sau khi bật: vẫn 1 consumer khi xem, 0 khi rời màn.
 
-### go2rtc chưa tự chạy lại sau khi khởi động máy
+### go2rtc tự chạy lại — Scheduled Task `go2rtc`
 
-`go2rtc.exe` đang được bật bằng tay, không có mục trong Startup cũng không có Scheduled Task.
-**Khởi động lại máy Windows là mất hình** cho tới khi bật lại tay. Bật lại:
+Đặt ngày 17/11/2026. Task chạy `C:\go2rtc\bat-go2rtc.ps1`, kịch bản đó **kiểm trước khi
+bật**: go2rtc đang sống thì thoát ngay, không bật bản thứ hai (hai bản tranh cổng 1984 thì
+bản sau chết và log đầy lỗi khó hiểu).
+
+| Mục | Giá trị |
+|---|---|
+| Kích hoạt | lúc **đăng nhập**, rồi lặp lại **mỗi 5 phút** trong 10 năm |
+| Chạy dưới quyền | chính người dùng đang đăng nhập |
+| Cửa sổ | ẩn |
+| Hai bản cùng chạy | `IgnoreNew` + kịch bản tự kiểm |
+
+Lặp 5 phút là để go2rtc chết giữa chừng thì tự lên lại, không phải chờ tới lần đăng nhập sau.
+
+> **Giới hạn phải biết: task chạy lúc ĐĂNG NHẬP, không phải lúc bật máy.** Máy bật lên mà
+> dừng ở màn hình khoá, chưa ai đăng nhập, thì **chưa có hình**. Muốn chạy từ lúc bật máy thì
+> phải có quyền quản trị để tạo task chạy dưới `SYSTEM` — shell lúc làm việc này không có
+> quyền đó.
+
+Xem, chạy thử, hoặc gỡ:
 
 ```powershell
-Start-Process -FilePath 'C:\go2rtc\go2rtc.exe' -WorkingDirectory 'C:\go2rtc' -WindowStyle Hidden
+Get-ScheduledTask -TaskName go2rtc | Select-Object TaskName,State
 ```
 
-Chuyện này mất hẳn khi go2rtc dọn sang `serverubuntu` chạy bằng Docker.
+```powershell
+Start-ScheduledTask -TaskName go2rtc
+```
+
+```powershell
+Unregister-ScheduledTask -TaskName go2rtc -Confirm:$false
+```
+
+Toàn bộ chuyện này mất hẳn khi go2rtc dọn sang `serverubuntu` chạy bằng Docker — lúc đó nhớ
+gỡ task đi cho khỏi có hai nơi cùng chạy.
 
 ### Gỡ rối camera
 
@@ -274,7 +300,7 @@ Chuyện này mất hẳn khi go2rtc dọn sang `serverubuntu` chạy bằng Doc
 | "Máy chạy go2rtc không trả lời" | tường lửa Windows chặn cổng 1984, hoặc go2rtc đã tắt |
 | "go2rtc đòi tài khoản" | go2rtc có đặt `api: username/password` — điền vào màn Cài đặt |
 | Dò ra luồng nhưng khung đen | thường là cổng 8555 (WebRTC) chưa mở, trong khi 1984 đã mở |
-| Mọi thứ đang chạy bỗng mất hình | máy Windows khởi động lại — go2rtc không tự bật |
+| Mọi thứ đang chạy bỗng mất hình | máy Windows bật lên nhưng chưa ai đăng nhập — task `go2rtc` chỉ chạy lúc đăng nhập |
 | Nút *Chụp ảnh* không ra hình | `/api/frame.jpeg` cần `ffmpeg` trên máy chạy go2rtc |
 
 > **Tường lửa Windows**: luật tên `go2rtc` hiện chỉ áp cho profile **Public**, và mạng Wi-Fi
