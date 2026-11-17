@@ -235,6 +235,36 @@ nên `view.url` còn `null` — so kiểu đó là nạp trang lần thứ hai, 
 cùng lúc trong vài giây, tốn gấp đôi băng thông. Đo được bằng `/api/streams`: 2 consumer,
 cả hai đều đang nhận byte. Sửa bằng cách ghi url vào `view.tag` rồi so với tag.
 
+### Đặt mật khẩu cho API go2rtc
+
+Đã làm ngày 17/11/2026. Bản `go2rtc.yaml` cũ nằm ở
+`C:\go2rtc\go2rtc.yaml.truoc-khi-dat-mat-khau`.
+
+```yaml
+api:
+  username: tablet
+  password: <28 ký tự ngẫu nhiên — nằm trong chính go2rtc.yaml>
+```
+
+> **go2rtc bỏ qua đăng nhập cho `127.0.0.1`.** Thử bằng `curl http://127.0.0.1:1984/...` sẽ
+> thấy **200** và tưởng mật khẩu không ăn. Phải thử qua địa chỉ mạng
+> (`http://192.168.0.105:1984/...`) mới thấy **401**. Mất mười phút ở chỗ này.
+
+Bật mật khẩu **không làm hỏng luồng WebRTC**: WebView bị hỏi `401`, app trả tài khoản qua
+`onReceivedHttpAuthRequest`, rồi Chromium dùng lại tài khoản đã nhớ cho cả lần bắt tay
+WebSocket `/api/ws`. Đã đo lại sau khi bật: vẫn 1 consumer khi xem, 0 khi rời màn.
+
+### go2rtc chưa tự chạy lại sau khi khởi động máy
+
+`go2rtc.exe` đang được bật bằng tay, không có mục trong Startup cũng không có Scheduled Task.
+**Khởi động lại máy Windows là mất hình** cho tới khi bật lại tay. Bật lại:
+
+```powershell
+Start-Process -FilePath 'C:\go2rtc\go2rtc.exe' -WorkingDirectory 'C:\go2rtc' -WindowStyle Hidden
+```
+
+Chuyện này mất hẳn khi go2rtc dọn sang `serverubuntu` chạy bằng Docker.
+
 ### Gỡ rối camera
 
 | Hiện tượng | Nguyên nhân |
@@ -244,6 +274,7 @@ cả hai đều đang nhận byte. Sửa bằng cách ghi url vào `view.tag` r�
 | "Máy chạy go2rtc không trả lời" | tường lửa Windows chặn cổng 1984, hoặc go2rtc đã tắt |
 | "go2rtc đòi tài khoản" | go2rtc có đặt `api: username/password` — điền vào màn Cài đặt |
 | Dò ra luồng nhưng khung đen | thường là cổng 8555 (WebRTC) chưa mở, trong khi 1984 đã mở |
+| Mọi thứ đang chạy bỗng mất hình | máy Windows khởi động lại — go2rtc không tự bật |
 | Nút *Chụp ảnh* không ra hình | `/api/frame.jpeg` cần `ffmpeg` trên máy chạy go2rtc |
 
 > **Tường lửa Windows**: luật tên `go2rtc` hiện chỉ áp cho profile **Public**, và mạng Wi-Fi

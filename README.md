@@ -126,12 +126,18 @@ về Trang chủ còn **0**, quay lại thì lên **1**.
 Tài khoản Tuya chỉ nằm trong `go2rtc.yaml` trên máy chạy go2rtc. App chỉ nói chuyện với
 go2rtc.
 
-> **Một chỗ hở cần biết.** `/api/streams` của go2rtc trả về cả URL nguồn, mà trong URL đó có
-> email và **mật khẩu tài khoản Tuya** ở dạng chữ thường. go2rtc mặc định không đặt mật khẩu
-> cho API và lắng nghe trên mọi địa chỉ, nên **ai vào được Wi-Fi đó cũng đọc được**. App cố ý
-> chỉ lấy *khoá* của JSON và không bao giờ đụng tới phần url — nhưng điều đó không bịt được
-> chỗ hở, chỉ là app không làm nó tệ thêm. Cách bịt: đặt `api: username/password` trong
-> `go2rtc.yaml`, rồi điền đúng tài khoản đó vào màn Cài đặt.
+### Chỗ hở ở API go2rtc — đã bịt ngày 17/11/2026
+
+`/api/streams` của go2rtc trả về cả URL nguồn, mà trong URL đó có email và **mật khẩu tài
+khoản Tuya** ở dạng chữ thường. go2rtc mặc định không đặt mật khẩu cho API và lắng nghe trên
+mọi địa chỉ, nên trước đó **ai vào được Wi-Fi cũng đọc được**.
+
+Đã đặt `api: username/password` trong `go2rtc.yaml`. Giờ gọi từ địa chỉ mạng mà không có tài
+khoản thì nhận **401**. App giữ tài khoản đó trong DataStore và đưa cho WebView khi go2rtc
+hỏi, nên hình vẫn chạy bình thường.
+
+App vẫn cố ý **chỉ lấy khoá** của JSON và không bao giờ đụng tới phần url — mật khẩu Tuya
+không có lý do gì để đi vào app.
 
 ### Âm thanh
 

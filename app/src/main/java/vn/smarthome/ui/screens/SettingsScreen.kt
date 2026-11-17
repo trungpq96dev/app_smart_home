@@ -109,7 +109,6 @@ private fun FormBroker(cauHinh: CauHinhMqtt, onLuu: (CauHinhMqtt) -> Unit) {
     var taiKhoan by remember(cauHinh.taiKhoan) { mutableStateOf(cauHinh.taiKhoan) }
     var matKhau by remember(cauHinh.matKhau) { mutableStateOf(cauHinh.matKhau) }
     var clientId by remember(cauHinh.clientId) { mutableStateOf(cauHinh.clientId) }
-    var hienMatKhau by remember { mutableStateOf(false) }
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Text("Broker EMQX — số điện", style = SHType.CardTitle, color = SH.Text)
@@ -140,27 +139,7 @@ private fun FormBroker(cauHinh: CauHinhMqtt, onLuu: (CauHinhMqtt) -> Unit) {
         O("Tài khoản MQTT", taiKhoan, { taiKhoan = it }, "để trống nếu broker không yêu cầu")
         Spacer(Modifier.height(8.dp))
 
-        OutlinedTextField(
-            value = matKhau,
-            onValueChange = { matKhau = it },
-            label = { Text("Mật khẩu MQTT", style = SHType.Caption) },
-            singleLine = true,
-            visualTransformation = if (hienMatKhau) VisualTransformation.None
-            else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { hienMatKhau = !hienMatKhau }) {
-                    Icon(
-                        if (hienMatKhau) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (hienMatKhau) "Ẩn mật khẩu" else "Hiện mật khẩu",
-                        tint = SH.TextDim,
-                        modifier = Modifier.size(19.dp),
-                    )
-                }
-            },
-            textStyle = SHType.Body,
-            colors = mauO(),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        OMatKhau("Mật khẩu MQTT", matKhau, { matKhau = it }, "để trống nếu broker không yêu cầu")
         Spacer(Modifier.height(8.dp))
 
         O("Client ID", clientId, { clientId = it }, "để trống thì app tự sinh")
@@ -247,7 +226,7 @@ private fun FormCamera(
 
         O("Tài khoản go2rtc", taiKhoan, { taiKhoan = it }, "để trống nếu go2rtc không đặt")
         Spacer(Modifier.height(8.dp))
-        O("Mật khẩu go2rtc", matKhau, { matKhau = it }, "để trống nếu go2rtc không đặt")
+        OMatKhau("Mật khẩu go2rtc", matKhau, { matKhau = it }, "để trống nếu go2rtc không đặt")
 
         if (trangThai is TrangThaiCam.Loi) {
             Text(
@@ -342,6 +321,44 @@ private fun CongTac(
             )
         }
     }
+}
+
+/**
+ * O nhap mat khau: che chu, co nut con mat de xem lai.
+ *
+ * Moi o giu rieng trang thai an/hien cua no. May tinh bang nay treo tuong,
+ * ai di qua cung doc duoc man hinh - de mat khau hien chu thuong la hong.
+ */
+@Composable
+private fun OMatKhau(
+    nhan: String,
+    giaTri: String,
+    onDoi: (String) -> Unit,
+    goiY: String,
+) {
+    var hien by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = giaTri,
+        onValueChange = onDoi,
+        label = { Text(nhan, style = SHType.Caption) },
+        placeholder = { Text(goiY, style = SHType.Caption, color = SH.TextOff) },
+        singleLine = true,
+        visualTransformation = if (hien) VisualTransformation.None
+        else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { hien = !hien }) {
+                Icon(
+                    if (hien) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (hien) "Ẩn mật khẩu" else "Hiện mật khẩu",
+                    tint = SH.TextDim,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+        },
+        textStyle = SHType.Body,
+        colors = mauO(),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
