@@ -203,6 +203,55 @@ máy chủ broker"*.
 
 ---
 
+## Camera qua go2rtc — đã kiểm trên máy thật
+
+Chạy trên Samsung SM-T225 (Android 13), ngày 17/11/2026, với camera Tuya thật:
+
+| Hạng mục | Kết quả |
+|---|---|
+| Máy tính bảng dò ra go2rtc | **1 luồng** (`cam1`), chip xanh ở góc phải màn Cài đặt |
+| Hình lên trong tab Camera | có — go2rtc đếm **1.751.310 byte** đã gửi về máy tính bảng |
+| Độ phân giải | **1920 × 1080**, WebRTC |
+| Đang ở màn Camera | go2rtc đếm **1** người xem |
+| Về Trang chủ | **0** người xem — luồng bị cắt |
+| Quay lại màn Camera | lên lại **1** |
+| Crash | không có (`logcat -b crash` rỗng) |
+| Khung hình | ~61 fps, không giật |
+
+Máy tính bảng `192.168.0.108`, máy chạy go2rtc `192.168.0.105`, cùng Wi-Fi.
+
+### Ba cái bẫy đã gặp
+
+**`usesCleartextTraffic` phải bật.** go2rtc trong mạng nhà chạy `http://192.168.x.x:1984`.
+Từ Android 9, HTTP thường bị chặn mặc định và **không báo gì** — chỉ thấy khung đen tuyệt đối.
+Khi go2rtc ra sau `tailscale serve` (https) thì bỏ dòng đó trong manifest đi được.
+
+**`width=100%` phải viết `100%25` trong URL.** Dấu `%` trong query là ký tự mở đầu mã hoá,
+để nguyên thì trình duyệt đọc `%w` thành rác và khung hình tụt về 320px giữa màn đen.
+Có test riêng cho chỗ này (`CauHinhCameraTest`).
+
+**`AndroidView.update` đừng so với `view.url`.** Ngay sau `factory`, `loadUrl` chưa chạy xong
+nên `view.url` còn `null` — so kiểu đó là nạp trang lần thứ hai, thành **hai kết nối WebRTC**
+cùng lúc trong vài giây, tốn gấp đôi băng thông. Đo được bằng `/api/streams`: 2 consumer,
+cả hai đều đang nhận byte. Sửa bằng cách ghi url vào `view.tag` rồi so với tag.
+
+### Gỡ rối camera
+
+| Hiện tượng | Nguyên nhân |
+|---|---|
+| Chip "Chưa khai báo go2rtc" | chưa điền địa chỉ ở màn Cài đặt |
+| "Không tìm thấy máy chạy go2rtc" | sai địa chỉ, hoặc máy tính bảng ở Wi-Fi khác |
+| "Máy chạy go2rtc không trả lời" | tường lửa Windows chặn cổng 1984, hoặc go2rtc đã tắt |
+| "go2rtc đòi tài khoản" | go2rtc có đặt `api: username/password` — điền vào màn Cài đặt |
+| Dò ra luồng nhưng khung đen | thường là cổng 8555 (WebRTC) chưa mở, trong khi 1984 đã mở |
+| Nút *Chụp ảnh* không ra hình | `/api/frame.jpeg` cần `ffmpeg` trên máy chạy go2rtc |
+
+> **Tường lửa Windows**: luật tên `go2rtc` hiện chỉ áp cho profile **Public**, và mạng Wi-Fi
+> đang dùng cũng đang là Public nên khớp. Đổi mạng đó sang Private thì luật không áp nữa và
+> khung hình đen — nhớ chỗ này. Kiểm bằng `Get-NetConnectionProfile`.
+
+---
+
 ## Cập nhật app về sau
 
 APK release mới phải ký đúng khoá cũ thì mới cài đè được:

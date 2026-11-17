@@ -39,12 +39,18 @@ data class QuickItem(
     val on: Boolean,
 )
 
-/** Mot camera trong danh sach ben trai man Camera. */
+/**
+ * Mot camera trong danh sach ben trai man Camera.
+ *
+ * [luong] la ten luong trong go2rtc (vd "cam1"). Null nghia la o giu cho -
+ * chua co hinh that, van ve bang [vn.smarthome.ui.components.ImagePlaceholder].
+ */
 data class CameraFeed(
     val id: String,
     val name: String,
     val icon: ImageVector,
     val accent: Color,
+    val luong: String? = null,
 )
 
 /** Nhom so lieu o man Thong ke - moi nhom mot tab ben trai. */

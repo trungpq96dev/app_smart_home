@@ -78,8 +78,12 @@ class ShellSmokeTest {
         start()
         rule.onNodeWithText("Cài đặt").performClick()
         rule.mainClock.advanceTimeByFrame()
-        rule.onNodeWithText("Broker EMQX").assertIsDisplayed()
+        rule.onNodeWithText("Broker EMQX — số điện").assertIsDisplayed()
         rule.onNodeWithText("Chưa khai báo broker").assertIsDisplayed()
+        // Cot thu hai: khai bao go2rtc de lay hinh camera. Hai duong noi ra
+        // ngoai phai cung nhin thay duoc, khong bat cuon moi thay.
+        rule.onNodeWithText("go2rtc — hình camera").assertIsDisplayed()
+        rule.onNodeWithText("Chưa khai báo go2rtc").assertIsDisplayed()
     }
 
     @Test

@@ -48,6 +48,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val dien by vm.dien.collectAsStateWithLifecycle()
     val ketNoi by vm.ketNoi.collectAsStateWithLifecycle()
     val cauHinh by vm.cauHinh.collectAsStateWithLifecycle()
+    val cauHinhCamera by vm.cauHinhCamera.collectAsStateWithLifecycle()
+    val trangThaiCam by vm.trangThaiCam.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -118,15 +120,21 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     dest == Dest.SETTINGS -> SettingsScreen(
                         cauHinh = cauHinh,
                         ketNoi = ketNoi,
+                        cauHinhCamera = cauHinhCamera,
+                        trangThaiCam = trangThaiCam,
                         onLuu = vm::luuCauHinh,
+                        onLuuCamera = vm::luuCauHinhCamera,
                         onBack = { current = Dest.HOME.route },
                     )
 
                     dest == Dest.CAMERA -> CameraScreen(
                         state = state,
+                        cauHinhCamera = cauHinhCamera,
+                        trangThaiCam = trangThaiCam,
                         onBack = { current = Dest.HOME.route },
                         onSelectCamera = vm::selectCamera,
                         onNotice = toast,
+                        onDoLai = vm::doLaiCamera,
                     )
 
                     else -> PlaceholderScreen(

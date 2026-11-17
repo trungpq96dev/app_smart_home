@@ -2,8 +2,9 @@
 
 App nhà thông minh cho **Samsung Galaxy Tab A7 Lite** nằm ngang, Kotlin + Jetpack Compose.
 
-Đây là **khung giao diện**, không phải app hoàn chỉnh: mọi thứ bấm được, gạt được, đổi
-được — nhưng chưa nối MQTT, Home Assistant hay camera thật.
+Hai thứ đã chạy bằng dữ liệu thật: **số điện** (EVN → MQTT) và **hình camera**
+(camera Tuya → go2rtc). Phần còn lại — đèn, quạt, rèm, cảm biến — vẫn là khung giao diện
+chạy trên số liệu mẫu: bấm được, gạt được, đổi được, nhưng chưa nối tới thiết bị nào.
 
 Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](docs/screenshots).
 
@@ -15,9 +16,9 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 |---|---|
 | Trang chủ | Đủ: header + 4 ô số liệu + thẻ phòng vuốt ngang + 4 ô thao tác nhanh + dải trạng thái |
 | Điều khiển phòng | Đủ: 2 công tắc + điều hòa −/+ + 4 chế độ + lịch hẹn |
-| Camera an ninh | Đủ khung: danh sách 4 camera + khung xem + 3 nút |
+| Camera an ninh | **Hình thật từ camera Tuya** qua go2rtc. Chưa khai báo go2rtc thì vẫn là ô giữ chỗ |
 | Thống kê & Báo cáo | Đủ: 5 tab. **Tab Điện năng dùng số thật từ MQTT**, 4 tab kia là dữ liệu mẫu |
-| Cài đặt | Khai báo broker EMQX để đọc số điện thật |
+| Cài đặt | Hai cột: broker EMQX (số điện) và go2rtc (hình camera) |
 | Thiết bị / Cảm biến / Tự động hóa | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
 
 ### Thao tác thật sự hoạt động
@@ -35,7 +36,7 @@ màn và xoay máy**: bật đèn ở màn chi tiết phòng rồi quay về Tra
 | Bấm − / + Điều hòa | 16–30 °C, kẹp hai đầu |
 | Chọn Ngủ / Nhà / Vắng nhà / Tùy chỉnh | Chip đổi trạng thái chọn |
 | Bấm 4 ô thao tác nhanh | Bật/tắt, vòng tròn icon sáng/tối |
-| Chọn camera bên trái | Đổi khung xem và nhãn |
+| Chọn camera bên trái | Đổi luồng đang xem; luồng cũ bị cắt ngay |
 | Đổi tab Điện năng → Gas | Biểu đồ, số liệu, đơn vị, màu đổi theo |
 | Đổi "7 ngày" → 14 / 30 ngày | Đổi số cột biểu đồ |
 | Nút Back của máy | Thoát màn con trước, chưa thoát app ngay |
@@ -89,12 +90,63 @@ granted QoS `0x80` chứ không ném lỗi. `MqttDien.kt` kiểm đúng chỗ đ
 
 ---
 
+## Camera: hình thật từ camera Tuya
+
+Màn **Camera an ninh** phát hình thật. Camera Tuya không nói chuyện trực tiếp với app —
+đường đi là:
+
+```
+Camera Tuya  →  go2rtc (máy trong nhà, đăng nhập tài khoản Tuya)  →  WebRTC  →  máy tính bảng
+```
+
+Khai báo địa chỉ máy chạy go2rtc ở màn **Cài đặt**, cột phải. App hỏi `/api/streams` để biết
+go2rtc đang giữ những luồng nào rồi dựng danh sách camera bên trái từ đó — không phải gõ tay
+tên từng luồng.
+
+### Vì sao là WebView chứ không phải ExoPlayer
+
+go2rtc phát WebRTC. ExoPlayer không nói WebRTC, phải lui về RTSP — trễ hơn và kéo thêm vài MB
+thư viện. Trang `stream.html` sẵn có của go2rtc thì **tự chọn đường truyền** (WebRTC trước,
+không được thì MSE), nên app không phải đoán, và go2rtc nâng cấp thì app được hưởng theo mà
+không cần build lại. WebView có sẵn trong Android, không thêm phụ thuộc nào.
+
+Toàn bộ nằm ở `ui/components/LuongCamera.kt` — một file, đổi cách phát thì sửa đúng chỗ đó.
+
+### Rời màn là cắt luồng
+
+Đây là phần dễ làm sai nhất và tốn kém nhất nếu sai: không cắt thì camera gửi hình về máy
+tính bảng suốt ngày, tốn pin và băng thông, còn go2rtc vẫn đếm máy tính bảng là một người
+đang xem. Nên khi khung hình bị gỡ khỏi màn, WebView được nạp `about:blank` rồi huỷ hẳn.
+
+Đo trên máy thật (SM-T225, 17/11/2026): đang ở màn Camera thì go2rtc đếm **1** người xem,
+về Trang chủ còn **0**, quay lại thì lên **1**.
+
+### App không bao giờ đăng nhập Tuya
+
+Tài khoản Tuya chỉ nằm trong `go2rtc.yaml` trên máy chạy go2rtc. App chỉ nói chuyện với
+go2rtc.
+
+> **Một chỗ hở cần biết.** `/api/streams` của go2rtc trả về cả URL nguồn, mà trong URL đó có
+> email và **mật khẩu tài khoản Tuya** ở dạng chữ thường. go2rtc mặc định không đặt mật khẩu
+> cho API và lắng nghe trên mọi địa chỉ, nên **ai vào được Wi-Fi đó cũng đọc được**. App cố ý
+> chỉ lấy *khoá* của JSON và không bao giờ đụng tới phần url — nhưng điều đó không bịt được
+> chỗ hở, chỉ là app không làm nó tệ thêm. Cách bịt: đặt `api: username/password` trong
+> `go2rtc.yaml`, rồi điền đúng tài khoản đó vào màn Cài đặt.
+
+### Âm thanh
+
+Camera có micro và go2rtc phát kèm tiếng, nên khung hình **có tiếng**. Muốn tắt thì thêm
+`&media=video` vào URL trong `CauHinhCamera.urlTrangPhat()`.
+
+---
+
 ## Cái gì CHƯA có — và chỗ để cắm vào sau
 
 | Chưa có | Cắm vào đâu |
 |---|---|
 | Dữ liệu thật cho đèn/quạt/rèm/cảm biến | `data/DemoData.kt` — **toàn bộ số liệu mẫu còn lại nằm đúng một file này** |
-| Ảnh phòng, luồng camera | `ui/components/ImagePlaceholder.kt` — đổi thân hàm thành `Image(...)` hoặc bọc `AndroidView` chứa ExoPlayer/libVLC. Mọi chỗ gọi đều đi qua đây |
+| Ảnh phòng | `ui/components/ImagePlaceholder.kt` — đổi thân hàm thành `Image(...)`. Mọi chỗ gọi đều đi qua đây |
+| Ảnh tĩnh / quay video ở màn Camera | Ảnh tĩnh cần `ffmpeg` trên máy chạy go2rtc (`/api/frame.jpeg` trả 500 khi thiếu). Hình trực tiếp thì không cần |
 | Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại |
 | 3 màn Thiết bị / Cảm biến / Tự động hóa | `ui/screens/PlaceholderScreen.kt` (màn Cài đặt đã làm xong) |
 | Chế độ sáng, font Inter, ký release | Xem BUILD.md |
@@ -123,6 +175,8 @@ vào thì báo *"Chưa nối camera thật"* chứ không giả vờ đã chụp
 data/
   Models.kt     RoomUi, QuickItem, CameraFeed, StatSeries, RoomMode, StatKind, StatRange
   DemoData.kt   TOÀN BỘ số liệu mẫu
+  dien/         CauHinhMqtt, DienState, MqttDien — số điện thật qua EMQX
+  camera/       CauHinhCamera, Go2rtc — hình camera thật qua go2rtc
 vm/
   HomeViewModel.kt   State + các hàm toggle
 ui/

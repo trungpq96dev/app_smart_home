@@ -25,6 +25,8 @@ import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
 import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
+import vn.smarthome.data.camera.CauHinhCamera
+import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.KetNoi
@@ -103,7 +105,14 @@ class ScreenshotTest {
     @Test
     fun chup_camera() {
         shoot("3-camera") {
-            Content { CameraScreen(HomeState(), {}, {}, {}) }
+            // CHUA khai bao go2rtc: khung xem van la o giu cho, khong co
+            // WebView nao duoc dung - nen anh render van chup duoc binh thuong.
+            Content {
+                CameraScreen(
+                    HomeState(), CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
+                    {}, {}, {}, {},
+                )
+            }
         }
     }
 
@@ -126,7 +135,13 @@ class ScreenshotTest {
     @Test
     fun chup_cai_dat() {
         shoot("6-cai-dat") {
-            Content { SettingsScreen(CauHinhMqtt(), KetNoi.ChuaCauHinh, {}, {}) }
+            Content {
+                SettingsScreen(
+                    CauHinhMqtt(), KetNoi.ChuaCauHinh,
+                    CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
+                    {}, {}, {},
+                )
+            }
         }
     }
 

@@ -6,12 +6,19 @@
       INTERNET. ACCESS_NETWORK_STATE de biet co mang hay khong truoc khi bao
       "khong noi duoc broker" - de nguoi dung khong di sua cau hinh oan.
       Khong xin them quyen nao khac.
+
+      usesCleartextTraffic: tu 18/11/2026 man Camera mo luong tu go2rtc chay
+      trong mang nha, dia chi dang http://192.168.x.x:1984. Tu Android 9 tro
+      di HTTP thuong bi chan mac dinh, khong mo thi khung hinh den tuyet doi
+      ma khong bao gi. MQTT van di loi TLS rieng, dong nay khong lam yeu no.
+      Khi go2rtc ra sau `tailscale serve` (https) thi bo dong nay di duoc.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

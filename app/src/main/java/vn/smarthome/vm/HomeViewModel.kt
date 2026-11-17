@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Videocam
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -23,6 +26,11 @@ import vn.smarthome.data.dien.CauHinhStore
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.data.dien.MqttDien
+import vn.smarthome.data.camera.CauHinhCamera
+import vn.smarthome.data.camera.CauHinhCameraStore
+import vn.smarthome.data.camera.Go2rtc
+import vn.smarthome.data.camera.TrangThaiCam
+import vn.smarthome.ui.theme.SH
 
 data class HomeState(
     val rooms: List<RoomUi> = DemoData.rooms(),
@@ -44,6 +52,7 @@ data class HomeState(
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CauHinhStore(app)
+    private val storeCam = CauHinhCameraStore(app)
     private val mqtt = MqttDien()
 
     private val _state = MutableStateFlow(HomeState())
@@ -58,6 +67,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val cauHinh: StateFlow<CauHinhMqtt> = store.cauHinh
         .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhMqtt())
 
+    /** Duong toi go2rtc - noi giu luong camera Tuya. */
+    val cauHinhCamera: StateFlow<CauHinhCamera> = storeCam.cauHinh
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhCamera())
+
+    private val _trangThaiCam = MutableStateFlow<TrangThaiCam>(TrangThaiCam.ChuaCauHinh)
+    val trangThaiCam: StateFlow<TrangThaiCam> = _trangThaiCam.asStateFlow()
+
     init {
         // Doi cau hinh la noi lai. distinctUntilChanged de luu cau hinh y het
         // cu khong lam dut ket noi dang chay.
@@ -66,6 +82,61 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 mqtt.noi(c)
             }
         }
+        // collectLatest: doi cau hinh giua chung thi bo lan do dang chay,
+        // khong de ket qua cu ve sau de len ket qua moi.
+        viewModelScope.launch {
+            storeCam.cauHinh.distinctUntilChanged().collectLatest { c -> doCamera(c) }
+        }
+    }
+
+    // ---- Camera that qua go2rtc ----
+
+    fun luuCauHinhCamera(c: CauHinhCamera) {
+        viewModelScope.launch { storeCam.luu(c) }
+    }
+
+    /** Hoi lai go2rtc - dung khi vua bat go2rtc len hoac vua them luong. */
+    fun doLaiCamera() {
+        viewModelScope.launch { doCamera(cauHinhCamera.value) }
+    }
+
+    /**
+     * Hoi go2rtc dang giu nhung luong nao va dung lai danh sach camera.
+     *
+     * Khi hong thi danh sach ve RONG chu khong lui ve 4 o giu cho. Nguoi dung
+     * da khai bao go2rtc nghia la ho cho doi hinh that; bay ra bon camera gia
+     * luc do la noi doi rang moi thu van on.
+     */
+    private suspend fun doCamera(c: CauHinhCamera) {
+        if (!c.dayDu()) {
+            _trangThaiCam.value = TrangThaiCam.ChuaCauHinh
+            _state.update { it.copy(cameras = DemoData.cameras(), selectedCamera = 0) }
+            return
+        }
+        _trangThaiCam.value = TrangThaiCam.DangDo
+        Go2rtc.danhSachLuong(c)
+            .onSuccess { ten ->
+                if (ten.isEmpty()) {
+                    _trangThaiCam.value =
+                        TrangThaiCam.Loi("go2rtc chạy nhưng chưa khai luồng nào trong go2rtc.yaml.")
+                    _state.update { it.copy(cameras = emptyList(), selectedCamera = 0) }
+                } else {
+                    _trangThaiCam.value = TrangThaiCam.Co(ten.size)
+                    _state.update { s ->
+                        s.copy(
+                            cameras = ten.map { t ->
+                                CameraFeed(id = t, name = t, icon = Icons.Filled.Videocam,
+                                    accent = SH.Blue, luong = t)
+                            },
+                            selectedCamera = 0,
+                        )
+                    }
+                }
+            }
+            .onFailure { e ->
+                _trangThaiCam.value = TrangThaiCam.Loi(Go2rtc.dienGiaiLoi(e))
+                _state.update { it.copy(cameras = emptyList(), selectedCamera = 0) }
+            }
     }
 
     fun luuCauHinh(c: CauHinhMqtt) {
