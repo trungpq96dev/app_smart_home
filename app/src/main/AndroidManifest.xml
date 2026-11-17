@@ -2,9 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Khung giao dien chua noi mang: KHONG khai bao quyen nao ca.
-      Khi cam MQTT / Home Assistant vao moi them INTERNET.
+      Tu 17/11/2026 app noi EMQX de doc so dien that (topic dien/#), nen can
+      INTERNET. ACCESS_NETWORK_STATE de biet co mang hay khong truoc khi bao
+      "khong noi duoc broker" - de nguoi dung khong di sua cau hinh oan.
+      Khong xin them quyen nao khac.
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"

@@ -29,6 +29,7 @@ import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.PlaceholderScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
+import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -44,6 +45,9 @@ import vn.smarthome.vm.HomeViewModel
 @Composable
 fun AppShell(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val dien by vm.dien.collectAsStateWithLifecycle()
+    val ketNoi by vm.ketNoi.collectAsStateWithLifecycle()
+    val cauHinh by vm.cauHinh.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -96,6 +100,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
                     showStats -> StatsScreen(
                         state = state,
+                        dien = dien,
+                        ketNoi = ketNoi,
                         onBack = { showStats = false },
                         onKind = vm::setStatKind,
                         onRange = vm::setStatRange,
@@ -107,6 +113,13 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onOpenRoom = { id -> openRoom = id },
                         onQuick = vm::toggleQuick,
                         onOpenStats = { showStats = true },
+                    )
+
+                    dest == Dest.SETTINGS -> SettingsScreen(
+                        cauHinh = cauHinh,
+                        ketNoi = ketNoi,
+                        onLuu = vm::luuCauHinh,
+                        onBack = { current = Dest.HOME.route },
                     )
 
                     dest == Dest.CAMERA -> CameraScreen(

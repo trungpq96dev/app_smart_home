@@ -103,6 +103,16 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    implementation(libs.androidx.datastore.preferences)
+
+    // Khai bao tuong minh vi code dung Dispatchers.Main cua Android. De no lot
+    // vao qua duong phu thuoc bac hai thi de vo khi nang phien ban Compose.
+    implementation(libs.kotlinx.coroutines.android)
+
+    // MQTT. Dung ban Java thuan, KHONG dung Paho Android Service (da bo hoang).
+    // Phan tu ket noi lai tu viet trong MqttDien.kt.
+    implementation(libs.paho.mqtt)
+
     // Kiem thu khoi dong chay tren JVM (Robolectric) - khong can may that.
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

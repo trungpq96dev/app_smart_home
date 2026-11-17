@@ -178,7 +178,28 @@ qua menu trái, mở Thống kê. Biểu đồ Canvas, đồng hồ cung, danh s
 
 Ảnh chụp từ máy: `docs\device\release\`.
 
-**Không cần thêm luật ProGuard nào** — `app\proguard-rules.pro` vẫn để trống.
+### R8 và Paho — bẫy chỉ lộ ra ở bản release trên máy thật
+
+Câu "không cần thêm luật ProGuard nào" ở bản ghi ngày 17/11 **đã sai** từ khi thêm MQTT.
+
+Paho tìm lớp ghi log bằng **tên chuỗi** (`Class.forName` + `ResourceBundle`), nên R8 đổi
+tên lớp là nó không thấy nữa và app chết ngay lúc bấm "Lưu và kết nối lại":
+
+```
+java.util.MissingResourceException: Error locating the logging class
+```
+
+Đã gặp thật trên SM-T225 ngày 17/11/2026. Đáng chú ý là **mọi thứ khác đều xanh**: build
+sạch, 26 test Robolectric qua, cả 4 màn vẽ đúng — vì test chạy trên lớp *chưa* rút gọn và
+không màn nào mở kết nối MQTT thật. Chỉ bản release chạy trên máy thật, và chỉ khi thực sự
+bấm kết nối, mới lộ.
+
+Luật trong `app\proguard-rules.pro` giữ nguyên tên mọi thứ trong Paho. Sau khi thêm: cài
+lại, bấm kết nối tới một host không tồn tại, app không chết và báo đúng *"Không tìm thấy
+máy chủ broker"*.
+
+> Rút ra: thêm thư viện nào dùng reflection thì **phải thử bản release trên máy thật**,
+> đừng tin bản debug và test.
 
 ---
 

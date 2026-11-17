@@ -1,0 +1,202 @@
+package vn.smarthome.data.dien
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttAsyncClient
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions
+import org.eclipse.paho.client.mqttv3.MqttException
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import kotlin.random.Random
+
+/** Trang thai duong truyen toi EMQX. */
+sealed interface KetNoi {
+    data object ChuaCauHinh : KetNoi
+    data object DangNoi : KetNoi
+    data object DaNoi : KetNoi
+    data class Loi(val moTa: String) : KetNoi
+}
+
+/**
+ * Doc so dien that tu EMQX.
+ *
+ * Dung ban Java thuan cua Paho, KHONG dung Paho Android Service (da bo hoang
+ * tu lau). Phan tu ket noi lai giao cho `isAutomaticReconnect` cua Paho.
+ *
+ * Vi sao chi doc ma khong publish: app la man hinh xem. Nguoi quyet dinh so
+ * la script dien_evn chay tren serverubuntu. App khong duoc ghi gi vao
+ * `dien/<topic>` - ghi vao la de len so that cua duong ong.
+ */
+class MqttDien {
+
+    private val _soLieu = MutableStateFlow(DienState())
+    val soLieu: StateFlow<DienState> = _soLieu.asStateFlow()
+
+    private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
+    val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
+
+    private var client: MqttAsyncClient? = null
+
+    /**
+     * Noi toi broker. Goi lai ham nay khi doi cau hinh - no tu ngat ket noi cu.
+     *
+     * clientId PHAI khac bo bom va bo den. Tai lieu ban giao muc 4 buoc 3:
+     * trung id la EMQX da ca hai ra, va trieu chung nhin giong mat song chu
+     * khong giong trung id.
+     */
+    fun noi(cauHinh: CauHinhMqtt) {
+        ngat()
+
+        if (!cauHinh.dayDu()) {
+            _ketNoi.value = KetNoi.ChuaCauHinh
+            return
+        }
+
+        val uri = cauHinh.uri()
+        val id = cauHinh.clientId.ifBlank { "tablet-smarthome-" + Random.nextInt(100000, 999999) }
+
+        _ketNoi.value = KetNoi.DangNoi
+
+        val c = try {
+            MqttAsyncClient(uri, id, MemoryPersistence())
+        } catch (e: MqttException) {
+            _ketNoi.value = KetNoi.Loi("Địa chỉ broker không hợp lệ: " + uri)
+            return
+        }
+        client = c
+
+        val opts = MqttConnectOptions().apply {
+            isCleanSession = true          // chi can retained, khong can hang doi cu
+            isAutomaticReconnect = true
+            connectionTimeout = 15
+            keepAliveInterval = 45
+            if (cauHinh.taiKhoan.isNotBlank()) userName = cauHinh.taiKhoan
+            if (cauHinh.matKhau.isNotBlank()) password = cauHinh.matKhau.toCharArray()
+        }
+
+        c.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {
+                _ketNoi.value = KetNoi.DaNoi
+                dangKyTopic(c)
+            }
+
+            override fun connectionLost(cause: Throwable?) {
+                _ketNoi.value = KetNoi.Loi(
+                    "Mất kết nối broker: " + (cause?.message ?: "không rõ lý do") +
+                        ". Paho đang tự nối lại."
+                )
+            }
+
+            override fun messageArrived(topic: String, message: MqttMessage) {
+                val payload = String(message.payload, Charsets.UTF_8)
+                _soLieu.update { DienState.gop(it, topic, payload) }
+            }
+
+            override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
+        })
+
+        try {
+            c.connect(opts, null, object : org.eclipse.paho.client.mqttv3.IMqttActionListener {
+                override fun onSuccess(token: IMqttToken?) = Unit
+                override fun onFailure(token: IMqttToken?, e: Throwable?) {
+                    _ketNoi.value = KetNoi.Loi(dienGiaiLoi(e))
+                }
+            })
+        } catch (e: MqttException) {
+            _ketNoi.value = KetNoi.Loi(dienGiaiLoi(e))
+        }
+    }
+
+    /**
+     * Subscribe `dien/#` va KIEM TRA QoS duoc cap.
+     *
+     * EMQX tu choi subscribe bang cach tra granted QoS = 0x80 chu khong nem
+     * loi. Khong kiem thi app nam im khong so lieu, nguoi dung di lung sua
+     * dia chi broker trong khi loi that nam o ACL. Tai lieu ban giao muc 4
+     * buoc 3 da canh bao dung cho nay.
+     */
+    private fun dangKyTopic(c: MqttAsyncClient) {
+        try {
+            c.subscribe(DienTopic.GOC, 1, null, object : org.eclipse.paho.client.mqttv3.IMqttActionListener {
+                override fun onSuccess(token: IMqttToken?) {
+                    val cap = token?.grantedQos
+                    if (cap != null && cap.isNotEmpty() && cap[0] == 0x80) {
+                        _ketNoi.value = KetNoi.Loi(
+                            "Broker từ chối cho đọc " + DienTopic.GOC +
+                                ". Cần cấp quyền subscribe dien/# cho tài khoản này trên EMQX."
+                        )
+                    }
+                }
+
+                override fun onFailure(token: IMqttToken?, e: Throwable?) {
+                    _ketNoi.value = KetNoi.Loi("Không đăng ký được " + DienTopic.GOC + ": " + (e?.message ?: ""))
+                }
+            })
+        } catch (e: MqttException) {
+            _ketNoi.value = KetNoi.Loi("Không đăng ký được " + DienTopic.GOC + ": " + (e.message ?: ""))
+        }
+    }
+
+    fun ngat() {
+        val c = client ?: return
+        client = null
+        runCatching { c.disconnectForcibly(500, 500) }
+        runCatching { c.close(true) }
+    }
+
+    /**
+     * Doi loi cua Paho thanh cau noi ro CHO PHAI SUA, khong chi in stack trace.
+     *
+     * Phai di HET chuoi nguyen nhan: Paho boc loi that vao MqttException, va
+     * reasonCode nhieu khi chi la 0 trong khi nguyen nhan that (UnknownHost,
+     * loi chung chi) nam sau hai ba lop cause.
+     */
+    private fun dienGiaiLoi(e: Throwable?): String {
+        val chuoi = generateSequence(e) { it.cause }.take(8).toList()
+        val tenLop = chuoi.joinToString(" ") { it.javaClass.name }
+        val loiVan = chuoi.mapNotNull { it.message }.joinToString(" ")
+
+        when {
+            tenLop.contains("UnknownHostException") ||
+                loiVan.contains("Unable to resolve host", true) ->
+                return "Không tìm thấy máy chủ broker. Sai tên miền, hoặc máy tính bảng chưa vào được mạng có broker đó."
+            tenLop.contains("SSLHandshakeException") ||
+                loiVan.contains("trust anchor", true) ||
+                loiVan.contains("CertPathValidator", true) ->
+                return "Chứng chỉ TLS của broker không được Android tin. EMQX dùng chứng chỉ tự ký thì phải cài chứng chỉ đó vào máy tính bảng."
+            loiVan.contains("WRONG_VERSION_NUMBER", true) ->
+                return "Cổng này không nói TLS. Tắt TLS hoặc đổi sang cổng 8883."
+            tenLop.contains("ConnectException") ||
+                loiVan.contains("ECONNREFUSED", true) ->
+                return "Broker từ chối kết nối. Kiểm tra cổng và xem EMQX có đang chạy không."
+        }
+
+        val mq = e as? MqttException
+        return when (mq?.reasonCode?.toInt()) {
+            MqttException.REASON_CODE_FAILED_AUTHENTICATION.toInt() ->
+                "Sai tài khoản hoặc mật khẩu MQTT."
+            MqttException.REASON_CODE_NOT_AUTHORIZED.toInt() ->
+                "Tài khoản MQTT không được phép kết nối. Kiểm tra quyền trên EMQX."
+            MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt(),
+            MqttException.REASON_CODE_CONNECTION_LOST.toInt() ->
+                "Không gọi được broker. Kiểm tra địa chỉ, cổng và mạng của máy tính bảng."
+            MqttException.REASON_CODE_CLIENT_EXCEPTION.toInt() -> {
+                val goc = mq.cause?.message ?: mq.message ?: ""
+                when {
+                    goc.contains("Unable to resolve host", true) ||
+                        goc.contains("UnknownHost", true) ->
+                        "Không tìm thấy máy chủ broker. Sai tên miền hoặc máy tính bảng chưa vào được mạng đó."
+                    goc.contains("trust anchor", true) || goc.contains("certificate", true) ->
+                        "Chứng chỉ TLS của broker không được Android tin. Nếu EMQX dùng chứng chỉ tự ký thì phải cài chứng chỉ đó vào máy tính bảng."
+                    else -> "Lỗi kết nối: " + goc
+                }
+            }
+            else -> "Lỗi kết nối: " + (e?.message ?: "không rõ")
+        }
+    }
+}

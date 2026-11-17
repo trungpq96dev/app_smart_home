@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Khung giao dien khong luu gi - khong co du lieu nguoi dung de sao luu. -->
+    <!--
+      Cau hinh MQTT co MAT KHAU broker. Khong de no di theo sao luu dam may.
+      Dat lai tren may moi mat 30 giay, con mat khau ro ra thi khong lay lai duoc.
+    -->
+    <exclude domain="file" path="datastore/" />
+    <exclude domain="sharedpref" path="." />
 </full-backup-content>

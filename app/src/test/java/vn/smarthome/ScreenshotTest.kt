@@ -23,7 +23,12 @@ import vn.smarthome.data.DemoData
 import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
+import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
+import vn.smarthome.data.dien.CauHinhMqtt
+import vn.smarthome.data.dien.DienState
+import vn.smarthome.data.dien.KetNoi
+import vn.smarthome.data.dien.NgayKwh
 import vn.smarthome.ui.shell.AppShell
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SmartHomeTheme
@@ -103,10 +108,48 @@ class ScreenshotTest {
     }
 
     @Test
-    fun chup_thong_ke() {
-        shoot("4-thong-ke") {
-            Content { StatsScreen(HomeState(), {}, {}, {}) }
+    fun chup_thong_ke_dien_chua_co_so() {
+        // Chua khai bao broker: phai hien "--" va noi ro ly do, KHONG duoc
+        // lay so mau bu vao (quy uoc "khong bia so" cua du an).
+        shoot("4-thong-ke-dien-trong") {
+            Content { StatsScreen(HomeState(), DienState(), KetNoi.ChuaCauHinh, {}, {}, {}) }
         }
+    }
+
+    @Test
+    fun chup_thong_ke_dien_co_so() {
+        shoot("4b-thong-ke-dien-co-so") {
+            Content { StatsScreen(HomeState(), dienMau(), KetNoi.DaNoi, {}, {}, {}) }
+        }
+    }
+
+    @Test
+    fun chup_cai_dat() {
+        shoot("6-cai-dat") {
+            Content { SettingsScreen(CauHinhMqtt(), KetNoi.ChuaCauHinh, {}, {}) }
+        }
+    }
+
+    /**
+     * So gia CHI DUNG TRONG TEST de chup anh bo cuc - khong nam trong app.
+     * Lay dung vi du cua tai lieu ban giao dien_evn: ~209 kWh ca ky thi tien
+     * that khoang 480.650d (bac thang luy tien), khong phai 126.000d.
+     */
+    private fun dienMau(): DienState {
+        val ngay = (1..14).map { "2026-11-%02d".format(it) }
+        val kwh = listOf(6.2, 7.1, 5.4, 8.0, 6.6, 9.2, 7.4, 6.9, 8.3, 5.8, 7.7, 6.1, 9.0, 7.2)
+        return DienState(
+            trangThai = "ok",
+            ngaySanLuong = 7.2,
+            ngay = "2026-11-14",
+            thangSanLuong = 209.0,
+            thangTien = 480650.0,
+            congToChiSo = 15234.0,
+            congNoSoTien = 0.0,
+            lichSu = ngay.zip(kwh) { n, k -> NgayKwh(n, k) },
+            capNhat = java.time.LocalDateTime.now().minusHours(2)
+                .format(DienState.DINH_DANG_CAP_NHAT),
+        )
     }
 
     @Test

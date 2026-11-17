@@ -74,6 +74,25 @@ class ShellSmokeTest {
     }
 
     @Test
+    fun man_cai_dat_la_man_that_de_khai_bao_broker() {
+        start()
+        rule.onNodeWithText("Cài đặt").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Broker EMQX").assertIsDisplayed()
+        rule.onNodeWithText("Chưa khai báo broker").assertIsDisplayed()
+    }
+
+    @Test
+    fun tab_dien_nang_khong_bia_so_khi_chua_co_du_lieu() {
+        start()
+        rule.onNodeWithText("Xem chi tiết").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        // Chua khai bao broker => khong duoc hien so mau nao, phai noi ro ly do.
+        rule.onNodeWithText("Chưa có số liệu điện").assertIsDisplayed()
+        rule.onNodeWithText("Chưa khai báo broker EMQX").assertIsDisplayed()
+    }
+
+    @Test
     fun mo_duoc_man_thong_ke_va_doi_duoc_tab() {
         start()
         rule.onNodeWithText("Xem chi tiết").performClick()
@@ -89,7 +108,7 @@ class ShellSmokeTest {
     @Test
     fun cac_man_chua_lam_van_mo_duoc() {
         start()
-        listOf("Thiết bị", "Cảm biến", "Tự động hóa", "Cài đặt").forEach { name ->
+        listOf("Thiết bị", "Cảm biến", "Tự động hóa").forEach { name ->
             rule.onNodeWithText(name).performClick()
             rule.mainClock.advanceTimeByFrame()
             rule.onNodeWithText("Màn hình này sẽ làm ở giai đoạn sau").assertIsDisplayed()

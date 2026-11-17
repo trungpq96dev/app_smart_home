@@ -16,8 +16,9 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 | Trang chủ | Đủ: header + 4 ô số liệu + thẻ phòng vuốt ngang + 4 ô thao tác nhanh + dải trạng thái |
 | Điều khiển phòng | Đủ: 2 công tắc + điều hòa −/+ + 4 chế độ + lịch hẹn |
 | Camera an ninh | Đủ khung: danh sách 4 camera + khung xem + 3 nút |
-| Thống kê & Báo cáo | Đủ: 5 tab, biểu đồ cột, đồng hồ cung, chi phí, trạng thái |
-| Thiết bị / Cảm biến / Tự động hóa / Cài đặt | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
+| Thống kê & Báo cáo | Đủ: 5 tab. **Tab Điện năng dùng số thật từ MQTT**, 4 tab kia là dữ liệu mẫu |
+| Cài đặt | Khai báo broker EMQX để đọc số điện thật |
+| Thiết bị / Cảm biến / Tự động hóa | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
 
 ### Thao tác thật sự hoạt động
 
@@ -41,14 +42,61 @@ màn và xoay máy**: bật đèn ở màn chi tiết phòng rồi quay về Tra
 
 ---
 
+## Điện năng: số thật từ EVN qua MQTT
+
+Tab **Điện năng** ở màn Thống kê không còn dùng dữ liệu mẫu. Nó đọc thẳng từ EMQX theo
+hợp đồng topic của dự án `dien_evn` (xem tài liệu bàn giao `bangiao_env_cskh.html`).
+
+Đường đi: EVN CSKH → script Python trên `serverubuntu` → EMQX → app subscribe `dien/#`.
+Mọi topic đều **retained** nên vừa kết nối là có số ngay.
+
+| Ô trên màn hình | Lấy từ |
+|---|---|
+| "Điện năng tiêu thụ … kWh" | cộng `kwh` trong `dien/lichsu` theo khoảng đang chọn |
+| Biểu đồ cột | các phần tử cuối của `dien/lichsu`, nhãn thứ tính từ ngày thật |
+| Chênh % | so n ngày cuối với n ngày liền trước |
+| "Sản lượng ngày gần nhất" | `dien/ngay/sanluong` + `dien/ngay/ngay` |
+| "Chi phí tháng này đến giờ" | `dien/thang/tien` + `dien/thang/sanluong` |
+| "Trạng thái" | `dien/trangthai`, `dien/loi` và **tuổi** của `dien/capnhat` |
+| Chỉ số công tơ · Công nợ | `dien/congto/chiso`, `dien/congno/sotien` |
+
+Khai báo broker ở màn **Cài đặt**. Mật khẩu lưu trong DataStore trên máy và đã loại khỏi
+sao lưu đám mây — mã nguồn không nhúng sẵn mật khẩu nào vì nó nằm trên GitHub.
+
+### Ba chỗ đã sửa theo tài liệu bàn giao
+
+1. **Bỏ tile "Công suất hiện tại … kW".** EVN chốt theo ngày, không có số tức thời. Thay
+   bằng "Sản lượng ngày gần nhất".
+2. **"Chi phí ước tính" → "Chi phí tháng này đến giờ"**, lấy `dien/thang/tien` (luỹ kế cả
+   kỳ) thay vì suy từ khoảng đang chọn. Giá điện bậc thang luỹ tiến nên cộng tiền 7 ngày
+   rồi nhân ra cả tháng là sai rất xa: tài liệu dẫn ví dụ 48,7 kWh → 126.000đ trong khi
+   mức dùng đó cả tháng (~209 kWh) tốn **~480.650đ**.
+3. **Không bịa số.** Mất kết nối hoặc chưa có retained thì hiện `--` và nói rõ lý do,
+   tuyệt đối không lấy số mẫu bù vào. Bốn tab còn lại vẫn là dữ liệu mẫu và vẫn đeo chip
+   "DỮ LIỆU MẪU"; tab Điện năng thì không đeo, thay bằng trạng thái kết nối.
+
+### App không ghi gì vào `dien/`
+
+Số điện do script trên `serverubuntu` quyết định. App chỉ subscribe, không publish — ghi
+vào là đè lên số thật của đường ống.
+
+### Một bẫy được bắt sẵn
+
+Tài liệu bàn giao cảnh báo: thiếu ACL `dien/#` trên EMQX thì "script publish được nhưng
+bên đọc không nhận gì, mà lỗi lại không rõ ràng". EMQX từ chối subscribe bằng cách trả
+granted QoS `0x80` chứ không ném lỗi. `MqttDien.kt` kiểm đúng chỗ đó và báo thẳng
+*"Broker từ chối cho đọc dien/#"* thay vì để người dùng đi sửa địa chỉ broker oan.
+
+---
+
 ## Cái gì CHƯA có — và chỗ để cắm vào sau
 
 | Chưa có | Cắm vào đâu |
 |---|---|
-| Dữ liệu thật | `data/DemoData.kt` — **toàn bộ số liệu mẫu nằm đúng một file này** |
+| Dữ liệu thật cho đèn/quạt/rèm/cảm biến | `data/DemoData.kt` — **toàn bộ số liệu mẫu còn lại nằm đúng một file này** |
 | Ảnh phòng, luồng camera | `ui/components/ImagePlaceholder.kt` — đổi thân hàm thành `Image(...)` hoặc bọc `AndroidView` chứa ExoPlayer/libVLC. Mọi chỗ gọi đều đi qua đây |
-| MQTT / Home Assistant | `vm/HomeViewModel.kt` — thay khởi tạo từ `DemoData` bằng repository, các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận |
-| 4 màn Thiết bị / Cảm biến / Tự động hóa / Cài đặt | `ui/screens/PlaceholderScreen.kt` |
+| Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại |
+| 3 màn Thiết bị / Cảm biến / Tự động hóa | `ui/screens/PlaceholderScreen.kt` (màn Cài đặt đã làm xong) |
 | Chế độ sáng, font Inter, ký release | Xem BUILD.md |
 
 ---

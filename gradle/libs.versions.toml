@@ -5,6 +5,9 @@ kotlin = "2.0.21"
 coreKtx = "1.13.1"
 lifecycle = "2.8.6"
 activityCompose = "1.9.3"
+datastore = "1.1.1"
+coroutines = "1.8.1"
+paho = "1.2.5"
 composeBom = "2024.10.01"
 junit = "4.13.2"
 robolectric = "4.13"
@@ -30,6 +33,10 @@ robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+paho-mqtt = { group = "org.eclipse.paho", name = "org.eclipse.paho.client.mqttv3", version.ref = "paho" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
