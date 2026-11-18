@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.screens.CameraScreen
+import vn.smarthome.ui.screens.ChiTietDienScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.PlaceholderScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
@@ -54,6 +55,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
     var showStats by rememberSaveable { mutableStateOf(false) }
+    var showChiTietDien by rememberSaveable { mutableStateOf(false) }
 
     val dest = Dest.from(current)
     val snackbar = remember { SnackbarHostState() }
@@ -61,9 +63,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
     // Nut Back cua may: thoat man con truoc, chua thoat app ngay.
-    BackHandler(enabled = openRoom != null || showStats || dest != Dest.HOME) {
+    BackHandler(enabled = openRoom != null || showChiTietDien || showStats || dest != Dest.HOME) {
         when {
             openRoom != null -> openRoom = null
+            showChiTietDien -> showChiTietDien = false
             showStats -> showStats = false
             else -> current = Dest.HOME.route
         }
@@ -77,6 +80,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     current = d.route
                     openRoom = null
                     showStats = false
+                    showChiTietDien = false
                 },
             )
 
@@ -100,6 +104,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onToggleSchedule = { vm.toggleSchedule(room.id) },
                     )
 
+                    showChiTietDien -> ChiTietDienScreen(
+                        dien = dien,
+                        onBack = { showChiTietDien = false },
+                    )
+
                     showStats -> StatsScreen(
                         state = state,
                         dien = dien,
@@ -107,6 +116,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onBack = { showStats = false },
                         onKind = vm::setStatKind,
                         onRange = vm::setStatRange,
+                        onXemChiTiet = { showChiTietDien = true },
                     )
 
                     dest == Dest.HOME -> HomeScreen(

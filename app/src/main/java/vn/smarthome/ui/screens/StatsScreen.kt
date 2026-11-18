@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
@@ -86,6 +87,7 @@ fun StatsScreen(
     onBack: () -> Unit,
     onKind: (StatKind) -> Unit,
     onRange: (StatRange) -> Unit,
+    onXemChiTiet: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val laDien = state.statKind == StatKind.POWER
@@ -142,7 +144,7 @@ fun StatsScreen(
 
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (laDien) {
-                    TabDienNang(dien, ketNoi, state.statRange)
+                    TabDienNang(dien, ketNoi, state.statRange, onXemChiTiet)
                 } else {
                     TabDuLieuMau(state)
                 }
@@ -156,14 +158,37 @@ fun StatsScreen(
 // =====================================================================
 
 @Composable
-private fun ColumnScope.TabDienNang(dien: DienState, ketNoi: KetNoi, range: StatRange) {
+private fun ColumnScope.TabDienNang(
+    dien: DienState,
+    ketNoi: KetNoi,
+    range: StatRange,
+    onXemChiTiet: () -> Unit,
+) {
     val mau = StatKind.POWER.color
     val bars = dien.lichSu.takeLast(range.days)
     val tong = dien.tongKwh(range.days)
     val chenh = dien.chenhPhanTram(range.days)
 
     SmartCard(Modifier.fillMaxWidth().weight(1f), padding = 12.dp) {
-        Text("Điện năng tiêu thụ", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Điện năng tiêu thụ", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            // Chi hien nut khi co du lieu ngay de xem.
+            if (dien.lichSu.isNotEmpty()) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Blue.tint(0.14f))
+                        .clickable(onClick = onXemChiTiet)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null, tint = SH.Blue, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Xem theo ngày", style = SHType.Caption, color = SH.Blue, maxLines = 1)
+                }
+            }
+        }
         Spacer(Modifier.height(6.dp))
 
         Row(verticalAlignment = Alignment.Bottom) {
