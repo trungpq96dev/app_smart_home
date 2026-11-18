@@ -254,42 +254,60 @@ Bật mật khẩu **không làm hỏng luồng WebRTC**: WebView bị hỏi `40
 `onReceivedHttpAuthRequest`, rồi Chromium dùng lại tài khoản đã nhớ cho cả lần bắt tay
 WebSocket `/api/ws`. Đã đo lại sau khi bật: vẫn 1 consumer khi xem, 0 khi rời màn.
 
-### go2rtc tự chạy lại — Scheduled Task `go2rtc`
+### go2rtc chạy ở đâu — `serverubuntu`, không phải máy Windows
 
-Đặt ngày 17/11/2026. Task chạy `C:\go2rtc\bat-go2rtc.ps1`, kịch bản đó **kiểm trước khi
-bật**: go2rtc đang sống thì thoát ngay, không bật bản thứ hai (hai bản tranh cổng 1984 thì
-bản sau chết và log đầy lỗi khó hiểu).
+Chuyển ngày 18/11/2026 vì xem bị giật. Lý do và số đo: xem README, mục *Vì sao chuyển go2rtc
+sang server*. Tóm tắt: máy Windows nối Wi-Fi nên hình bay qua không khí bốn lần; server nối
+dây nên còn hai.
 
 | Mục | Giá trị |
 |---|---|
-| Kích hoạt | lúc **đăng nhập**, rồi lặp lại **mỗi 5 phút** trong 10 năm |
-| Chạy dưới quyền | chính người dùng đang đăng nhập |
-| Cửa sổ | ẩn |
-| Hai bản cùng chạy | `IgnoreNew` + kịch bản tự kiểm |
+| Máy | `serverubuntu`, `192.168.0.50`, nối dây `enp4s0` 100 Mbps |
+| Cách chạy | Docker, `alexxit/go2rtc:latest`, `--network host --restart unless-stopped` |
+| Cấu hình | `~/go2rtc/go2rtc.yaml`, quyền `600` |
+| Tự chạy lại | theo Docker, không cần ai đăng nhập |
 
-Lặp 5 phút là để go2rtc chết giữa chừng thì tự lên lại, không phải chờ tới lần đăng nhập sau.
-
-> **Giới hạn phải biết: task chạy lúc ĐĂNG NHẬP, không phải lúc bật máy.** Máy bật lên mà
-> dừng ở màn hình khoá, chưa ai đăng nhập, thì **chưa có hình**. Muốn chạy từ lúc bật máy thì
-> phải có quyền quản trị để tạo task chạy dưới `SYSTEM` — shell lúc làm việc này không có
-> quyền đó.
-
-Xem, chạy thử, hoặc gỡ:
-
-```powershell
-Get-ScheduledTask -TaskName go2rtc | Select-Object TaskName,State
+```bash
+ssh serverubuntu@192.168.0.50 'docker logs --tail 30 go2rtc'
 ```
 
-```powershell
-Start-ScheduledTask -TaskName go2rtc
+```bash
+ssh serverubuntu@192.168.0.50 'docker restart go2rtc'
 ```
 
-```powershell
-Unregister-ScheduledTask -TaskName go2rtc -Confirm:$false
+Dựng lại từ đầu nếu cần:
+
+```bash
+docker run -d --name go2rtc --network host --restart unless-stopped -v /home/serverubuntu/go2rtc:/config alexxit/go2rtc:latest
 ```
 
-Toàn bộ chuyện này mất hẳn khi go2rtc dọn sang `serverubuntu` chạy bằng Docker — lúc đó nhớ
-gỡ task đi cho khỏi có hai nơi cùng chạy.
+> `--network host` là bắt buộc. Chạy kiểu bridge thì go2rtc chỉ thấy địa chỉ trong container,
+> và các ứng viên ICE nó quảng cáo sẽ không ai nối tới được.
+
+### Hai cái bẫy của nguồn Tuya
+
+**`tuya: mqtt: disconnect` KHÔNG phải lỗi chí mạng.** Nó xuất hiện gần như mỗi lần nối đầu;
+go2rtc thử lại và lên hình sau 4-12 giây. Ngày 18/11/2026 người viết đã tưởng đây là lỗi
+thật và đi đo IPv6, DNS, đồng hồ, Tailscale, IP công cộng mất cả tiếng — trong khi chỉ cần
+đợi thêm mười giây. Dấu hiệu nhận ra: `curl /api/frame.jpeg` vẫn trả **HTTP 200**.
+
+**Thử lại dày thì Tuya chặn tạm.** Đo được: nạp lại 6 lần liên tiếp → mọi lần nối sau đó đều
+hỏng trong nhiều phút; để yên 4 phút rồi thử một lần → lên hình trong **4,3 giây**. Vì vậy
+`LuongCamera.kt` giãn cách 4s → 15s → 40s và chỉ thử 3 lần. Đừng rút ngắn.
+
+Một chi tiết nữa trong log: `dial cons=1 prod=0` nghĩa là có người xem mà nguồn chưa nối —
+với người xem nối bằng websocket thì go2rtc **không tự thử lại**, phải nạp lại trang. Còn
+`websocket: close 1001 (going away)` là do chính app nạp lại; nạp lại quá sớm sẽ giết đúng
+lần thử sắp thành công.
+
+### Bản trên máy Windows đã nghỉ
+
+Scheduled Task `go2rtc` đã gỡ, tiến trình đã tắt. Thư mục `C:\go2rtc` vẫn còn nguyên để làm
+đường lùi.
+
+> **Hai file trong đó chứa mật khẩu tài khoản Tuya ở dạng chữ thường**: `go2rtc.yaml` và
+> `go2rtc.yaml.truoc-khi-dat-mat-khau`. Giờ server mới là nơi chạy thật, nên hai file này là
+> bản sao thừa của một bí mật. Xoá đi thì gọn, nhưng mất đường lùi — tự quyết.
 
 ### Gỡ rối camera
 
@@ -297,10 +315,11 @@ gỡ task đi cho khỏi có hai nơi cùng chạy.
 |---|---|
 | Chip "Chưa khai báo go2rtc" | chưa điền địa chỉ ở màn Cài đặt |
 | "Không tìm thấy máy chạy go2rtc" | sai địa chỉ, hoặc máy tính bảng ở Wi-Fi khác |
-| "Máy chạy go2rtc không trả lời" | tường lửa Windows chặn cổng 1984, hoặc go2rtc đã tắt |
+| "Máy chạy go2rtc không trả lời" | container `go2rtc` trên server đã tắt, hoặc sai địa chỉ |
 | "go2rtc đòi tài khoản" | go2rtc có đặt `api: username/password` — điền vào màn Cài đặt |
 | Dò ra luồng nhưng khung đen | thường là cổng 8555 (WebRTC) chưa mở, trong khi 1984 đã mở |
-| Mọi thứ đang chạy bỗng mất hình | máy Windows bật lên nhưng chưa ai đăng nhập — task `go2rtc` chỉ chạy lúc đăng nhập |
+| Mọi thứ đang chạy bỗng mất hình | `serverubuntu` tắt, hoặc container `go2rtc` chết |
+| Nối mãi không lên, thử nhiều lần càng hỏng | Tuya chặn tạm vì đăng nhập quá dày — để yên vài phút rồi thử lại **một** lần |
 | Nút *Chụp ảnh* không ra hình | `/api/frame.jpeg` cần `ffmpeg` trên máy chạy go2rtc |
 
 > **Tường lửa Windows**: luật tên `go2rtc` hiện chỉ áp cho profile **Public**, và mạng Wi-Fi

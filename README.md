@@ -96,8 +96,11 @@ Màn **Camera an ninh** phát hình thật. Camera Tuya không nói chuyện tr�
 đường đi là:
 
 ```
-Camera Tuya  →  go2rtc (máy trong nhà, đăng nhập tài khoản Tuya)  →  WebRTC  →  máy tính bảng
+Camera Tuya  →  go2rtc (serverubuntu, Docker, đăng nhập tài khoản Tuya)  →  WebRTC  →  máy tính bảng
 ```
+
+go2rtc chạy trên `serverubuntu` (`192.168.0.50:1984`) chứ không phải trên máy Windows nữa —
+lý do ở mục *Vì sao chuyển go2rtc sang server* bên dưới.
 
 Khai báo địa chỉ máy chạy go2rtc ở màn **Cài đặt**, cột phải. App hỏi `/api/streams` để biết
 go2rtc đang giữ những luồng nào rồi dựng danh sách camera bên trái từ đó — không phải gõ tay
@@ -112,14 +115,55 @@ không cần build lại. WebView có sẵn trong Android, không thêm phụ th
 
 Toàn bộ nằm ở `ui/components/LuongCamera.kt` — một file, đổi cách phát thì sửa đúng chỗ đó.
 
+### Vì sao chuyển go2rtc sang server
+
+Lúc đầu go2rtc chạy trên máy tính Windows, và xem bị giật rõ trong khi app Tuya trên điện
+thoại thì mượt. Đo ra:
+
+| | |
+|---|---|
+| Băng thông | 810 kbit/s — không nghẽn |
+| Gói mất | 0 |
+| Jitter | **104 ms** |
+| Bộ đệm phải giữ | **376 ms** |
+
+Chỗ quyết định: con số đó đo **qua loopback**, tức chặng go2rtc → người xem không đi qua
+mạng nào cả. Vậy mà jitter vẫn 104 ms — nghĩa là nó sinh ra ở chặng **camera → go2rtc**,
+nơi cả camera lẫn máy Windows đều chạy Wi-Fi.
+
+App Tuya nối **thẳng** camera → điện thoại: một chặng, đệm một lần. Đường cũ của app này đi
+camera → AP → máy Windows → AP → tablet: hình bay qua không khí **bốn lần** và bị đệm hai
+lần. `serverubuntu` nối dây (`enp4s0`), nên còn **hai lần**. Chuyển xong thì đỡ giật rõ.
+
+> Không sửa được bằng cách cho app nối thẳng camera. Quét cổng camera `192.168.0.104`: 554
+> (RTSP), 80, 443, 8080 đều **đóng**; chỉ 6668 mở, mà đó là cổng điều khiển Tuya chứ không
+> phải video. Muốn lấy hình bắt buộc phải qua đúng quy trình Tuya (đăng nhập cloud → MQTT →
+> WebRTC P2P), tức là viết lại toàn bộ giao thức đó bằng Kotlin **và** nhét mật khẩu Tuya vào
+> máy tính bảng. Không đáng.
+
+### Lần nối đầu chậm, và app tự thử lại
+
+Nối bình thường mất **4–12 giây**: go2rtc phải đăng nhập máy chủ Tuya rồi mới mở được đường
+P2P. Trong lúc đó trang `stream.html` của go2rtc in ra dòng đỏ của nó —
+`streams: tuya: mqtt: disconnect` — rồi **nằm im, không tự thử lại** khi người xem nối bằng
+websocket.
+
+App che kín trang đó bằng lớp *"Đang nối camera..."* của riêng mình, và tự nạp lại khi thấy
+trang báo lỗi. Dòng lỗi thô của go2rtc không bao giờ lọt ra màn hình.
+
+> **Thử lại phải thưa, không được dày.** Mỗi lần nạp lại là một lần đăng nhập lại lên máy chủ
+> Tuya. Đo ngày 18/11/2026: thử lại 6 lần liên tiếp thì Tuya chặn tạm và **mọi** lần nối sau
+> đó đều hỏng; để yên 4 phút rồi thử đúng một lần thì lên hình trong **4,3 giây**. Nên giãn
+> cách tăng dần 4s → 15s → 40s, tối đa 3 lần.
+
 ### Rời màn là cắt luồng
 
 Đây là phần dễ làm sai nhất và tốn kém nhất nếu sai: không cắt thì camera gửi hình về máy
 tính bảng suốt ngày, tốn pin và băng thông, còn go2rtc vẫn đếm máy tính bảng là một người
 đang xem. Nên khi khung hình bị gỡ khỏi màn, WebView được nạp `about:blank` rồi huỷ hẳn.
 
-Đo trên máy thật (SM-T225, 17/11/2026): đang ở màn Camera thì go2rtc đếm **1** người xem,
-về Trang chủ còn **0**, quay lại thì lên **1**.
+Đo trên máy thật (SM-T225): đang ở màn Camera thì go2rtc đếm **1** người xem, về Trang chủ
+còn **0**, quay lại thì lên **1**. Đo lại sau khi chuyển sang server: vẫn đúng như vậy.
 
 ### App không bao giờ đăng nhập Tuya
 
