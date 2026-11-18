@@ -21,6 +21,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import vn.smarthome.data.DemoData
 import vn.smarthome.ui.screens.CameraScreen
+import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
@@ -137,6 +138,13 @@ class ScreenshotTest {
     fun chup_chi_tiet_dien() {
         shoot("4c-chi-tiet-dien") {
             Content { ChiTietDienScreen(dienMau(), {}) }
+        }
+    }
+
+    @Test
+    fun chup_thiet_bi() {
+        shoot("7-thiet-bi") {
+            Content { DevicesScreen(HomeState(), {}, {}) }
         }
     }
 

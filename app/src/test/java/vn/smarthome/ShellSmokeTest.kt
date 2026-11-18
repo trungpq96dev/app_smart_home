@@ -112,10 +112,21 @@ class ShellSmokeTest {
     @Test
     fun cac_man_chua_lam_van_mo_duoc() {
         start()
-        listOf("Thiết bị", "Cảm biến", "Tự động hóa").forEach { name ->
+        // Thiet bi da lam xong (hien luoi the), chi con Cam bien va Tu dong hoa
+        // la placeholder.
+        listOf("Cảm biến", "Tự động hóa").forEach { name ->
             rule.onNodeWithText(name).performClick()
             rule.mainClock.advanceTimeByFrame()
             rule.onNodeWithText("Màn hình này sẽ làm ở giai đoạn sau").assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun man_thiet_bi_hien_luoi_the() {
+        start()
+        rule.onNodeWithText("Thiết bị").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        // Co dong dem thiet bi va it nhat mot the Den.
+        rule.onAllNodesWithText("Đèn").onFirst().assertIsDisplayed()
     }
 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Videocam
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -30,6 +31,8 @@ import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.CauHinhCameraStore
 import vn.smarthome.data.camera.Go2rtc
 import vn.smarthome.data.camera.TrangThaiCam
+import vn.smarthome.data.thoitiet.OpenMeteo
+import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.ui.theme.SH
 
 data class HomeState(
@@ -73,6 +76,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _trangThaiCam = MutableStateFlow<TrangThaiCam>(TrangThaiCam.ChuaCauHinh)
     val trangThaiCam: StateFlow<TrangThaiCam> = _trangThaiCam.asStateFlow()
+
+    /** Thoi tiet that o Trang chu. Rong (DangTai) cho toi khi Open-Meteo tra ve. */
+    private val _thoiTiet = MutableStateFlow<ThoiTietUi>(ThoiTietUi.DangTai)
+    val thoiTiet: StateFlow<ThoiTietUi> = _thoiTiet.asStateFlow()
 
     init {
         // Doi cau hinh la noi lai. distinctUntilChanged de luu cau hinh y het

@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.screens.CameraScreen
+import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.PlaceholderScreen
@@ -145,6 +146,12 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onSelectCamera = vm::selectCamera,
                         onNotice = toast,
                         onDoLai = vm::doLaiCamera,
+                    )
+
+                    dest == Dest.DEVICES -> DevicesScreen(
+                        state = state,
+                        onOpenRoom = { id -> openRoom = id },
+                        onBack = { current = Dest.HOME.route },
                     )
 
                     else -> PlaceholderScreen(

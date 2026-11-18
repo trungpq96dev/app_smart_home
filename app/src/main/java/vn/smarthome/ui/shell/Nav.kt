@@ -17,7 +17,7 @@ enum class Dest(
     val built: Boolean,
 ) {
     HOME("home", "Trang chủ", Icons.Filled.Home, true),
-    DEVICES("devices", "Thiết bị", Icons.Filled.Devices, false),
+    DEVICES("devices", "Thiết bị", Icons.Filled.Devices, true),
     CAMERA("camera", "Camera", Icons.Filled.Videocam, true),
     SENSORS("sensors", "Cảm biến", Icons.Filled.Sensors, false),
     AUTOMATION("automation", "Tự động hóa", Icons.Filled.AutoAwesome, false),
