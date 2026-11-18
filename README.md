@@ -18,7 +18,7 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 | Điều khiển phòng | Đủ: 2 công tắc + điều hòa −/+ + 4 chế độ + lịch hẹn |
 | Camera an ninh | **Hình thật từ camera Tuya** qua go2rtc. Chưa khai báo go2rtc thì vẫn là ô giữ chỗ |
 | Thống kê & Báo cáo | Đủ: 5 tab. **Tab Điện năng dùng số thật từ MQTT**, 4 tab kia là dữ liệu mẫu |
-| Cài đặt | Hai cột: broker EMQX (số điện) và go2rtc (hình camera) |
+| Cài đặt | Hai cột: broker MQTT (số điện) và go2rtc (hình camera) |
 | Thiết bị / Cảm biến / Tự động hóa | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
 
 ### Thao tác thật sự hoạt động
@@ -45,11 +45,17 @@ màn và xoay máy**: bật đèn ở màn chi tiết phòng rồi quay về Tra
 
 ## Điện năng: số thật từ EVN qua MQTT
 
-Tab **Điện năng** ở màn Thống kê không còn dùng dữ liệu mẫu. Nó đọc thẳng từ EMQX theo
+Tab **Điện năng** ở màn Thống kê không còn dùng dữ liệu mẫu. Nó đọc thẳng từ broker theo
 hợp đồng topic của dự án `dien_evn` (xem tài liệu bàn giao `bangiao_env_cskh.html`).
 
-Đường đi: EVN CSKH → script Python trên `serverubuntu` → EMQX → app subscribe `dien/#`.
-Mọi topic đều **retained** nên vừa kết nối là có số ngay.
+Đường đi: EVN CSKH → script `dien_evn` chạy Docker trên `serverubuntu` → Mosquitto →
+app subscribe `dien/#`. Mọi topic đều **retained** nên vừa kết nối là có số ngay.
+
+> **Broker là Mosquitto, không phải EMQX**, và chỉ có cổng **1883 không mã hoá** — 8883
+> đóng. Tài liệu bàn giao `dien_evn` viết EMQX/8883/TLS; đó là môi trường dự kiến, không
+> phải môi trường thật. Đo tận nơi ngày 18/11/2026. Nên ở màn Cài đặt phải **tắt TLS** và
+> để cổng **1883**. Mật khẩu MQTT đi qua mạng dưới dạng chữ thường — chấp nhận được trong
+> mạng nhà, đừng mở broker ra Internet.
 
 | Ô trên màn hình | Lấy từ |
 |---|---|
@@ -83,10 +89,17 @@ vào là đè lên số thật của đường ống.
 
 ### Một bẫy được bắt sẵn
 
-Tài liệu bàn giao cảnh báo: thiếu ACL `dien/#` trên EMQX thì "script publish được nhưng
-bên đọc không nhận gì, mà lỗi lại không rõ ràng". EMQX từ chối subscribe bằng cách trả
-granted QoS `0x80` chứ không ném lỗi. `MqttDien.kt` kiểm đúng chỗ đó và báo thẳng
+Tài liệu bàn giao cảnh báo: thiếu ACL `dien/#` thì "script publish được nhưng bên đọc
+không nhận gì, mà lỗi lại không rõ ràng". Broker từ chối subscribe bằng cách trả granted
+QoS `0x80` chứ không ném lỗi. `MqttDien.kt` kiểm đúng chỗ đó và báo thẳng
 *"Broker từ chối cho đọc dien/#"* thay vì để người dùng đi sửa địa chỉ broker oan.
+
+Riêng Mosquitto ở nhà thì **chưa có `acl_file` nào** — bất cứ tài khoản nào đăng nhập được
+cũng đọc ghi được mọi topic, kể cả topic điều khiển bơm và đèn. App và script đang dùng
+chung tài khoản `iot` sẵn có. Cái bẫy trên vì vậy chưa bao giờ bắn ở đây, nhưng đổi lại:
+**mật khẩu nằm trên máy tính bảng treo tường cũng chính là mật khẩu mở được mọi thứ**.
+Siết lại thì tạo tài khoản riêng cho từng thiết bị rồi thêm `acl_file` — không phải sửa
+dòng code nào.
 
 ---
 
@@ -225,7 +238,7 @@ vào thì báo *"Chưa nối camera thật"* chứ không giả vờ đã chụp
 data/
   Models.kt     RoomUi, QuickItem, CameraFeed, StatSeries, RoomMode, StatKind, StatRange
   DemoData.kt   TOÀN BỘ số liệu mẫu
-  dien/         CauHinhMqtt, DienState, MqttDien — số điện thật qua EMQX
+  dien/         CauHinhMqtt, DienState, MqttDien — số điện thật qua MQTT
   camera/       CauHinhCamera, Go2rtc — hình camera thật qua go2rtc
 vm/
   HomeViewModel.kt   State + các hàm toggle
