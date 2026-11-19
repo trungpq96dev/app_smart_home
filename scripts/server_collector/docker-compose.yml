@@ -10,10 +10,6 @@ services:
     env_file:
       - .env
 
-    environment:
-      # Noi luu lich su dien nang/nhiet do theo ngay (volume ben duoi).
-      STATE_DIR: /data
-
     # Doc so cua HOST, khong phai cua container:
     #  - pid: host        -> thay toan bo tien trinh host (uptime, process)
     #  - network_mode host -> doc toc do mang that cua server + goi thang
@@ -37,8 +33,6 @@ services:
       # Liet ke container (chi doc). Bo dong nay neu khong muon lo socket ->
       # the Docker se trong, phan con lai van chay.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Luu lich su theo ngay (Wh + nhiet do) qua cac lan khoi dong lai.
-      - server-collector-state:/data
 
     mem_limit: 128m
     cpus: 0.5
@@ -48,6 +42,3 @@ services:
       options:
         max-size: "2m"
         max-file: "3"
-
-volumes:
-  server-collector-state:

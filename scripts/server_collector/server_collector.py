@@ -5,17 +5,21 @@ Chay trong Docker tren chinh serverubuntu. Dung psutil doc CPU/RAM/o dia/nhiet
 do/mang cua HOST (xem docker-compose.yml: pid=host, network=host, mount /sys va
 host root). Liet ke container qua Docker socket (mount read-only).
 
+DIEN NANG CPU THEO NGAY lay tu dich vu nen hwstats cua server
+(/var/lib/hwstats/history.tsv + state) - DUNG nguon ma trang Cockpit dung, nen
+so lieu khop het voi Cockpit. Khong tu tich luy rieng nua.
+
 Hop dong topic (app chi doc, khong ghi):
   - server/info     JSON he thong (hostname, os, kernel, cpu, ram, disk, uptime)
   - server/metrics  JSON tuc thoi (cpu%, ram, disk, nhiet do chinh, load, mang)
   - server/docker   JSON list container
-  - server/nhietdo  JSON tat ca cam bien nhiet + cao/thap hom nay
-  - server/diennang JSON pin + RAPL CPU (ca goi / nhan / phu tro)
-  - server/diennang_ngay  JSON dien nang CPU (Wh) + khoang nhiet do theo ngay
+  - server/nhietdo  JSON tat ca cam bien nhiet + cao/thap hom nay (tu hwstats)
+  - server/diennang JSON pin + RAPL CPU (ca goi / nhan / phu tro) - tuc thoi
+  - server/diennang_ngay  JSON dien nang CPU (Wh) + khoang nhiet do theo ngay (hwstats)
   - server/capnhat  YYYY-MM-DD HH:MM:SS
 
-KHONG BIA SO: truong nao host khong cap (vi du RAPL khong doc duoc, may khong co
-pin) publish null; bieu do theo ngay tu tich luy, bat dau trong va day dan.
+KHONG BIA SO: truong nao host khong cap (vi du RAPL khong doc duoc, chua cai
+hwstats) publish null / mang rong.
 """
 
 from __future__ import annotations
@@ -54,12 +58,10 @@ MQTT_PASS = os.getenv("MQTT_PASS", "")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "smarthome-server-collector")
 
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
-DAYS_KEEP = int(os.getenv("DAYS_KEEP", "14"))
 
 ROOTFS = os.getenv("ROOTFS", "/rootfs")
 DOCKER_SOCK = os.getenv("DOCKER_SOCK", "/var/run/docker.sock")
-STATE_DIR = os.getenv("STATE_DIR", "/data")
-STATE_FILE = os.path.join(STATE_DIR, "state.json")
+
 
 # Docker che (mask) /sys/devices/virtual/powercap bang tmpfs rong -> doc RAPL
 # qua host rootfs (/rootfs/sys) khong bi che. Pin thi /sys thuong khong bi che,
@@ -72,12 +74,16 @@ def _chon_sys(sub: str) -> str:
 POWERCAP = _chon_sys("class/powercap")
 BAT_DIR = _chon_sys("class/power_supply")
 
+# Dich vu nen hwstats ghi dien nang/nhiet do CPU theo ngay (Cockpit cung doc day).
+def _chon_hwstats() -> str:
+    r = os.path.join(ROOTFS, "var/lib/hwstats")
+    return r if os.path.isdir(r) else "/var/lib/hwstats"
+
+
+HWSTATS = _chon_hwstats()
+
 GIO_VN = timezone(timedelta(hours=7))
 GB = 1024 ** 3
-
-
-def _hom_nay() -> str:
-    return datetime.now(GIO_VN).strftime("%Y-%m-%d")
 
 
 # --------------------------------------------------------------- tinh (info)
@@ -177,54 +183,44 @@ def _nhiet_chinh(ds: list) -> float | None:
     return max(d["temp_c"] for d in ds)
 
 
-# --------------------------------------------------------------- dien nang
+# --------------------------------------------------------------- dien nang (RAPL)
 
-# energy_uj cua moi mien RAPL: (gia tri uj lan truoc, mono_time lan truoc)
 _rapl_last: dict[str, tuple[int, float]] = {}
 
 
-def _rapl_path(mien: str) -> str:
-    # package = intel-rapl:0 ; core = intel-rapl:0:0 ; uncore = intel-rapl:0:1
-    return os.path.join(POWERCAP, mien)
-
-
-def _rapl_watt(mien: str) -> tuple[float | None, int]:
-    """Cong suat (W) cua mot mien RAPL + delta nang luong (uj).
-
-    Tra (None, 0) khi chua doc duoc hoac lan dau (chua co moc truoc).
-    """
-    base = _rapl_path(mien)
+def _rapl_watt(mien: str) -> float | None:
+    """Cong suat (W) cua mot mien RAPL. None khi chua doc duoc / lan dau."""
+    base = os.path.join(POWERCAP, mien)
     e = _doc_mot(os.path.join(base, "energy_uj"))
     if e is None:
-        return None, 0
+        return None
     try:
         e = int(e)
     except ValueError:
-        return None, 0
+        return None
     now = time.monotonic()
     truoc = _rapl_last.get(mien)
     _rapl_last[mien] = (e, now)
     if truoc is None:
-        return None, 0
+        return None
     e_truoc, t_truoc = truoc
     dt = now - t_truoc
     if dt <= 0:
-        return None, 0
+        return None
     delta = e - e_truoc
     if delta < 0:  # tran bo dem
         mx = _doc_mot(os.path.join(base, "max_energy_range_uj"))
         try:
             delta += int(mx)
         except (TypeError, ValueError):
-            return None, 0
-    watt = delta / 1e6 / dt
-    return round(watt, 2), delta
+            return None
+    return round(delta / 1e6 / dt, 2)
 
 
 def doc_pin() -> dict:
     """Pin: dien ap (V), dong dien (A), cong suat (W), trang thai. null neu thieu."""
     bat = None
-    for name in os.listdir(BAT_DIR) if os.path.isdir(BAT_DIR) else []:
+    for name in (os.listdir(BAT_DIR) if os.path.isdir(BAT_DIR) else []):
         d = os.path.join(BAT_DIR, name)
         if (_doc_mot(os.path.join(d, "type")) or "").lower() == "battery":
             bat = d
@@ -240,9 +236,9 @@ def doc_pin() -> dict:
         except (TypeError, ValueError):
             return None
 
-    vu = num("voltage_now")   # uV
-    iu = num("current_now")   # uA
-    pu = num("power_now")     # uW (mot so may co san)
+    vu = num("voltage_now")
+    iu = num("current_now")
+    pu = num("power_now")
     v = round(vu / 1e6, 2) if vu is not None else None
     a = round(iu / 1e6, 3) if iu is not None else None
     if pu is not None:
@@ -259,87 +255,64 @@ def doc_pin() -> dict:
     }
 
 
-def dung_diennang() -> tuple[dict, int]:
-    """JSON dien nang + delta nang luong package (uj) de tich luy Wh."""
-    pkg_w, pkg_delta = _rapl_watt("intel-rapl:0")
-    core_w, _ = _rapl_watt("intel-rapl:0:0")
-    uncore_w, _ = _rapl_watt("intel-rapl:0:1")
+def dung_diennang() -> dict:
     d = doc_pin()
     d.update({
-        "cpu_package_w": pkg_w,
-        "cpu_core_w": core_w,
-        "cpu_uncore_w": uncore_w,
+        "cpu_package_w": _rapl_watt("intel-rapl:0"),
+        "cpu_core_w": _rapl_watt("intel-rapl:0:0"),
+        "cpu_uncore_w": _rapl_watt("intel-rapl:0:1"),
     })
-    return d, pkg_delta
+    return d
 
 
-# ----------------------------------------------------------- state theo ngay
+# ----------------------------------------- dien nang theo ngay (tu hwstats)
 
-def _nap_state() -> dict:
+def doc_hwstats() -> tuple[list, float | None, float | None]:
+    """Doc /var/lib/hwstats do dich vu nen ghi (Cockpit cung doc day).
+
+    - history.tsv: date<TAB>wh<TAB>tmin<TAB>tmax<TAB>samples  (cac ngay truoc)
+    - state:       date last_energy_uj accumulated_uj tmin tmax samples  (hom nay)
+
+    Tra (list ngay moi->cu, today_min, today_max). Chua cai hwstats -> ([], None, None).
+    """
+    days = []
+    today_min = today_max = None
+
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            s = json.load(f)
-            if isinstance(s, dict) and "days" in s:
-                return s
+        with open(os.path.join(HWSTATS, "history.tsv"), "r", encoding="utf-8") as f:
+            for line in f:
+                p = line.rstrip("\n").split("\t")
+                if len(p) >= 4:
+                    try:
+                        days.append({
+                            "date": p[0],
+                            "wh": round(float(p[1]), 2),
+                            "temp_min": float(p[2]),
+                            "temp_max": float(p[3]),
+                        })
+                    except ValueError:
+                        continue
+    except OSError:
+        pass
+
+    try:
+        with open(os.path.join(HWSTATS, "state"), "r", encoding="utf-8") as f:
+            s = f.read().split()
+            if len(s) >= 6:
+                acc = float(s[2])          # accumulated_uj
+                today_min = float(s[3])
+                today_max = float(s[4])
+                days.append({
+                    "date": s[0],
+                    "wh": round(acc / 3.6e9, 2),  # uJ -> Wh
+                    "temp_min": today_min,
+                    "temp_max": today_max,
+                })
     except (OSError, ValueError):
         pass
-    return {"days": {}}
 
-
-def _luu_state(s: dict) -> None:
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = STATE_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False)
-        os.replace(tmp, STATE_FILE)
-    except OSError as e:
-        logger.warning("Khong luu duoc state: %s", e)
-
-
-def cap_nhat_ngay(state: dict, pkg_delta_uj: int, temps: list) -> dict:
-    """Cong don Wh package + nhiet do cao/thap vao ngay hom nay. Tra state."""
-    today = _hom_nay()
-    days = state.setdefault("days", {})
-    d = days.setdefault(today, {"wh": 0.0, "temp_min": None, "temp_max": None})
-
-    if pkg_delta_uj > 0:
-        d["wh"] = round(d["wh"] + pkg_delta_uj / 1e6 / 3600.0, 4)
-
-    if temps:
-        cur_min = min(t["temp_c"] for t in temps)
-        cur_max = max(t["temp_c"] for t in temps)
-        d["temp_min"] = cur_min if d["temp_min"] is None else min(d["temp_min"], cur_min)
-        d["temp_max"] = cur_max if d["temp_max"] is None else max(d["temp_max"], cur_max)
-
-    # Giu DAYS_KEEP ngay gan nhat.
-    if len(days) > DAYS_KEEP:
-        for k in sorted(days.keys())[:-DAYS_KEEP]:
-            days.pop(k, None)
-    return state
-
-
-def ngay_ra_json(state: dict) -> list:
-    days = state.get("days", {})
-    out = []
-    for date in sorted(days.keys(), reverse=True):
-        d = days[date]
-        out.append({
-            "date": date,
-            "wh": round(d.get("wh", 0.0), 2),
-            "temp_min": d.get("temp_min"),
-            "temp_max": d.get("temp_max"),
-        })
-    return out
-
-
-def nhietdo_ra_json(state: dict, temps: list) -> dict:
-    today = state.get("days", {}).get(_hom_nay(), {})
-    return {
-        "sensors": temps,
-        "today_min": today.get("temp_min"),
-        "today_max": today.get("temp_max"),
-    }
+    days.sort(key=lambda x: x["date"], reverse=True)  # moi -> cu
+    return days, today_min, today_max
 
 
 # ------------------------------------------------------------ tuc thoi (metrics)
@@ -443,10 +416,8 @@ def main() -> int:
         return 1
 
     logger.info("Khoi dong Server Collector")
-    logger.info("Mosquitto: %s:%s | rootfs=%s | docker=%s | state=%s",
-                MQTT_BROKER, MQTT_PORT, ROOTFS, DOCKER_SOCK, STATE_FILE)
-
-    state = _nap_state()
+    logger.info("Mosquitto: %s:%s | rootfs=%s | docker=%s | hwstats=%s",
+                MQTT_BROKER, MQTT_PORT, ROOTFS, DOCKER_SOCK, HWSTATS)
 
     try:
         cl = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
@@ -468,22 +439,26 @@ def main() -> int:
         now = datetime.now(GIO_VN).strftime("%Y-%m-%d %H:%M:%S")
         try:
             temps = doc_nhiet()
-            dn, pkg_delta = dung_diennang()
-            state = cap_nhat_ngay(state, pkg_delta, temps)
-            _luu_state(state)
+            days, tmin, tmax = doc_hwstats()
+            # Cao/thap hom nay lay tu hwstats (ca ngay) de khop Cockpit; khong co
+            # thi suy tu cam bien hien tai.
+            if tmin is None and temps:
+                tmin = min(t["temp_c"] for t in temps)
+                tmax = max(t["temp_c"] for t in temps)
 
-            if lan % 12 == 0:  # ~moi 60s (POLL=5): info + docker + lich su ngay
+            if lan % 12 == 0:  # ~moi 60s: info + docker
                 _pub(cl, "server/info", dung_info())
                 _pub(cl, "server/docker", dung_docker())
             _pub(cl, "server/metrics", dung_metrics(temps))
-            _pub(cl, "server/nhietdo", nhietdo_ra_json(state, temps))
-            _pub(cl, "server/diennang", dn)
-            _pub(cl, "server/diennang_ngay", ngay_ra_json(state))
+            _pub(cl, "server/nhietdo",
+                 {"sensors": temps, "today_min": tmin, "today_max": tmax})
+            _pub(cl, "server/diennang", dung_diennang())
+            _pub(cl, "server/diennang_ngay", days)
             cl.publish("server/capnhat", now, retain=True, qos=1)
 
-            logger.info("OK: pkgW=%s coreW=%s pin=%sV cambien=%d",
-                        dn.get("cpu_package_w"), dn.get("cpu_core_w"),
-                        dn.get("bat_voltage_v"), len(temps))
+            hom_nay = days[0]["wh"] if days else None
+            logger.info("OK: cambien=%d | hom nay=%s Wh | so ngay=%d",
+                        len(temps), hom_nay, len(days))
         except Exception as e:
             logger.error("Loi doc so lieu: %s", e)
         lan += 1
