@@ -37,6 +37,9 @@ import vn.smarthome.data.thoitiet.OpenMeteo
 import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.wifi.WifiState
+import vn.smarthome.data.ota.OtaManager
+import vn.smarthome.data.ota.OtaStatus
+import vn.smarthome.data.ota.ReleaseInfo
 import vn.smarthome.ui.theme.SH
 
 data class HomeState(
@@ -96,6 +99,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val cauHinhThoiTiet: StateFlow<CauHinhThoiTiet> = storeThoiTiet.cauHinh
         .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhThoiTiet())
 
+    // ---- OTA Update ----
+    val otaManager = OtaManager(app)
+    val currentVersionName = otaManager.getCurrentVersionName()
+
+    private val _otaStatus = MutableStateFlow<OtaStatus>(OtaStatus.Idling)
+    val otaStatus: StateFlow<OtaStatus> = _otaStatus.asStateFlow()
+
+    private val _showUpdateDialog = MutableStateFlow(false)
+    val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
     init {
         // Doi cau hinh la noi lai. distinctUntilChanged de luu cau hinh y het
         // cu khong lam dut ket noi dang chay.
@@ -120,6 +133,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     delay(15 * 60 * 1000L)
                 }
             }
+        }
+        // Kiem tra cap nhat tu dong sau khi app khoi dong 4 giay
+        viewModelScope.launch {
+            delay(4000L)
+            kiemTraCapNhat(thuCong = false)
         }
     }
 
@@ -253,4 +271,58 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     // ---- WiFi ----
 
     fun rebootWifi() = mqtt.guiLenhWifi("reboot")
+
+    // ---- OTA Updates ----
+
+    fun kiemTraCapNhat(thuCong: Boolean = false) {
+        val currentStatus = _otaStatus.value
+        if (currentStatus is OtaStatus.Checking || currentStatus is OtaStatus.Downloading) {
+            return
+        }
+
+        viewModelScope.launch {
+            _otaStatus.value = OtaStatus.Checking
+            val result = otaManager.checkLatestRelease()
+            result.onSuccess { release ->
+                if (release != null && otaManager.isNewerVersion(release.tagName, currentVersionName)) {
+                    _otaStatus.value = OtaStatus.UpdateAvailable(release)
+                    // Hien pop-up thong bao co ban moi
+                    _showUpdateDialog.value = true
+                } else {
+                    if (thuCong) {
+                        _otaStatus.value = OtaStatus.UpToDate
+                    } else {
+                        _otaStatus.value = OtaStatus.Idling
+                    }
+                }
+            }.onFailure { e ->
+                if (thuCong) {
+                    _otaStatus.value = OtaStatus.Error(e.message ?: "Không thể kết nối đến máy chủ cập nhật")
+                } else {
+                    _otaStatus.value = OtaStatus.Idling
+                }
+            }
+        }
+    }
+
+    fun dongHopThoaiCapNhat() {
+        _showUpdateDialog.value = false
+    }
+
+    fun batDauCapNhat(release: ReleaseInfo) {
+        viewModelScope.launch {
+            _otaStatus.value = OtaStatus.Downloading(0, 0, release.sizeBytes)
+            try {
+                val apkFile = otaManager.downloadApk(release.downloadUrl) { percent, read, total ->
+                    _otaStatus.value = OtaStatus.Downloading(percent, read, total)
+                }
+                // Tai xong -> dong hop thoai va kich hoat trinh cai dat cua Android
+                _showUpdateDialog.value = false
+                _otaStatus.value = OtaStatus.Idling
+                otaManager.installApk(apkFile)
+            } catch (e: Exception) {
+                _otaStatus.value = OtaStatus.Error("Tải bản cập nhật thất bại: ${e.message}")
+            }
+        }
+    }
 }

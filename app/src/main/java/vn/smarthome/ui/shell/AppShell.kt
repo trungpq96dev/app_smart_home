@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import vn.smarthome.ui.components.OtaUpdateDialog
 import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
@@ -58,6 +59,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val server by vm.server.collectAsStateWithLifecycle()
+    val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
+    val showUpdateDialog by vm.showUpdateDialog.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -158,9 +161,13 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         cauHinhCamera = cauHinhCamera,
                         trangThaiCam = trangThaiCam,
                         cauHinhThoiTiet = thoiTietCauHinh,
+                        otaStatus = otaStatus,
+                        currentVersion = vm.currentVersionName,
                         onLuu = vm::luuCauHinh,
                         onLuuCamera = vm::luuCauHinhCamera,
                         onLuuThoiTiet = vm::luuCauHinhThoiTiet,
+                        onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
+                        onBatDauCapNhat = vm::batDauCapNhat,
                         onBack = { current = Dest.HOME.route },
                     )
 
@@ -195,5 +202,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
 
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+
+        // Pop-up thong bao co ban cap nhat moi tren Git
+        if (showUpdateDialog) {
+            OtaUpdateDialog(
+                status = otaStatus,
+                onDismiss = vm::dongHopThoaiCapNhat,
+                onStartUpdate = vm::batDauCapNhat,
+            )
+        }
     }
 }

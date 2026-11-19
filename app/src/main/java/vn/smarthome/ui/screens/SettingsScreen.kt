@@ -1,5 +1,7 @@
 package vn.smarthome.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,16 +15,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -31,12 +39,15 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -47,7 +58,10 @@ import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.DienTopic
 import vn.smarthome.data.dien.KetNoi
+import vn.smarthome.data.ota.OtaStatus
+import vn.smarthome.data.ota.ReleaseInfo
 import vn.smarthome.data.thoitiet.CauHinhThoiTiet
+import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatusPill
 import vn.smarthome.ui.shell.TopBar
@@ -81,28 +95,111 @@ fun SettingsScreen(
     onLuuCamera: (CauHinhCamera) -> Unit,
     onLuuThoiTiet: (CauHinhThoiTiet) -> Unit,
     onBack: () -> Unit,
+    otaStatus: OtaStatus = OtaStatus.Idling,
+    currentVersion: String = "0.1",
+    onKiemTraCapNhat: () -> Unit = {},
+    onBatDauCapNhat: (ReleaseInfo) -> Unit = {},
 ) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val coBanMoi = otaStatus is OtaStatus.UpdateAvailable
+
     Column(Modifier.fillMaxSize()) {
         TopBar(title = "Cài đặt", onBack = onBack) {
+            // Tab chuyen doi giua Dich vu va Cap nhat
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SH.Bg)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                TabButton(
+                    text = "Dịch vụ & Kết nối",
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                )
+                TabButton(
+                    text = if (coBanMoi) "Cập nhật (Có bản mới!)" else "Cập nhật hệ thống",
+                    selected = selectedTab == 1,
+                    highlight = coBanMoi,
+                    onClick = { selectedTab = 1 },
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
             TrangThaiKetNoi(ketNoi)
             Spacer(Modifier.width(8.dp))
             TrangThaiCameraPill(trangThaiCam)
         }
 
-        Row(
-            Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
-        ) {
-            SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
-                FormBroker(cauHinh, onLuu)
+        Spacer(Modifier.height(8.dp))
+
+        if (selectedTab == 0) {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+            ) {
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                    FormBroker(cauHinh, onLuu)
+                }
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                    FormCamera(cauHinhCamera, trangThaiCam, onLuuCamera)
+                }
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                    FormThoiTiet(cauHinhThoiTiet, onLuuThoiTiet)
+                }
             }
-            SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
-                FormCamera(cauHinhCamera, trangThaiCam, onLuuCamera)
-            }
-            SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
-                FormThoiTiet(cauHinhThoiTiet, onLuuThoiTiet)
+        } else {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+            ) {
+                // Cot 1: Thong tin thiet bi & phien ban
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 16.dp) {
+                    ThongTinHeThong(currentVersion)
+                }
+
+                // Cot 2: Trung tam OTA Update
+                SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 16.dp) {
+                    FormOtaUpdate(
+                        currentVersion = currentVersion,
+                        otaStatus = otaStatus,
+                        onKiemTra = onKiemTraCapNhat,
+                        onCapNhat = onBatDauCapNhat,
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun TabButton(
+    text: String,
+    selected: Boolean,
+    highlight: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                when {
+                    selected -> SH.Blue
+                    highlight -> SH.Amber.copy(alpha = 0.2f)
+                    else -> Color.Transparent
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = SHType.Caption,
+            color = if (selected) Color.White else if (highlight) SH.Amber else SH.TextDim,
+            fontWeight = if (selected || highlight) FontWeight.Bold else FontWeight.Normal,
+        )
     }
 }
 
@@ -488,6 +585,271 @@ fun TrangThaiKetNoi(ketNoi: KetNoi) {
         is KetNoi.DangNoi -> StatusPill("Đang nối...", SH.Amber)
         is KetNoi.ChuaCauHinh -> StatusPill("Chưa khai báo broker", SH.TextOff)
         is KetNoi.Loi -> StatusPill("Lỗi kết nối", SH.Red)
+    }
+}
+
+// ---------------------------------------------------------------- He thong & OTA
+
+@Composable
+private fun ThongTinHeThong(currentVersion: String) {
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Thông tin thiết bị", style = SHType.CardTitle, color = SH.Text)
+        Text(
+            "Cấu hình phần cứng và thông số ứng dụng.",
+            style = SHType.Caption, color = SH.TextDim,
+        )
+        Spacer(Modifier.height(14.dp))
+
+        MucThongSo("Ứng dụng", "SmartHome Android")
+        MucThongSo("Phiên bản hiện tại", "v$currentVersion")
+        MucThongSo("Thiết bị", "Samsung Galaxy Tab A7 Lite")
+        MucThongSo("Độ phân giải UI", "1340 × 800 (Kiosk)")
+        MucThongSo("Kênh phát hành", "GitHub Releases OTA")
+        MucThongSo("Kho lưu trữ (Git)", "trungpq96dev/app_smart_home")
+
+        Spacer(Modifier.height(16.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(SH.Bg)
+                .padding(10.dp)
+        ) {
+            Column {
+                Text(
+                    "Lưu ý khi cập nhật:",
+                    style = SHType.Caption,
+                    color = SH.Amber,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Cần cấp quyền 'Cài đặt ứng dụng không rõ nguồn gốc' cho SmartHome 1 lần duy nhất trên máy tính bảng để hệ điều hành có thể cài đè bản mới.",
+                    style = SHType.Caption,
+                    color = SH.TextDim,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MucThongSo(nhan: String, giaTri: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(nhan, style = SHType.Caption, color = SH.TextDim)
+        Text(giaTri, style = SHType.Body, color = SH.Text, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun FormOtaUpdate(
+    currentVersion: String,
+    otaStatus: OtaStatus,
+    onKiemTra: () -> Unit,
+    onCapNhat: (ReleaseInfo) -> Unit,
+) {
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Cập nhật phần mềm (OTA)", style = SHType.CardTitle, color = SH.Text)
+                Text(
+                    "Kiểm tra và cập nhật trực tiếp từ kho lưu trữ Git.",
+                    style = SHType.Caption, color = SH.TextDim,
+                )
+            }
+
+            Button(
+                onClick = onKiemTra,
+                colors = ButtonDefaults.buttonColors(containerColor = SH.Card2),
+                shape = RoundedCornerShape(8.dp),
+                enabled = otaStatus !is OtaStatus.Checking && otaStatus !is OtaStatus.Downloading,
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(16.dp), tint = SH.Text)
+                Spacer(Modifier.width(6.dp))
+                Text("Kiểm tra ngay", style = SHType.Caption, color = SH.Text)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Trang thai hien tai
+        when (otaStatus) {
+            is OtaStatus.Checking -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Đang kết nối GitHub để kiểm tra phiên bản mới...", style = SHType.Body, color = SH.Blue)
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            Modifier.fillMaxWidth(0.6f).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                            color = SH.Blue,
+                            trackColor = SH.Border,
+                        )
+                    }
+                }
+            }
+
+            is OtaStatus.UpToDate -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Default.CheckCircle, color = SH.Green, size = 36.dp, iconSize = 20.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Ứng dụng đang ở phiên bản mới nhất!", style = SHType.Body, color = SH.Green, fontWeight = FontWeight.Bold)
+                            Text("Phiên bản hiện tại v$currentVersion đã là bản phát hành mới nhất trên Git.", style = SHType.Caption, color = SH.TextDim)
+                        }
+                    }
+                }
+            }
+
+            is OtaStatus.UpdateAvailable -> {
+                val info = otaStatus.info
+                val sizeMb = info.sizeBytes / (1024f * 1024f)
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconBadge(Icons.Default.SystemUpdate, color = SH.Blue, size = 36.dp, iconSize = 20.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("Phát hiện phiên bản mới: ${info.tagName}", style = SHType.Body, color = SH.Blue, fontWeight = FontWeight.Bold)
+                                if (sizeMb > 0) {
+                                    Text(String.format("Dung lượng: %.1f MB", sizeMb), style = SHType.Caption, color = SH.TextDim)
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { onCapNhat(info) },
+                            colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Tải & Cập nhật ngay", style = SHType.Body, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (info.notes.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("Nhật ký cập nhật (Changelog):", style = SHType.Caption, color = SH.TextDim)
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SH.Card)
+                                .padding(10.dp)
+                        ) {
+                            Text(info.notes, style = SHType.Body, color = SH.Text)
+                        }
+                    }
+                }
+            }
+
+            is OtaStatus.Downloading -> {
+                val percent = otaStatus.progressPercent
+                val downMb = otaStatus.bytesDownloaded / (1024f * 1024f)
+                val totalMb = otaStatus.totalBytes / (1024f * 1024f)
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Đang tải bản cập nhật...", style = SHType.Body, color = SH.Blue, fontWeight = FontWeight.Bold)
+                        Text("$percent%", style = SHType.Body, color = SH.Blue, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { percent / 100f },
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                        color = SH.Blue,
+                        trackColor = SH.Border,
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (totalMb > 0) String.format("Đã tải: %.1f / %.1f MB", downMb, totalMb)
+                        else "Đang kết nối...",
+                        style = SHType.Caption,
+                        color = SH.TextDim,
+                    )
+                }
+            }
+
+            is OtaStatus.Error -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp)
+                ) {
+                    Column {
+                        Text("Lỗi khi kiểm tra cập nhật:", style = SHType.Body, color = SH.Red, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(otaStatus.message, style = SHType.Caption, color = SH.TextDim)
+                    }
+                }
+            }
+
+            is OtaStatus.Idling, is OtaStatus.ReadyToInstall -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp)
+                ) {
+                    Text(
+                        "Bấm 'Kiểm tra ngay' để đối chiếu phiên bản đang chạy với kho GitHub.",
+                        style = SHType.Caption,
+                        color = SH.TextDim,
+                    )
+                }
+            }
+        }
     }
 }
 
