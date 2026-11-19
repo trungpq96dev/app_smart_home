@@ -1,5 +1,7 @@
 package vn.smarthome.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,27 +16,44 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.Tablet
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import vn.smarthome.data.DemoData
 import vn.smarthome.data.RoomUi
+import vn.smarthome.data.thoitiet.ThoiTietUi
+import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.ui.components.DemoBadge
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.ImagePlaceholder
@@ -43,6 +62,7 @@ import vn.smarthome.ui.components.QuickActionTile
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatTile
 import vn.smarthome.ui.components.StatusPill
+import vn.smarthome.ui.components.WeatherCard
 import vn.smarthome.ui.shell.rememberClock
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -60,10 +80,14 @@ import vn.smarthome.vm.HomeState
 @Composable
 fun HomeScreen(
     state: HomeState,
+    weather: ThoiTietUi,
+    wifi: WifiState = WifiState(),
     onSelectRoom: (Int) -> Unit,
     onOpenRoom: (String) -> Unit,
     onQuick: (String) -> Unit,
     onOpenStats: () -> Unit,
+    onRefreshWeather: () -> Unit,
+    onOpenWifi: () -> Unit = {},
 ) {
     val clock = rememberClock()
 
@@ -121,7 +145,7 @@ fun HomeScreen(
 
         Spacer(Modifier.height(Dim.CardGap))
 
-        // ---------- Hang giua: the phong | o thao tac nhanh ----------
+        // ---------- Hang giua: the phong | o thao tac nhanh | thoi tiet ----------
         Row(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
@@ -131,7 +155,7 @@ fun HomeScreen(
                 current = state.selectedRoom,
                 onPage = onSelectRoom,
                 onOpen = onOpenRoom,
-                modifier = Modifier.weight(1.3f).fillMaxHeight(),
+                modifier = Modifier.weight(1.25f).fillMaxHeight(),
             )
 
             Column(
@@ -156,32 +180,127 @@ fun HomeScreen(
                     }
                 }
             }
+
+            WeatherCard(
+                ui = weather,
+                onRefresh = onRefreshWeather,
+                modifier = Modifier.weight(1.1f).fillMaxHeight(),
+            )
         }
 
         Spacer(Modifier.height(Dim.CardGap))
 
-        // ---------- Dai trang thai duoi cung ----------
-        SmartCard(Modifier.fillMaxWidth().height(40.dp), padding = 9.dp, onClick = onOpenStats) {
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.CheckCircle, null,
-                    tint = SH.Green, modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    DemoData.systemStatus,
-                    style = SHType.Body,
-                    color = SH.Text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text("Xem chi tiết", style = SHType.Button, color = SH.Blue, maxLines = 1)
-                Spacer(Modifier.width(5.dp))
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward, null,
-                    tint = SH.Blue, modifier = Modifier.size(15.dp),
-                )
+        // ---------- Dai duoi: WiFi gia dinh + Thiet bi da ket noi ----------
+        Row(
+            Modifier.fillMaxWidth().height(110.dp),
+            horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+        ) {
+            // ---- Left card: WiFi gia dinh ----
+            SmartCard(
+                Modifier.weight(0.45f).fillMaxHeight(),
+                padding = 10.dp,
+            ) {
+                // Top row: icon + title + pill
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.Wifi, SH.Purple, size = 28.dp, iconSize = 15.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text("WiFi gia đình", style = SHType.CardTitle, color = SH.Text, modifier = Modifier.weight(1f), maxLines = 1)
+                    val online = wifi.info.isConnected
+                    StatusPill(if (online) "Đã kết nối" else "Mất kết nối", if (online) SH.Green else SH.Red)
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // Middle: SSID + Security
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Lock, null, tint = SH.TextDim, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("SSID: ${wifi.info.ssid}", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Bảo mật: ${wifi.info.security}", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // Bottom: status left + button right
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val online = wifi.info.isConnected
+                    Icon(
+                        if (online) Icons.Filled.CheckCircle else Icons.Filled.CheckCircle,
+                        null,
+                        tint = if (online) SH.Green else SH.Red,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (online) "Đang hoạt động ổn định" else "Mất kết nối Internet",
+                        style = SHType.Caption,
+                        color = if (online) SH.Green else SH.Red,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Tốc độ: ${wifi.info.speedMbps} Mbps", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Filled.SignalCellularAlt, null, tint = SH.Green, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = onOpenWifi,
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+                        contentPadding = ButtonDefaults.ContentPadding.let {
+                            androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        },
+                    ) {
+                        Text("Cài đặt WiFi", style = SHType.Caption, color = SH.Text, maxLines = 1)
+                    }
+                }
+            }
+
+            // ---- Right card: Thiet bi da ket noi ----
+            SmartCard(
+                Modifier.weight(0.55f).fillMaxHeight(),
+                padding = 10.dp,
+            ) {
+                // Header row
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Devices, null, tint = SH.Blue, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Thiết bị đã kết nối (${wifi.devices.size})",
+                        style = SHType.CardTitle,
+                        color = SH.Text,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                    )
+                    Text(
+                        "Xem tất cả →",
+                        style = SHType.Caption,
+                        color = SH.Blue,
+                        maxLines = 1,
+                        modifier = Modifier.clickable(onClick = onOpenWifi),
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Device icons row
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    val hienThi = wifi.devices.take(7)
+                    val mauIcon = listOf(SH.Blue, SH.Cyan, SH.Purple, SH.Green, SH.Amber, SH.Amber, SH.Teal)
+                    hienThi.forEachIndexed { idx, dev ->
+                        WifiDeviceIcon(dev.icon, dev.name.take(10), mauIcon[idx % mauIcon.size])
+                    }
+                    if (wifi.devices.size > 7) {
+                        WifiDeviceIcon(Icons.Filled.Add, "Khác (${wifi.devices.size - 7})", SH.TextDim)
+                    }
+                }
             }
         }
     }
@@ -267,12 +386,30 @@ private fun RoomPager(
     }
 }
 
+/** Icon thiet bi nho trong card "Thiet bi da ket noi". */
+@Composable
+private fun WifiDeviceIcon(icon: ImageVector, label: String, color: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(17.dp))
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(label, style = SHType.Caption, color = SH.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Preview(widthDp = Dim.DesignW - 164 - 24, heightDp = Dim.DesignH - 24, showBackground = true)
 @Composable
 private fun HomePreview() {
     SmartHomeTheme {
         Box(Modifier.fillMaxSize().padding(0.dp)) {
-            HomeScreen(HomeState(), {}, {}, {}, {})
+            HomeScreen(HomeState(), ThoiTietUi.DangTai, WifiState(), {}, {}, {}, {}, {})
         }
     }
 }

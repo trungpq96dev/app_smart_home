@@ -31,8 +31,12 @@ import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.CauHinhCameraStore
 import vn.smarthome.data.camera.Go2rtc
 import vn.smarthome.data.camera.TrangThaiCam
+import vn.smarthome.data.thoitiet.CauHinhThoiTiet
+import vn.smarthome.data.thoitiet.CauHinhThoiTietStore
 import vn.smarthome.data.thoitiet.OpenMeteo
 import vn.smarthome.data.thoitiet.ThoiTietUi
+import vn.smarthome.data.server.ServerState
+import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.ui.theme.SH
 
 data class HomeState(
@@ -56,6 +60,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CauHinhStore(app)
     private val storeCam = CauHinhCameraStore(app)
+    private val storeThoiTiet = CauHinhThoiTietStore(app)
     private val mqtt = MqttDien()
 
     private val _state = MutableStateFlow(HomeState())
@@ -64,7 +69,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** So dien that. Rong cho toi khi broker tra retained ve. */
     val dien: StateFlow<DienState> = mqtt.soLieu
 
-    /** Trang thai duong truyen toi EMQX. */
+    /** Trang thai WiFi doc tu broker MQTT (serverubuntu). */
+    val wifi: StateFlow<WifiState> = mqtt.wifi
+
+    /** Thong tin may chu serverubuntu doc tu broker MQTT (chi xem, khong dieu khien). */
+    val server: StateFlow<ServerState> = mqtt.server
+
+    /** Trang thai duong truyen toi EMQX/Mosquitto. */
     val ketNoi: StateFlow<KetNoi> = mqtt.ketNoi
 
     val cauHinh: StateFlow<CauHinhMqtt> = store.cauHinh
@@ -81,6 +92,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val _thoiTiet = MutableStateFlow<ThoiTietUi>(ThoiTietUi.DangTai)
     val thoiTiet: StateFlow<ThoiTietUi> = _thoiTiet.asStateFlow()
 
+    /** Dia diem thoi tiet nguoi dung chon trong Cai dat. */
+    val cauHinhThoiTiet: StateFlow<CauHinhThoiTiet> = storeThoiTiet.cauHinh
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhThoiTiet())
+
     init {
         // Doi cau hinh la noi lai. distinctUntilChanged de luu cau hinh y het
         // cu khong lam dut ket noi dang chay.
@@ -94,6 +109,47 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             storeCam.cauHinh.distinctUntilChanged().collectLatest { c -> doCamera(c) }
         }
+        // Theo dia diem da chon: doi noi thi collectLatest bo vong lap cu, ha the
+        // ve "Dang tai" (so cu la cua noi khac, khong con dung) roi lap lai tu dau.
+        // 15 phut moi lan la du - Open-Meteo cung chi cap nhat theo gio.
+        viewModelScope.launch {
+            storeThoiTiet.cauHinh.distinctUntilChanged().collectLatest { c ->
+                _thoiTiet.value = ThoiTietUi.DangTai
+                while (true) {
+                    taiThoiTiet(c)
+                    delay(15 * 60 * 1000L)
+                }
+            }
+        }
+    }
+
+    // ---- Thoi tiet that qua Open-Meteo ----
+
+    fun luuCauHinhThoiTiet(c: CauHinhThoiTiet) {
+        viewModelScope.launch { storeThoiTiet.luu(c) }
+    }
+
+    /** Nguoi dung bam nut tai lai tren the thoi tiet - giu dia diem dang chon. */
+    fun taiLaiThoiTiet() {
+        viewModelScope.launch { taiThoiTiet(cauHinhThoiTiet.value) }
+    }
+
+    /**
+     * Goi Open-Meteo mot lan cho dia diem [c].
+     *
+     * Chi ha ve "Dang tai" khi CHUA tung co so; neu da co roi ma lan nay hong
+     * thi GIU nguyen so cu chu khong lam the nhay ve trang/loi - giong cach
+     * [doCamera] khong bia so mau khi hong.
+     */
+    private suspend fun taiThoiTiet(c: CauHinhThoiTiet) {
+        if (_thoiTiet.value !is ThoiTietUi.Co) _thoiTiet.value = ThoiTietUi.DangTai
+        OpenMeteo.layThoiTiet(c.lat, c.lon, c.ten)
+            .onSuccess { _thoiTiet.value = ThoiTietUi.Co(it) }
+            .onFailure { e ->
+                if (_thoiTiet.value !is ThoiTietUi.Co) {
+                    _thoiTiet.value = ThoiTietUi.Loi(OpenMeteo.dienGiaiLoi(e))
+                }
+            }
     }
 
     // ---- Camera that qua go2rtc ----
@@ -193,4 +249,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun setStatKind(kind: StatKind) = _state.update { it.copy(statKind = kind) }
 
     fun setStatRange(range: StatRange) = _state.update { it.copy(statRange = range) }
+
+    // ---- WiFi ----
+
+    fun rebootWifi() = mqtt.guiLenhWifi("reboot")
 }

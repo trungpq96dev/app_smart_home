@@ -47,6 +47,7 @@ import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.DienTopic
 import vn.smarthome.data.dien.KetNoi
+import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatusPill
 import vn.smarthome.ui.shell.TopBar
@@ -56,13 +57,14 @@ import vn.smarthome.ui.theme.SHType
 import vn.smarthome.ui.theme.SmartHomeTheme
 
 /**
- * Man Cai dat - hai duong noi ra ngoai cua app, moi duong mot cot:
+ * Man Cai dat - ba duong noi ra ngoai cua app, moi duong mot cot:
  *
  *  - Trai: broker EMQX, de doc so dien that.
- *  - Phai: go2rtc, de lay hinh camera.
+ *  - Giua: go2rtc, de lay hinh camera.
+ *  - Phai: Open-Meteo, de lay thoi tiet (chi can toa do, khong co gi bi mat).
  *
- * Hai cot chu khong xep chong nhau: man hinh chi cao 601dp, xep chong thi
- * phan camera nam duoi day va phai cuon mot doan dai moi thay.
+ * Ba cot chu khong xep chong nhau: man hinh chi cao 601dp, xep chong thi
+ * phan duoi nam khuat va phai cuon mot doan dai moi thay.
  *
  * Mat khau go o day nam trong DataStore cua may tinh bang va da loai khoi
  * sao luu dam may. Ma nguon KHONG nhung san mat khau nao, vi no nam tren
@@ -74,8 +76,10 @@ fun SettingsScreen(
     ketNoi: KetNoi,
     cauHinhCamera: CauHinhCamera,
     trangThaiCam: TrangThaiCam,
+    cauHinhThoiTiet: CauHinhThoiTiet,
     onLuu: (CauHinhMqtt) -> Unit,
     onLuuCamera: (CauHinhCamera) -> Unit,
+    onLuuThoiTiet: (CauHinhThoiTiet) -> Unit,
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -94,6 +98,9 @@ fun SettingsScreen(
             }
             SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
                 FormCamera(cauHinhCamera, trangThaiCam, onLuuCamera)
+            }
+            SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                FormThoiTiet(cauHinhThoiTiet, onLuuThoiTiet)
             }
         }
     }
@@ -277,6 +284,86 @@ private fun FormCamera(
     }
 }
 
+// ---------------------------------------------------------------- Thoi tiet
+
+@Composable
+private fun FormThoiTiet(cauHinh: CauHinhThoiTiet, onLuu: (CauHinhThoiTiet) -> Unit) {
+    var ten by remember(cauHinh.ten) { mutableStateOf(cauHinh.ten) }
+    var lat by remember(cauHinh.lat) { mutableStateOf(cauHinh.lat.toString()) }
+    var lon by remember(cauHinh.lon) { mutableStateOf(cauHinh.lon.toString()) }
+
+    // Toa do nhap vao doc duoc khong - de bao do (vuot khoang hop le).
+    val la = lat.trim().toDoubleOrNull()
+    val lo = lon.trim().toDoubleOrNull()
+    val hopLe = ten.isNotBlank() &&
+        la != null && la in -90.0..90.0 &&
+        lo != null && lo in -180.0..180.0
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Thời tiết — Open-Meteo", style = SHType.CardTitle, color = SH.Text)
+        Text(
+            "Lấy thời tiết thật cho Trang chủ. Nguồn miễn phí, không cần API key.",
+            style = SHType.Caption, color = SH.TextDim,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        O("Tên địa điểm", ten, { ten = it }, "vd: Hà Nội")
+        Spacer(Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) {
+                O("Vĩ độ (lat)", lat, { lat = it }, "21.0278")
+            }
+            Box(Modifier.weight(1f)) {
+                O("Kinh độ (lon)", lon, { lon = it }, "105.8342")
+            }
+        }
+        Text(
+            "Toạ độ tra trên Google Maps: bấm giữ một điểm, cặp số hiện ra là vĩ độ, kinh độ.",
+            style = SHType.Caption, color = SH.TextDim,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (!hopLe) {
+            Text(
+                "Vĩ độ trong khoảng -90..90, kinh độ -180..180. Sai thì giữ nguyên địa điểm cũ.",
+                style = SHType.Caption, color = SH.Amber,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                onLuu(
+                    CauHinhThoiTiet(
+                        ten = ten,
+                        lat = la ?: cauHinh.lat,
+                        lon = lo ?: cauHinh.lon,
+                    )
+                )
+            },
+            enabled = hopLe,
+            colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+            modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+        ) {
+            Text("Lưu và tải lại thời tiết", style = SHType.Button, color = Color.White)
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Ghi(
+            "Vì sao chỉ cần toạ độ",
+            "Open-Meteo nhận thẳng vĩ độ/kinh độ nên không phải khai tên thành phố. " +
+                "Tên địa điểm ở trên chỉ để hiện trên thẻ, không ảnh hưởng số liệu.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Mặc định Hà Nội",
+            "Để trống hoặc nhập sai thì app vẫn lấy thời tiết Hà Nội. Đổi địa điểm " +
+                "xong là thẻ ở Trang chủ tự tải lại ngay.",
+        )
+    }
+}
+
 // ---------------------------------------------------------------- Chung
 
 @Composable
@@ -412,7 +499,8 @@ private fun SettingsPreview() {
             SettingsScreen(
                 CauHinhMqtt(), KetNoi.ChuaCauHinh,
                 CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                {}, {}, {},
+                CauHinhThoiTiet(),
+                {}, {}, {}, {},
             )
         }
     }

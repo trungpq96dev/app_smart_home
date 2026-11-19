@@ -2,7 +2,9 @@ package vn.smarthome.ui.shell
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
@@ -21,7 +23,9 @@ enum class Dest(
     CAMERA("camera", "Camera", Icons.Filled.Videocam, true),
     SENSORS("sensors", "Cảm biến", Icons.Filled.Sensors, false),
     AUTOMATION("automation", "Tự động hóa", Icons.Filled.AutoAwesome, false),
-    SETTINGS("settings", "Cài đặt", Icons.Filled.Settings, false);
+    SETTINGS("settings", "Cài đặt", Icons.Filled.Settings, false),
+    SERVER("server", "Server", Icons.Filled.Dns, true),
+    STATS("stats", "Thống kê", Icons.Filled.BarChart, true);
 
     companion object {
         fun from(route: String?) = entries.firstOrNull { it.route == route } ?: HOME

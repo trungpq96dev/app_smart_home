@@ -12,6 +12,10 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import vn.smarthome.data.server.ServerState
+import vn.smarthome.data.server.ServerTopic
+import vn.smarthome.data.wifi.WifiState
+import vn.smarthome.data.wifi.WifiTopic
 import kotlin.random.Random
 
 /** Trang thai duong truyen toi EMQX. */
@@ -36,6 +40,12 @@ class MqttDien {
 
     private val _soLieu = MutableStateFlow(DienState())
     val soLieu: StateFlow<DienState> = _soLieu.asStateFlow()
+
+    private val _wifi = MutableStateFlow(WifiState())
+    val wifi: StateFlow<WifiState> = _wifi.asStateFlow()
+
+    private val _server = MutableStateFlow(ServerState())
+    val server: StateFlow<ServerState> = _server.asStateFlow()
 
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
@@ -94,7 +104,13 @@ class MqttDien {
 
             override fun messageArrived(topic: String, message: MqttMessage) {
                 val payload = String(message.payload, Charsets.UTF_8)
-                _soLieu.update { DienState.gop(it, topic, payload) }
+                if (topic.startsWith("dien/")) {
+                    _soLieu.update { DienState.gop(it, topic, payload) }
+                } else if (topic.startsWith("wifi/")) {
+                    _wifi.update { WifiState.gop(it, topic, payload) }
+                } else if (topic.startsWith("server/")) {
+                    _server.update { ServerState.gop(it, topic, payload) }
+                }
             }
 
             override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
@@ -113,32 +129,41 @@ class MqttDien {
     }
 
     /**
-     * Subscribe `dien/#` va KIEM TRA QoS duoc cap.
-     *
-     * EMQX tu choi subscribe bang cach tra granted QoS = 0x80 chu khong nem
-     * loi. Khong kiem thi app nam im khong so lieu, nguoi dung di lung sua
-     * dia chi broker trong khi loi that nam o ACL. Tai lieu ban giao muc 4
-     * buoc 3 da canh bao dung cho nay.
+     * Subscribe `dien/#` va `wifi/#` tu broker.
      */
     private fun dangKyTopic(c: MqttAsyncClient) {
         try {
-            c.subscribe(DienTopic.GOC, 1, null, object : org.eclipse.paho.client.mqttv3.IMqttActionListener {
+            val topics = arrayOf(DienTopic.GOC, WifiTopic.GOC, ServerTopic.GOC)
+            val qoss = intArrayOf(1, 1, 1)
+            c.subscribe(topics, qoss, null, object : org.eclipse.paho.client.mqttv3.IMqttActionListener {
                 override fun onSuccess(token: IMqttToken?) {
                     val cap = token?.grantedQos
                     if (cap != null && cap.isNotEmpty() && cap[0] == 0x80) {
                         _ketNoi.value = KetNoi.Loi(
                             "Broker từ chối cho đọc " + DienTopic.GOC +
-                                ". Cần cấp quyền subscribe dien/# cho tài khoản này trên EMQX."
+                                ". Cần cấp quyền subscribe cho tài khoản này trên Mosquitto."
                         )
                     }
                 }
 
                 override fun onFailure(token: IMqttToken?, e: Throwable?) {
-                    _ketNoi.value = KetNoi.Loi("Không đăng ký được " + DienTopic.GOC + ": " + (e?.message ?: ""))
+                    _ketNoi.value = KetNoi.Loi("Không đăng ký được topic: " + (e?.message ?: ""))
                 }
             })
         } catch (e: MqttException) {
-            _ketNoi.value = KetNoi.Loi("Không đăng ký được " + DienTopic.GOC + ": " + (e.message ?: ""))
+            _ketNoi.value = KetNoi.Loi("Không đăng ký được topic: " + (e.message ?: ""))
+        }
+    }
+
+    /** Gui lenh dieu khien WiFi (vi du 'reboot' modem). */
+    fun guiLenhWifi(lenh: String) {
+        client?.let { c ->
+            if (c.isConnected) {
+                try {
+                    val msg = MqttMessage(lenh.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+                    c.publish(WifiTopic.CMD, msg)
+                } catch (_: Exception) {}
+            }
         }
     }
 

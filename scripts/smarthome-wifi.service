@@ -1,0 +1,20 @@
+[Unit]
+Description=SmartHome WiFi Collector for TP-Link TL-WR840N
+After=network.target mosquitto.service
+
+[Service]
+Type=simple
+User=serverubuntu
+WorkingDirectory=/home/serverubuntu/wifi
+Environment="ROUTER_IP=192.168.0.1"
+Environment="ROUTER_USER=admin"
+Environment="ROUTER_PASS=admin"
+Environment="MQTT_BROKER=127.0.0.1"
+Environment="MQTT_PORT=1883"
+Environment="POLL_INTERVAL=15"
+ExecStart=/usr/bin/python3 /home/serverubuntu/wifi/wifi_collector.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

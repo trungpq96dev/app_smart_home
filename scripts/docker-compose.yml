@@ -1,0 +1,27 @@
+name: wifi-collector
+
+services:
+  wifi-collector:
+    build: .
+    image: wifi-collector:1.0
+    container_name: wifi-collector
+    restart: unless-stopped
+
+    # Mat khau router + MQTT nam trong .env, khong nhung vao anh.
+    env_file:
+      - .env
+
+    # Bridge mac dinh du: container goi ra router LAN (192.168.0.1) va
+    # Mosquitto LAN (192.168.0.50) deu qua host routing. Khong mo cong vao.
+
+    mem_limit: 96m
+    cpus: 0.5
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "3"

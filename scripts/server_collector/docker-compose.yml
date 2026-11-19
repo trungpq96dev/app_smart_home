@@ -1,0 +1,42 @@
+name: server-collector
+
+services:
+  server-collector:
+    build: .
+    image: server-collector:1.0
+    container_name: server-collector
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    # Doc so cua HOST, khong phai cua container:
+    #  - pid: host        -> thay toan bo tien trinh host (uptime, process)
+    #  - network_mode host -> doc toc do mang that cua server + goi thang
+    #                         Mosquitto 127.0.0.1 tren host
+    pid: host
+    network_mode: host
+
+    # Chay root de doc /sys (nhiet do) va Docker socket. Tat ca mount deu
+    # READ-ONLY; khong cap them dac quyen.
+    user: "0:0"
+    security_opt:
+      - no-new-privileges:true
+
+    volumes:
+      # Host root: lay os-release, hostname, /proc/cpuinfo va dung luong o dia that.
+      - /:/rootfs:ro
+      # Cam bien nhiet do (/sys/class/hwmon). Khong co thi nhiet do = null.
+      - /sys:/sys:ro
+      # Liet ke container (chi doc). Bo dong nay neu khong muon lo socket ->
+      # the Docker se trong, phan con lai van chay.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    mem_limit: 128m
+    cpus: 0.5
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "3"

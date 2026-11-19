@@ -89,7 +89,7 @@ class ShellSmokeTest {
     @Test
     fun tab_dien_nang_khong_bia_so_khi_chua_co_du_lieu() {
         start()
-        rule.onNodeWithText("Xem chi tiết").performClick()
+        rule.onNodeWithText("Thống kê").performClick()
         rule.mainClock.advanceTimeByFrame()
         // Chua khai bao broker => khong duoc hien so mau nao, phai noi ro ly do.
         rule.onNodeWithText("Chưa có số liệu điện").assertIsDisplayed()
@@ -97,9 +97,18 @@ class ShellSmokeTest {
     }
 
     @Test
+    fun muc_thong_ke_o_sidebar_mo_duoc_man_thong_ke() {
+        start()
+        // Muc "Thống kê" moi o sidebar (duoi Cai dat) phai mo man Thong ke.
+        rule.onNodeWithText("Thống kê").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Điện năng tiêu thụ").assertIsDisplayed()
+    }
+
+    @Test
     fun mo_duoc_man_thong_ke_va_doi_duoc_tab() {
         start()
-        rule.onNodeWithText("Xem chi tiết").performClick()
+        rule.onNodeWithText("Thống kê").performClick()
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Điện năng tiêu thụ").assertIsDisplayed()
 
@@ -107,6 +116,16 @@ class ShellSmokeTest {
         rule.onNodeWithText("Gas").performClick()
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Mức gas còn lại").assertIsDisplayed()
+    }
+
+    @Test
+    fun muc_server_o_sidebar_mo_duoc_man_server() {
+        start()
+        // Muc "Server" moi o sidebar (duoi Cai dat, tren Thong ke) phai mo man Server.
+        rule.onNodeWithText("Server").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Máy chủ serverubuntu").assertIsDisplayed()
+        rule.onNodeWithText("Tài nguyên").assertIsDisplayed()
     }
 
     @Test

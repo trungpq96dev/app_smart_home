@@ -25,11 +25,13 @@ import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
+import vn.smarthome.ui.screens.ServerScreen
 import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
+import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.data.dien.NgayKwh
@@ -142,6 +144,13 @@ class ScreenshotTest {
     }
 
     @Test
+    fun chup_server() {
+        shoot("8-server") {
+            Content { ServerScreen(server = vn.smarthome.data.server.ServerState(), onBack = {}) }
+        }
+    }
+
+    @Test
     fun chup_thiet_bi() {
         shoot("7-thiet-bi") {
             Content { DevicesScreen(HomeState(), {}, {}) }
@@ -155,7 +164,8 @@ class ScreenshotTest {
                 SettingsScreen(
                     CauHinhMqtt(), KetNoi.ChuaCauHinh,
                     CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                    {}, {}, {},
+                    CauHinhThoiTiet(),
+                    {}, {}, {}, {},
                 )
             }
         }

@@ -1,0 +1,5 @@
+.env
+*.env
+!cau_hinh.mau.env
+__pycache__/
+*.pyc

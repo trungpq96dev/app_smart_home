@@ -31,8 +31,10 @@ import vn.smarthome.ui.screens.ChiTietDienScreen
 import vn.smarthome.ui.screens.HomeScreen
 import vn.smarthome.ui.screens.PlaceholderScreen
 import vn.smarthome.ui.screens.RoomDetailScreen
+import vn.smarthome.ui.screens.ServerScreen
 import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
+import vn.smarthome.ui.screens.WifiScreen
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.vm.HomeViewModel
@@ -52,11 +54,15 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val cauHinh by vm.cauHinh.collectAsStateWithLifecycle()
     val cauHinhCamera by vm.cauHinhCamera.collectAsStateWithLifecycle()
     val trangThaiCam by vm.trangThaiCam.collectAsStateWithLifecycle()
+    val thoiTiet by vm.thoiTiet.collectAsStateWithLifecycle()
+    val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
+    val wifi by vm.wifi.collectAsStateWithLifecycle()
+    val server by vm.server.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
-    var showStats by rememberSaveable { mutableStateOf(false) }
     var showChiTietDien by rememberSaveable { mutableStateOf(false) }
+    var showWifi by rememberSaveable { mutableStateOf(false) }
 
     val dest = Dest.from(current)
     val snackbar = remember { SnackbarHostState() }
@@ -64,11 +70,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
     // Nut Back cua may: thoat man con truoc, chua thoat app ngay.
-    BackHandler(enabled = openRoom != null || showChiTietDien || showStats || dest != Dest.HOME) {
+    BackHandler(enabled = openRoom != null || showChiTietDien || showWifi || dest != Dest.HOME) {
         when {
             openRoom != null -> openRoom = null
             showChiTietDien -> showChiTietDien = false
-            showStats -> showStats = false
+            showWifi -> showWifi = false
             else -> current = Dest.HOME.route
         }
     }
@@ -80,8 +86,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                 onSelect = { d ->
                     current = d.route
                     openRoom = null
-                    showStats = false
                     showChiTietDien = false
+                    showWifi = false
                 },
             )
 
@@ -110,11 +116,25 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onBack = { showChiTietDien = false },
                     )
 
-                    showStats -> StatsScreen(
+                    showWifi -> WifiScreen(
+                        wifi = wifi,
+                        onBack = { showWifi = false },
+                        onReboot = {
+                            vm.rebootWifi()
+                            toast("Đã gửi lệnh khởi động lại modem TP-Link!")
+                        },
+                    )
+
+                    dest == Dest.SERVER -> ServerScreen(
+                        server = server,
+                        onBack = { current = Dest.HOME.route },
+                    )
+
+                    dest == Dest.STATS -> StatsScreen(
                         state = state,
                         dien = dien,
                         ketNoi = ketNoi,
-                        onBack = { showStats = false },
+                        onBack = { current = Dest.HOME.route },
                         onKind = vm::setStatKind,
                         onRange = vm::setStatRange,
                         onXemChiTiet = { showChiTietDien = true },
@@ -122,10 +142,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
                     dest == Dest.HOME -> HomeScreen(
                         state = state,
+                        weather = thoiTiet,
+                        wifi = wifi,
                         onSelectRoom = vm::selectRoom,
                         onOpenRoom = { id -> openRoom = id },
                         onQuick = vm::toggleQuick,
-                        onOpenStats = { showStats = true },
+                        onOpenStats = { current = Dest.STATS.route },
+                        onRefreshWeather = vm::taiLaiThoiTiet,
+                        onOpenWifi = { showWifi = true },
                     )
 
                     dest == Dest.SETTINGS -> SettingsScreen(
@@ -133,8 +157,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         ketNoi = ketNoi,
                         cauHinhCamera = cauHinhCamera,
                         trangThaiCam = trangThaiCam,
+                        cauHinhThoiTiet = thoiTietCauHinh,
                         onLuu = vm::luuCauHinh,
                         onLuuCamera = vm::luuCauHinhCamera,
+                        onLuuThoiTiet = vm::luuCauHinhThoiTiet,
                         onBack = { current = Dest.HOME.route },
                     )
 

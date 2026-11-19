@@ -2,15 +2,30 @@ package vn.smarthome.data
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Bed
 import androidx.compose.material.icons.filled.Blinds
 import androidx.compose.material.icons.filled.DoorFront
+import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Grass
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Kitchen
+import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Stairs
+import androidx.compose.material.icons.filled.Tablet
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Weekend
+import vn.smarthome.data.server.ServerContainer
+import vn.smarthome.data.server.ServerInfo
+import vn.smarthome.data.server.ServerMetric
+import vn.smarthome.data.wifi.WifiDevice
+import vn.smarthome.data.wifi.WifiInfo
 import vn.smarthome.ui.theme.SH
 import kotlin.math.abs
 import kotlin.random.Random
@@ -161,4 +176,38 @@ object DemoData {
         val s = n.toString().reversed().chunked(3).joinToString(".").reversed()
         return "$s đ"
     }
+
+    // ---- WiFi ----
+    fun wifiInfo(): WifiInfo = WifiInfo()
+
+    fun wifiDevices(): List<WifiDevice> = listOf(
+        WifiDevice("phone", "Điện thoại của tôi", Icons.Filled.PhoneAndroid, "192.168.1.101", true, 12.4f, 2.1f),
+        WifiDevice("laptop", "Laptop văn phòng", Icons.Filled.Laptop, "192.168.1.102", true, 6.8f, 1.2f),
+        WifiDevice("tv", "Smart TV", Icons.Filled.Tv, "192.168.1.103", true, 3.1f, 0.6f),
+        WifiDevice("camera", "Camera IP", Icons.Filled.Videocam, "192.168.1.104", true, 1.2f, 0.3f),
+        WifiDevice("speaker", "Loa AI", Icons.Filled.Speaker, "192.168.1.105", true, 0.8f, 0.2f),
+        WifiDevice("light", "Đèn thông minh", Icons.Filled.Lightbulb, "192.168.1.106", true, 0.1f, 0.05f),
+        WifiDevice("tablet", "Tablet", Icons.Filled.Tablet, "192.168.1.107", false, 0.0f, 0.0f),
+        WifiDevice("other1", "Khác", Icons.Filled.Add, "192.168.1.108", false, 0.0f, 0.0f),
+    )
+
+    /** 24 gia tri mo phong luu luong mang theo gio (MB). */
+    fun wifiUsage24h(): List<Float> = listOf(
+            1.2f, 0.8f, 0.4f, 0.3f, 0.2f, 0.5f,   // 00-05h: dem, it dung
+            2.1f, 5.4f, 8.2f, 7.6f, 6.3f, 5.8f,     // 06-11h: sang, tang dan
+            4.2f, 3.9f, 5.1f, 6.7f, 7.8f, 9.2f,     // 12-17h: chieu
+            10.5f, 11.2f, 9.8f, 7.4f, 4.6f, 2.3f,   // 18-23h: toi, dinh roi giam
+    )
+
+    // ---- Server (serverubuntu) ----
+    fun serverInfo(): ServerInfo = ServerInfo()
+
+    fun serverMetric(): ServerMetric = ServerMetric()
+
+    fun serverContainers(): List<ServerContainer> = listOf(
+        ServerContainer("mosquitto", "eclipse-mosquitto:2", "running", "Up 3 days", Icons.Filled.Hub),
+        ServerContainer("dien-evn", "dien-evn:1.0", "running", "Up 3 days", Icons.Filled.ElectricBolt),
+        ServerContainer("wifi-collector", "wifi-collector:1.0", "running", "Up 2 days", Icons.Filled.Router),
+        ServerContainer("go2rtc", "alexxit/go2rtc", "running", "Up 3 days", Icons.Filled.Videocam),
+    )
 }
