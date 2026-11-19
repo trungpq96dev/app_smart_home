@@ -51,7 +51,69 @@ data class WifiDevice(
     val isOnline: Boolean,
     val downloadMB: Float,
     val uploadMB: Float,
+    val mac: String = "",
+    val brand: String = "",
+    val type: String = "",       // "Điện thoại", "Laptop", "Máy tính", "Tablet", "Smart TV", "IoT"
+    val band: String = "5GHz",   // "5GHz" or "2.4GHz"
+    val isNew: Boolean = false,
+    val trusted: Boolean = false,
+    val blocked: Boolean = false,
+    val signal: String = "",     // e.g. "-42 dBm"
 )
+
+// ── Security tab models ──────────────────────────────────────────────
+
+/** Thiet bi la khong nhan dien duoc. */
+data class UnknownDevice(
+    val id: String,
+    val name: String,
+    val ip: String,
+    val mac: String,
+    val time: String,
+    val reason: String,
+)
+
+/** Mot dong nhat ky ket noi. */
+data class ConnectionLog(
+    val time: String,
+    val date: String,
+    val device: String,
+    val action: String,
+    val type: String,  // "success", "warning", "danger", "info"
+)
+
+/** Mot tuy chon bao mat. */
+data class SecuritySetting(
+    val key: String,
+    val title: String,
+    val desc: String,
+    val enabled: Boolean,
+)
+
+// ── Stats tab models ─────────────────────────────────────────────────
+
+/** Du lieu thong ke su dung cho mot khoang thoi gian (ngay / tuan / thang). */
+data class StatsDataset(
+    val title: String,
+    val downLabel: String, val downVal: String, val downSub: String,
+    val upLabel: String, val upVal: String, val upSub: String,
+    val totalLabel: String, val totalVal: String, val totalSub: String,
+    val peakVal: String, val peakSub: String,
+    val labels: List<String>,
+    val down: List<Float>,
+    val up: List<Float>,
+    val categories: List<Int>,  // percentages for [PC/Laptop, Phone/Tablet, Smart TV, IoT]
+)
+
+// ── Advanced tab models ──────────────────────────────────────────────
+
+/** Muc nhieu kenh WiFi. */
+data class ChannelNoise(
+    val channel: Int,
+    val noise: Int,  // percentage 0-100
+)
+
+// ── Aggregate state ──────────────────────────────────────────────────
 
 /** Trang thai toan bo man WiFi (ho tro ca du lieu mau va du lieu that tu MQTT). */
 data class WifiState(
@@ -61,6 +123,16 @@ data class WifiState(
     val trangThai: String = "ok",
     val capNhat: String? = null,
     val isRealData: Boolean = false,
+    // Security tab
+    val unknownDevices: List<UnknownDevice> = DemoData.wifiUnknownDevices(),
+    val connectionLogs: List<ConnectionLog> = DemoData.wifiConnectionLogs(),
+    val securitySettings: List<SecuritySetting> = DemoData.wifiSecuritySettings(),
+    // Stats tab
+    val statsDay: StatsDataset = DemoData.wifiStatsDay(),
+    val statsWeek: StatsDataset = DemoData.wifiStatsWeek(),
+    val statsMonth: StatsDataset = DemoData.wifiStatsMonth(),
+    // Advanced tab
+    val channelNoise: List<ChannelNoise> = DemoData.wifiChannelNoise(),
 ) {
     companion object {
         fun gop(cur: WifiState, topic: String, payload: String): WifiState {
@@ -99,7 +171,15 @@ data class WifiState(
                                     name = name,
                                     icon = doIcon(name),
                                     ip = o.optString("ip", ""),
+                                    mac = o.optString("mac", ""),
+                                    brand = o.optString("brand", ""),
+                                    type = o.optString("type", ""),
+                                    band = o.optString("band", "5GHz"),
                                     isOnline = o.optBoolean("online", true),
+                                    isNew = o.optBoolean("is_new", false),
+                                    trusted = o.optBoolean("trusted", false),
+                                    blocked = o.optBoolean("blocked", false),
+                                    signal = o.optString("signal", ""),
                                     downloadMB = o.optDouble("download_mb", 0.0).toFloat(),
                                     uploadMB = o.optDouble("upload_mb", 0.0).toFloat(),
                                 )
