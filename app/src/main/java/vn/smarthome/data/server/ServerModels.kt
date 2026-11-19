@@ -19,6 +19,9 @@ object ServerTopic {
     const val INFO = "server/info"
     const val METRICS = "server/metrics"
     const val DOCKER = "server/docker"
+    const val NHIET_DO = "server/nhietdo"
+    const val DIEN_NANG = "server/diennang"
+    const val DIEN_NANG_NGAY = "server/diennang_ngay"
     const val CAP_NHAT = "server/capnhat"
 }
 
@@ -62,11 +65,41 @@ data class ServerContainer(
     val icon: ImageVector,
 )
 
+/** Mot cam bien nhiet do. */
+data class ServerTemp(
+    val label: String,
+    val tempC: Float,
+)
+
+/** Dien nang: pin + RAPL CPU. null = khong doc duoc (khong bia). */
+data class ServerPower(
+    val batVoltageV: Float? = 12.13f,
+    val batCurrentA: Float? = 0f,
+    val batPowerW: Float? = 0f,
+    val batStatus: String? = "Full",
+    val cpuPackageW: Float? = 4.2f,
+    val cpuCoreW: Float? = 2.1f,
+    val cpuUncoreW: Float? = 0f,
+)
+
+/** Dien nang CPU + khoang nhiet do trong mot ngay. */
+data class ServerDay(
+    val date: String,
+    val wh: Float,
+    val tempMin: Float?,
+    val tempMax: Float?,
+)
+
 /** Trang thai toan bo man Server (ho tro ca du lieu mau va du lieu that tu MQTT). */
 data class ServerState(
     val info: ServerInfo = DemoData.serverInfo(),
     val metric: ServerMetric = DemoData.serverMetric(),
     val containers: List<ServerContainer> = DemoData.serverContainers(),
+    val temps: List<ServerTemp> = DemoData.serverTemps(),
+    val tempMinToday: Float? = 37f,
+    val tempMaxToday: Float? = 47f,
+    val power: ServerPower = DemoData.serverPower(),
+    val days: List<ServerDay> = DemoData.serverDays(),
     val capNhat: String? = null,
     val isRealData: Boolean = false,
 ) {
@@ -132,6 +165,61 @@ data class ServerState(
                         cur.copy(containers = list, isRealData = true)
                     }
 
+                    ServerTopic.NHIET_DO -> {
+                        val o = JSONObject(payload)
+                        val arr = o.optJSONArray("sensors") ?: JSONArray()
+                        val list = mutableListOf<ServerTemp>()
+                        for (i in 0 until arr.length()) {
+                            val s = arr.getJSONObject(i)
+                            list.add(
+                                ServerTemp(
+                                    label = s.optString("label", "cảm biến"),
+                                    tempC = s.optDouble("temp_c", 0.0).toFloat(),
+                                )
+                            )
+                        }
+                        cur.copy(
+                            temps = list,
+                            tempMinToday = optFloat(o, "today_min"),
+                            tempMaxToday = optFloat(o, "today_max"),
+                            isRealData = true,
+                        )
+                    }
+
+                    ServerTopic.DIEN_NANG -> {
+                        val o = JSONObject(payload)
+                        cur.copy(
+                            power = ServerPower(
+                                batVoltageV = optFloat(o, "bat_voltage_v"),
+                                batCurrentA = optFloat(o, "bat_current_a"),
+                                batPowerW = optFloat(o, "bat_power_w"),
+                                batStatus = if (o.has("bat_status") && !o.isNull("bat_status"))
+                                    o.optString("bat_status") else null,
+                                cpuPackageW = optFloat(o, "cpu_package_w"),
+                                cpuCoreW = optFloat(o, "cpu_core_w"),
+                                cpuUncoreW = optFloat(o, "cpu_uncore_w"),
+                            ),
+                            isRealData = true,
+                        )
+                    }
+
+                    ServerTopic.DIEN_NANG_NGAY -> {
+                        val arr = JSONArray(payload)
+                        val list = mutableListOf<ServerDay>()
+                        for (i in 0 until arr.length()) {
+                            val d = arr.getJSONObject(i)
+                            list.add(
+                                ServerDay(
+                                    date = d.optString("date", ""),
+                                    wh = d.optDouble("wh", 0.0).toFloat(),
+                                    tempMin = optFloat(d, "temp_min"),
+                                    tempMax = optFloat(d, "temp_max"),
+                                )
+                            )
+                        }
+                        cur.copy(days = list, isRealData = true)
+                    }
+
                     ServerTopic.CAP_NHAT -> cur.copy(capNhat = payload.trim(), isRealData = true)
                     else -> cur
                 }
@@ -139,6 +227,10 @@ data class ServerState(
                 cur
             }
         }
+
+        /** Doc so thuc; null khi thieu hoac JSON null (khong bia so 0). */
+        private fun optFloat(o: JSONObject, key: String): Float? =
+            if (o.has(key) && !o.isNull(key)) o.optDouble(key).toFloat() else null
 
         private fun doIcon(name: String, image: String): ImageVector {
             val s = (name + " " + image).lowercase()

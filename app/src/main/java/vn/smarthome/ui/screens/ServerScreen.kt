@@ -190,8 +190,105 @@ fun ServerScreen(
                 }
             }
 
+            // Card: Nhiet do (nhieu cam bien)
+            if (server.temps.isNotEmpty()) {
+                SmartCard(Modifier.fillMaxWidth()) {
+                    Text("Nhiệt độ", style = SHType.CardTitle, color = SH.Text)
+                    Spacer(Modifier.height(8.dp))
+                    server.temps.chunked(4).forEach { hang ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+                        ) {
+                            hang.forEach { t ->
+                                TempCell(Modifier.weight(1f), t.label, t.tempC)
+                            }
+                            // Lap o trong cho du 4 cot de khong bi gian.
+                            repeat(4 - hang.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                    if (server.tempMinToday != null && server.tempMaxToday != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Trong ngày hôm nay: thấp nhất ${pct(server.tempMinToday)}°C, " +
+                                "cao nhất ${pct(server.tempMaxToday)}°C.",
+                            style = SHType.Caption, color = SH.TextDim,
+                        )
+                    }
+                }
+            }
+
+            // Card: Dien nang (pin + RAPL CPU)
+            SmartCard(Modifier.fillMaxWidth()) {
+                Text("Điện năng", style = SHType.CardTitle, color = SH.Text)
+                Spacer(Modifier.height(6.dp))
+                val p = server.power
+                KvRow("Điện áp pin", p.batVoltageV?.let { "${fmt(it)} V" } ?: "—")
+                KvRow("Dòng điện", p.batCurrentA?.let { "${fmt3(it)} A" } ?: "—")
+                KvRow("Công suất pin", p.batPowerW?.let { "${fmt(it)} W" } ?: "—")
+                KvRow("CPU, cả gói", p.cpuPackageW?.let { "${fmt(it)} W" } ?: "—")
+                KvRow("— phần nhân tính toán", p.cpuCoreW?.let { "${fmt(it)} W" } ?: "—", dim = true)
+                KvRow("— phần phụ trợ", p.cpuUncoreW?.let { "${fmt(it)} W" } ?: "—", dim = true)
+            }
+
+            // Card: Dien nang CPU theo ngay
+            SmartCard(Modifier.fillMaxWidth()) {
+                Text("Điện năng CPU theo ngày", style = SHType.CardTitle, color = SH.Text)
+                Spacer(Modifier.height(6.dp))
+                if (server.days.isEmpty()) {
+                    Text("Đang tích lũy số liệu, quay lại sau.",
+                        style = SHType.Body, color = SH.TextOff)
+                } else {
+                    val maxWh = server.days.maxOf { it.wh }.coerceAtLeast(0.1f)
+                    server.days.forEach { d ->
+                        DayRow(d.date, d.wh, maxWh, d.tempMin, d.tempMax)
+                    }
+                }
+            }
+
             Spacer(Modifier.height(2.dp))
         }
+    }
+}
+
+@Composable
+private fun TempCell(modifier: Modifier, label: String, tempC: Float) {
+    Column(modifier) {
+        Text(label, style = SHType.Caption, color = SH.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(pct(tempC), style = SHType.Value, color = SH.Green, maxLines = 1)
+            Text("°C", style = SHType.Label, color = SH.TextDim,
+                modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
+        }
+        Spacer(Modifier.height(3.dp))
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(SH.Green.tint(0.15f))) {
+            val frac = (tempC / 100f).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(SH.Green))
+        }
+    }
+}
+
+@Composable
+private fun KvRow(label: String, value: String, dim: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = SHType.Body, color = if (dim) SH.TextOff else SH.TextDim,
+            maxLines = 1, modifier = Modifier.weight(1f))
+        Text(value, style = SHType.BodyMed, color = SH.Text, maxLines = 1)
+    }
+}
+
+@Composable
+private fun DayRow(date: String, wh: Float, maxWh: Float, tempMin: Float?, tempMax: Float?) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(date, style = SHType.Body, color = SH.Text, maxLines = 1, modifier = Modifier.width(96.dp))
+        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(SH.Green.tint(0.15f))) {
+            val frac = (wh / maxWh).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(SH.Green))
+        }
+        Spacer(Modifier.width(8.dp))
+        val khoang = if (tempMin != null && tempMax != null) " · ${pct(tempMin)}–${pct(tempMax)} °C" else ""
+        Text("${fmt(wh)} Wh$khoang", style = SHType.Caption, color = SH.TextDim,
+            maxLines = 1, modifier = Modifier.width(150.dp))
     }
 }
 
@@ -268,3 +365,9 @@ private fun fmt(v: Float): String {
 
 /** So nguyen (cho stat tile phan tram / nhiet do). */
 private fun pct(v: Float): String = Math.round(v).toString()
+
+/** Lam tron 3 chu so thap phan (dong dien pin, vi du 0.000 A). */
+private fun fmt3(v: Float): String {
+    val r = Math.round(v * 1000) / 1000.0
+    return if (r == Math.floor(r)) "%.3f".format(r) else r.toString()
+}

@@ -22,8 +22,11 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Weekend
 import vn.smarthome.data.server.ServerContainer
+import vn.smarthome.data.server.ServerDay
 import vn.smarthome.data.server.ServerInfo
 import vn.smarthome.data.server.ServerMetric
+import vn.smarthome.data.server.ServerPower
+import vn.smarthome.data.server.ServerTemp
 import vn.smarthome.data.wifi.WifiDevice
 import vn.smarthome.data.wifi.WifiInfo
 import vn.smarthome.ui.theme.SH
@@ -209,5 +212,26 @@ object DemoData {
         ServerContainer("dien-evn", "dien-evn:1.0", "running", "Up 3 days", Icons.Filled.ElectricBolt),
         ServerContainer("wifi-collector", "wifi-collector:1.0", "running", "Up 2 days", Icons.Filled.Router),
         ServerContainer("go2rtc", "alexxit/go2rtc", "running", "Up 3 days", Icons.Filled.Videocam),
+    )
+
+    fun serverTemps(): List<ServerTemp> = listOf(
+        ServerTemp("acpitz temp1", 40f),
+        ServerTemp("acpitz temp3", 36f),
+        ServerTemp("acpitz temp4", 43f),
+        ServerTemp("acpitz temp5", 24f),
+        ServerTemp("Package id 0", 45f),
+        ServerTemp("Core 0", 43f),
+        ServerTemp("Core 1", 39f),
+    )
+
+    fun serverPower(): ServerPower = ServerPower()
+
+    fun serverDays(): List<ServerDay> = listOf(
+        ServerDay("2026-11-19", 41.43f, 37f, 48f),
+        ServerDay("2026-11-18", 47.55f, 37f, 60f),
+        ServerDay("2026-11-17", 38.06f, 43f, 57f),
+        ServerDay("2026-11-06", 36.41f, 45f, 60f),
+        ServerDay("2026-11-05", 72.83f, 42f, 62f),
+        ServerDay("2026-11-04", 18.19f, 44f, 60f),
     )
 }
