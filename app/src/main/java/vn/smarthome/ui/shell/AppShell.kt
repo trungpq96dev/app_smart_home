@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.components.OtaUpdateDialog
 import vn.smarthome.ui.screens.AutomationScreen
+import vn.smarthome.ui.screens.CamBienScreen
 import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
@@ -69,6 +70,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val server by vm.server.collectAsStateWithLifecycle()
+    val cuktech by vm.cuktech.collectAsStateWithLifecycle()
     val congTac by vm.congTac.collectAsStateWithLifecycle()
     val choCongTac by vm.choCongTac.collectAsStateWithLifecycle()
     val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
@@ -185,6 +187,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
                     dest == Dest.SERVER -> ServerScreen(
                         server = server,
+                        onBack = { current = Dest.HOME.route },
+                    )
+
+                    dest == Dest.SENSORS -> CamBienScreen(
+                        cuktech = cuktech,
                         onBack = { current = Dest.HOME.route },
                     )
 

@@ -15,6 +15,8 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.congtac.CongTacTopic
 import vn.smarthome.data.congtac.LenhCongTac
+import vn.smarthome.data.cuktech.CuktechState
+import vn.smarthome.data.cuktech.CuktechTopic
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.server.ServerTopic
 import vn.smarthome.data.wifi.WifiState
@@ -76,6 +78,9 @@ class MqttDien {
 
     private val _congTac = MutableStateFlow(CongTacState())
     val congTac: StateFlow<CongTacState> = _congTac.asStateFlow()
+
+    private val _cuktech = MutableStateFlow(CuktechState())
+    val cuktech: StateFlow<CuktechState> = _cuktech.asStateFlow()
 
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
@@ -142,6 +147,8 @@ class MqttDien {
                     _server.update { ServerState.gop(it, topic, payload) }
                 } else if (topic.startsWith("congtac/")) {
                     _congTac.update { CongTacState.gop(it, topic, payload) }
+                } else if (topic.startsWith("cuktech/")) {
+                    _cuktech.update { CuktechState.gop(it, topic, payload) }
                 }
             }
 
@@ -268,6 +275,7 @@ class MqttDien {
          */
         val GOC_CAN_DOC = listOf(
             DienTopic.GOC, WifiTopic.GOC, ServerTopic.GOC, CongTacTopic.GOC,
+            CuktechTopic.GOC,
         )
     }
 

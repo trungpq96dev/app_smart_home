@@ -40,6 +40,7 @@ import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.data.thoitiet.CauHinhThoiTietStore
 import vn.smarthome.data.thoitiet.OpenMeteo
 import vn.smarthome.data.thoitiet.ThoiTietUi
+import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.data.ota.OtaManager
@@ -96,6 +97,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Thong tin may chu serverubuntu doc tu broker MQTT (chi xem, khong dieu khien). */
     val server: StateFlow<ServerState> = mqtt.server
+
+    /**
+     * Cu sac CUKTECH 10 Ultra doc tu `cuktech/charger/#`.
+     *
+     * Nguon la `cuktech-ble-server` chay tren serverubuntu: no giu ket noi BLE
+     * toi cu sac roi publish len broker. App chi doc - bat/tat cong sac la
+     * duong khac (`cuktech/charger/port`), chua dung toi.
+     */
+    val cuktech: StateFlow<CuktechState> = mqtt.cuktech
 
     /** Trang thai duong truyen toi EMQX/Mosquitto. */
     val ketNoi: StateFlow<KetNoi> = mqtt.ketNoi
