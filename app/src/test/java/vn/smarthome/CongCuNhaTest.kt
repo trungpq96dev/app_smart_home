@@ -409,4 +409,50 @@ class CongCuNhaTest {
         assertTrue(dsPhong.contains("tat_ca"))
         assertTrue(dsPhong.contains("nhanh"))
     }
+
+    /**
+     * Khai bao `tools` chi duoc dung nhung tu khoa Gemini nhan.
+     *
+     * Cung ho loi da lam hong ban v0.5.0: mot ten truong server khong biet thi
+     * no tu choi CA goi setup va dong duong voi ma 1007 - tro ly chet ngay khi
+     * bam mic, khong phai chet luc goi ham.
+     *
+     * Schema cua Gemini la mot tap con cua OpenAPI 3.0. Cac tu khoa JSON Schema
+     * quen tay nhu `additionalProperties` hay `propertyNames` deu bi tu choi, va
+     * `type` phai viet HOA (STRING, OBJECT...) chu khong phai "string".
+     */
+    @Test
+    fun khai_bao_cong_cu_chi_dung_tu_khoa_gemini_nhan() {
+        val choPhep = setOf(
+            "name", "description", "parameters", "behavior",
+            "type", "format", "enum", "properties", "required", "items", "nullable",
+        )
+        val kieuHopLe = setOf(
+            "TYPE_UNSPECIFIED", "STRING", "NUMBER", "INTEGER", "BOOLEAN", "ARRAY", "OBJECT", "NULL",
+        )
+        val la = mutableListOf<String>()
+        val kieuSai = mutableListOf<String>()
+
+        fun soi(o: JSONObject, duong: String) {
+            for (k in o.keys()) {
+                if (k !in choPhep) la += "$duong.$k"
+                val v = o.get(k)
+                if (k == "type" && v is String && v !in kieuHopLe) kieuSai += "$duong.$k=$v"
+                // `properties` chua ten tham so do minh dat, khong phai tu khoa -
+                // nen di xuyen qua no ma khong soi chinh cac khoa cua no.
+                if (k == "properties" && v is JSONObject) {
+                    for (ten in v.keys()) soi(v.getJSONObject(ten), "$duong.$k.$ten")
+                } else if (v is JSONObject) {
+                    soi(v, "$duong.$k")
+                }
+            }
+        }
+
+        val ham = CongCuNha.khaiBao(listOf("living", "bed1"))
+            .getJSONObject(0).getJSONArray("functionDeclarations")
+        for (i in 0 until ham.length()) soi(ham.getJSONObject(i), "ham[$i]")
+
+        assertTrue("Tu khoa Gemini khong nhan: $la", la.isEmpty())
+        assertTrue("Kieu phai viet HOA: $kieuSai", kieuSai.isEmpty())
+    }
 }
