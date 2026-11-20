@@ -18,6 +18,15 @@
     <!-- Quyen yeu cau cai dat goi APK tu ben ngoai (OTA Update) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      Tuong thich Package Visibility tren Android 11+ (API 30+):
+      Cho phep SmartHomeApp kiem tra va khoi chay truc tiep ung dung AquaControl.
+    -->
+    <queries>
+        <package android:name="vn.aquacontrol" />
+        <package android:name="vn.aquacontrol.debug" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:usesCleartextTraffic="true"

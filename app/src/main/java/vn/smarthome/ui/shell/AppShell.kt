@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.components.OtaUpdateDialog
+import vn.smarthome.ui.screens.AutomationScreen
 import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
@@ -185,6 +186,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         state = state,
                         onOpenRoom = { id -> openRoom = id },
                         onBack = { current = Dest.HOME.route },
+                    )
+
+                    dest == Dest.AUTOMATION -> AutomationScreen(
+                        onBack = { current = Dest.HOME.route },
+                        onNotice = toast,
                     )
 
                     else -> PlaceholderScreen(

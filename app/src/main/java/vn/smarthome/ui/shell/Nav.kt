@@ -22,7 +22,7 @@ enum class Dest(
     DEVICES("devices", "Thiết bị", Icons.Filled.Devices, true),
     CAMERA("camera", "Camera", Icons.Filled.Videocam, true),
     SENSORS("sensors", "Cảm biến", Icons.Filled.Sensors, false),
-    AUTOMATION("automation", "Tự động hóa", Icons.Filled.AutoAwesome, false),
+    AUTOMATION("automation", "Tự động hóa", Icons.Filled.AutoAwesome, true),
     SETTINGS("settings", "Cài đặt", Icons.Filled.Settings, false),
     SERVER("server", "Server", Icons.Filled.Dns, true),
     STATS("stats", "Thống kê", Icons.Filled.BarChart, true);
