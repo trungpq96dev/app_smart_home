@@ -15,10 +15,10 @@ import kotlinx.coroutines.flow.map
  * Mac dinh cong 8883 + TLS theo tai lieu ban giao dien_evn muc 4 buoc 4.
  */
 data class CauHinhMqtt(
-    val host: String = "",
-    val cong: Int = 8883,
-    val tls: Boolean = true,
-    val taiKhoan: String = "",
+    val host: String = "192.168.0.50",
+    val cong: Int = 1883,
+    val tls: Boolean = false,
+    val taiKhoan: String = "iot",
     val matKhau: String = "",
     val clientId: String = "",
 ) {
@@ -48,10 +48,10 @@ class CauHinhStore(private val ctx: Context) {
 
     val cauHinh: Flow<CauHinhMqtt> = ctx.dataStore.data.map { p ->
         CauHinhMqtt(
-            host = p[kHost] ?: "",
-            cong = p[kCong] ?: 8883,
-            tls = p[kTls] ?: true,
-            taiKhoan = p[kTaiKhoan] ?: "",
+            host = p[kHost] ?: "192.168.0.50",
+            cong = p[kCong] ?: 1883,
+            tls = p[kTls] ?: false,
+            taiKhoan = p[kTaiKhoan] ?: "iot",
             matKhau = p[kMatKhau] ?: "",
             clientId = p[kClientId] ?: "",
         )

@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.map
  * bat [tls] va doi cong sang 443.
  */
 data class CauHinhCamera(
-    val host: String = "",
+    val host: String = "192.168.0.50",
     val cong: Int = 1984,
     val tls: Boolean = false,
     val taiKhoan: String = "",
@@ -69,7 +69,7 @@ class CauHinhCameraStore(private val ctx: Context) {
 
     val cauHinh: Flow<CauHinhCamera> = ctx.dsCamera.data.map { p ->
         CauHinhCamera(
-            host = p[kHost] ?: "",
+            host = p[kHost] ?: "192.168.0.50",
             cong = p[kCong] ?: 1984,
             tls = p[kTls] ?: false,
             taiKhoan = p[kTaiKhoan] ?: "",
