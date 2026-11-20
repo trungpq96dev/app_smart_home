@@ -52,6 +52,18 @@ class GeminiLive(private val nghe: Nghe) {
         fun goiCongCu(id: String?, ten: String, args: JSONObject)
 
         /**
+         * So token Gemini bao da dung.
+         *
+         * CHU Y - cho nay con mot cho chua chac: tai lieu khong noi ro
+         * `usageMetadata` la so CUA RIENG goi tin nay hay so CONG DON tu dau
+         * phien. [vn.smarthome.vm.TroLyGiongNoi] vi vay lay GIA TRI LON NHAT
+         * thay vi cong don - dung neu la so cong don, va la can duoi an toan
+         * neu la so tung goi. Tuyet doi khong cong don o day: doan sai huong
+         * do thi so bao cao gap hang chuc lan so that.
+         */
+        fun mucDung(vao: Long, ra: Long, tong: Long)
+
+        /**
          * Server bao sap dong duong (`goAway`) - thuong vi phien da dai.
          * Day la bao truoc, khong phai da dut.
          */
@@ -230,6 +242,16 @@ class GeminiLive(private val nghe: Nghe) {
                     args = c.optJSONObject("args") ?: JSONObject(),
                 )
             }
+        }
+
+        // Nam o cap ngoai cua goi tin, canh serverContent/toolCall chu khong
+        // nam trong chung.
+        o.optJSONObject("usageMetadata")?.let { um ->
+            nghe.mucDung(
+                vao = um.optLong("promptTokenCount"),
+                ra = um.optLong("responseTokenCount"),
+                tong = um.optLong("totalTokenCount"),
+            )
         }
 
         o.optJSONObject("goAway")?.let { ga ->

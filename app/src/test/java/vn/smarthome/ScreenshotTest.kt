@@ -177,7 +177,7 @@ class ScreenshotTest {
                 SettingsScreen(
                     CauHinhMqtt(), KetNoi.ChuaCauHinh,
                     CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                    CauHinhThoiTiet(), CauHinhGiongNoi(),
+                    CauHinhThoiTiet(), CauHinhGiongNoi(), emptyList(),
                     {}, {}, {}, {}, {},
                 )
             }

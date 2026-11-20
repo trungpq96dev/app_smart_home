@@ -232,4 +232,26 @@ class ShellSmokeTest {
         rule.onNodeWithText("Khóa API Gemini").assertIsDisplayed()
         rule.onNodeWithText("Model").assertIsDisplayed()
     }
+
+    /**
+     * The thong ke muc dung ve duoc khi CHUA co so lieu nao.
+     *
+     * Day la trang thai that cua lan dau cai app, va cung la cho de chia cho 0
+     * nhat: tran ngay chia cho so giay da dung, trong khi ca hai deu bang 0.
+     */
+    @Test
+    fun the_thong_ke_muc_dung_ve_duoc_khi_chua_co_so() {
+        start()
+        rule.onNodeWithText("Cài đặt").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Trợ lý giọng nói").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Đã dùng bao nhiêu").assertIsDisplayed()
+        rule.onNodeWithText("Hôm nay").assertIsDisplayed()
+        // assertExists chu khong phai assertIsDisplayed: o nay nam cuoi cot
+        // cau hinh, man chi cao 601dp nen phai cuon moi thay. Van phai ve ra
+        // duoc - day la cho de chia cho 0 nhat (tran ngay chia cho so giay da
+        // dung, ma lan dau cai app thi ca hai deu bang 0).
+        rule.onNodeWithText("Trần mỗi ngày (phút)").assertExists()
+    }
 }

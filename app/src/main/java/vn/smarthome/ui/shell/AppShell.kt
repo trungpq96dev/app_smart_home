@@ -73,6 +73,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val showUpdateDialog by vm.showUpdateDialog.collectAsStateWithLifecycle()
     val phienGiongNoi by vm.phienGiongNoi.collectAsStateWithLifecycle()
     val cauHinhGiongNoi by vm.cauHinhGiongNoi.collectAsStateWithLifecycle()
+    val mucDungGiongNoi by vm.mucDungGiongNoi.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -213,6 +214,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         trangThaiCam = trangThaiCam,
                         cauHinhThoiTiet = thoiTietCauHinh,
                         cauHinhGiongNoi = cauHinhGiongNoi,
+                        mucDungGiongNoi = mucDungGiongNoi,
                         otaStatus = otaStatus,
                         currentVersion = vm.currentVersionName,
                         onLuu = vm::luuCauHinh,

@@ -36,6 +36,14 @@ data class CauHinhGiongNoi(
     val giayImLangTuDong: Int = 45,
     /** Tran cung cho mot phien, tinh bang giay. */
     val giayToiDaPhien: Int = 600,
+    /**
+     * Tran so PHUT noi chuyen moi ngay. 0 = khong gioi han.
+     *
+     * Day la cai chan "den luc mat tien thi dung". Dat theo phut chu khong
+     * theo token vi phut la thu nguoi dung uoc luong duoc; token thi khong ai
+     * biet 50.000 token la noi duoc bao lau.
+     */
+    val phutMoiNgay: Int = 30,
 ) {
     fun coKhoa(): Boolean = khoaApi.isNotBlank()
 
@@ -98,6 +106,7 @@ class CauHinhGiongNoiStore(private val ctx: Context) {
     private val kBanSongCong = stringPreferencesKey("gemini_ban_song_cong")
     private val kGiayImLang = intPreferencesKey("gemini_giay_im_lang")
     private val kGiayToiDa = intPreferencesKey("gemini_giay_toi_da")
+    private val kPhutNgay = intPreferencesKey("gemini_phut_moi_ngay")
 
     val cauHinh: Flow<CauHinhGiongNoi> = ctx.dataStoreGiongNoi.data.map { p ->
         CauHinhGiongNoi(
@@ -108,6 +117,7 @@ class CauHinhGiongNoiStore(private val ctx: Context) {
             banSongCong = docBanSongCong(p[kBanSongCong]),
             giayImLangTuDong = p[kGiayImLang] ?: 45,
             giayToiDaPhien = p[kGiayToiDa] ?: 600,
+            phutMoiNgay = p[kPhutNgay] ?: 30,
         )
     }
 
@@ -120,6 +130,7 @@ class CauHinhGiongNoiStore(private val ctx: Context) {
             p[kBanSongCong] = c.banSongCong.name
             p[kGiayImLang] = c.giayImLangTuDong
             p[kGiayToiDa] = c.giayToiDaPhien
+            p[kPhutNgay] = c.phutMoiNgay
         }
     }
 

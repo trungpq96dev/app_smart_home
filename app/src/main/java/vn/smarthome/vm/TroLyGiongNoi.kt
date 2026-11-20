@@ -5,9 +5,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import vn.smarthome.data.giongnoi.MucDung
+import vn.smarthome.data.giongnoi.MucDungNgay
+import vn.smarthome.data.giongnoi.MucDungStore
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -37,6 +42,39 @@ class TroLyGiongNoi(
     private val scope: CoroutineScope,
     private val nha: HanhDongNha,
 ) {
+
+    private val khoMucDung = MucDungStore(ctx)
+
+    /**
+     * Muc dung 30 ngay gan nhat.
+     *
+     * Phai la StateFlow chu khong phai Flow: [bat] can doc so cua hom nay NGAY
+     * LAP TUC de quyet dinh co cho mo phien khong, khong the cho mot lan doc
+     * bat dong bo tu dia.
+     */
+    val mucDung: StateFlow<List<MucDungNgay>> =
+        khoMucDung.mucDung.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    private fun giayDaDungHomNay(): Int =
+        MucDung.cuaNgay(mucDung.value, MucDung.homNay()).giay
+
+    /**
+     * So token lon nhat Gemini bao trong phien dang chay.
+     *
+     * LAY LON NHAT chu khong cong don - xem ghi chu o [GeminiLive.Nghe.mucDung].
+     */
+    @Volatile
+    private var tokenVaoPhien: Long = 0
+
+    @Volatile
+    private var tokenRaPhien: Long = 0
+
+    @Volatile
+    private var tokenTongPhien: Long = 0
+
+    /** So giay da dung trong ngay TRUOC khi mo phien nay. */
+    @Volatile
+    private var giayTruocPhien: Int = 0
 
     private val _phien = MutableStateFlow(PhienGiongNoi())
     val phien: StateFlow<PhienGiongNoi> = _phien.asStateFlow()
@@ -69,6 +107,27 @@ class TroLyGiongNoi(
             return
         }
 
+        // Cham tran ngay thi khong mo phien moi. Kiem o day chu khong doi toi
+        // luc dang noi: mo duong roi moi cat la da ton mot it token roi.
+        if (c.phutMoiNgay > 0) {
+            val daDung = giayDaDungHomNay()
+            if (daDung >= c.phutMoiNgay * 60) {
+                dat(
+                    TrangThaiGiongNoi.Loi(
+                        "Hôm nay đã nói ${daDung / 60} phút, chạm trần ${c.phutMoiNgay} phút. " +
+                            "Đổi trần trong Cài đặt nếu muốn nói tiếp.",
+                    ),
+                )
+                return
+            }
+            giayTruocPhien = daDung
+        } else {
+            giayTruocPhien = 0
+        }
+
+        tokenVaoPhien = 0
+        tokenRaPhien = 0
+        tokenTongPhien = 0
         cauHinh = c
         congCu = CongCuNha(nha, guiMqtt = c.guiMqtt)
         _phien.value = PhienGiongNoi(trangThai = TrangThaiGiongNoi.DangNoi)
@@ -102,6 +161,17 @@ class TroLyGiongNoi(
     }
 
     fun tat(vi: String? = null) {
+        // Ghi so TRUOC khi don dep: phai lay giayDaChay cua phien vua chay.
+        // Ghi ca khi phien hong giua chung - token da tieu roi thi phai dem,
+        // khong dem la tu lua minh ve muc dung.
+        val giay = _phien.value.giayDaChay
+        if (_phien.value.dangChay) {
+            val tv = tokenVaoPhien
+            val tr = tokenRaPhien
+            val tt = tokenTongPhien
+            scope.launch { khoMucDung.ghiPhien(giay, tv, tr, tt) }
+        }
+
         dongHo?.cancel(); dongHo = null
         canhMic?.cancel(); canhMic = null
         thu?.dung(); thu = null
@@ -167,6 +237,21 @@ class TroLyGiongNoi(
             live?.traKetQuaCongCu(id, ten, ketQua)
         }
 
+        /**
+         * LAY LON NHAT, khong cong don.
+         *
+         * Tai lieu khong noi ro `usageMetadata` la so cua rieng goi tin nay hay
+         * so cong don tu dau phien. Lay lon nhat thi dung neu la so cong don,
+         * va la can duoi an toan neu la so tung goi. Cong don ma doan sai thi
+         * so bao cao gap hang chuc lan so that - sai kieu do con te hon la
+         * khong co so.
+         */
+        override fun mucDung(vao: Long, ra: Long, tong: Long) {
+            if (vao > tokenVaoPhien) tokenVaoPhien = vao
+            if (ra > tokenRaPhien) tokenRaPhien = ra
+            if (tong > tokenTongPhien) tokenTongPhien = tong
+        }
+
         override fun sapHetPhien(conLaiMs: Long?) {
             // Chi ghi mot dong cho nguoi dung thay; de phien tu dut roi nguoi
             // dung bam lai. Noi lai ngam o day thi Gemini quen het cuoc noi
@@ -197,6 +282,19 @@ class TroLyGiongNoi(
 
                 if (cauHinh.giayToiDaPhien in 1..giay) {
                     tat("Phiên đã chạy ${giay / 60} phút nên tự đóng. Bấm mic để nói tiếp.")
+                    return@launch
+                }
+
+                // Tran NGAY: cong ca phan da dung tu truoc trong ngay. Day la
+                // cai chan that su - tran phien o tren chi chan mot lan noi dai,
+                // con cai nay chan tong ca ngay.
+                if (cauHinh.phutMoiNgay > 0 &&
+                    giayTruocPhien + giay >= cauHinh.phutMoiNgay * 60
+                ) {
+                    tat(
+                        "Đã dùng hết ${cauHinh.phutMoiNgay} phút của hôm nay. " +
+                            "Mai nói tiếp, hoặc đổi trần trong Cài đặt.",
+                    )
                     return@launch
                 }
                 val imLang = ((System.currentTimeMillis() - mocHoatDong) / 1000).toInt()

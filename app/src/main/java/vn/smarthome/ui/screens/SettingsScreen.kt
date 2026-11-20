@@ -59,6 +59,8 @@ import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.DienTopic
 import vn.smarthome.data.giongnoi.BanSongCong
 import vn.smarthome.data.giongnoi.CauHinhGiongNoi
+import vn.smarthome.data.giongnoi.MucDung
+import vn.smarthome.data.giongnoi.MucDungNgay
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.data.ota.OtaStatus
 import vn.smarthome.data.ota.ReleaseInfo
@@ -94,6 +96,7 @@ fun SettingsScreen(
     trangThaiCam: TrangThaiCam,
     cauHinhThoiTiet: CauHinhThoiTiet,
     cauHinhGiongNoi: CauHinhGiongNoi,
+    mucDungGiongNoi: List<MucDungNgay>,
     onLuu: (CauHinhMqtt) -> Unit,
     onLuuCamera: (CauHinhCamera) -> Unit,
     onLuuThoiTiet: (CauHinhThoiTiet) -> Unit,
@@ -165,6 +168,9 @@ fun SettingsScreen(
             ) {
                 SmartCard(Modifier.weight(3f).fillMaxHeight(), padding = 14.dp) {
                     FormGiongNoi(cauHinhGiongNoi, onLuuGiongNoi)
+                }
+                SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 14.dp) {
+                    ThongKeGiongNoi(mucDungGiongNoi, cauHinhGiongNoi)
                 }
                 SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 14.dp) {
                     GhiChuGiongNoi()
@@ -497,13 +503,18 @@ private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> U
     var toiDa by remember(cauHinh.giayToiDaPhien) {
         mutableStateOf(cauHinh.giayToiDaPhien.toString())
     }
+    var phutNgay by remember(cauHinh.phutMoiNgay) {
+        mutableStateOf(cauHinh.phutMoiNgay.toString())
+    }
 
     val sIm = imLang.trim().toIntOrNull()
     val sToiDa = toiDa.trim().toIntOrNull()
+    val sPhutNgay = phutNgay.trim().toIntOrNull()
     // Tran phien khong duoc vuot 15 phut: Live API tu cat phien audio o do.
     val hopLe = khoa.isNotBlank() && model.isNotBlank() &&
         sIm != null && sIm in 0..600 &&
-        sToiDa != null && sToiDa in 60..900
+        sToiDa != null && sToiDa in 60..900 &&
+        sPhutNgay != null && sPhutNgay in 0..1440
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Text("Trợ lý giọng nói — Gemini Live", style = SHType.CardTitle, color = SH.Text)
@@ -572,10 +583,20 @@ private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> U
                 O("Trần một phiên (giây)", toiDa, { toiDa = it }, "600", soThoi = true)
             }
         }
+        Spacer(Modifier.height(10.dp))
+        O("Trần mỗi ngày (phút)", phutNgay, { phutNgay = it }, "30", soThoi = true)
+        Text(
+            "Nói hết số phút này là app không cho mở phiên nữa cho tới hôm sau. " +
+                "Để 0 là không chặn gì — chỉ nên để 0 khi chắc chắn tài khoản chưa " +
+                "gắn thanh toán.",
+            style = SHType.Caption, color = SH.TextDim,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
         if (!hopLe) {
             Text(
                 "Cần khóa API và tên model. Im lặng 0-600 giây (0 là không tự đóng), " +
-                    "trần phiên 60-900 giây.",
+                    "trần phiên 60-900 giây, trần ngày 0-1440 phút.",
                 style = SHType.Caption, color = SH.Amber,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -593,6 +614,7 @@ private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> U
                         banSongCong = banSongCong,
                         giayImLangTuDong = sIm ?: cauHinh.giayImLangTuDong,
                         giayToiDaPhien = sToiDa ?: cauHinh.giayToiDaPhien,
+                        phutMoiNgay = sPhutNgay ?: cauHinh.phutMoiNgay,
                     )
                 )
             },
@@ -617,6 +639,118 @@ private fun ChipGiong(nhan: String, chon: Boolean, onChon: () -> Unit) {
         Text(nhan, style = SHType.Caption, color = if (chon) Color.White else SH.TextDim)
     }
 }
+
+/**
+ * Muc dung tro ly giong noi.
+ *
+ * So phut la do chinh app dem nen chac chan dung. So token lay tu
+ * `usageMetadata` Gemini gui ve - xem ghi chu "Vi sao so token chi la can
+ * duoi" ben duoi.
+ */
+@Composable
+private fun ThongKeGiongNoi(ds: List<MucDungNgay>, cauHinh: CauHinhGiongNoi) {
+    val homNay = MucDung.cuaNgay(ds, MucDung.homNay())
+    val tranGiay = cauHinh.phutMoiNgay * 60
+    val phanTram = if (tranGiay > 0) (homNay.giay.toFloat() / tranGiay).coerceIn(0f, 1f) else 0f
+    val giay7 = MucDung.giayNgayGanDay(ds, 7)
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Đã dùng bao nhiêu", style = SHType.CardTitle, color = SH.Text)
+        Spacer(Modifier.height(10.dp))
+
+        Text("Hôm nay", style = SHType.Caption, color = SH.TextDim)
+        Text(
+            text = dinhDangPhut(homNay.giay) +
+                if (cauHinh.phutMoiNgay > 0) " / ${cauHinh.phutMoiNgay} phút" else "",
+            style = SHType.Value,
+            color = when {
+                cauHinh.phutMoiNgay <= 0 -> SH.Text
+                phanTram >= 1f -> SH.Red
+                phanTram >= 0.8f -> SH.Amber
+                else -> SH.Green
+            },
+        )
+        if (cauHinh.phutMoiNgay > 0) {
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { phanTram },
+                color = if (phanTram >= 1f) SH.Red else if (phanTram >= 0.8f) SH.Amber else SH.Green,
+                trackColor = SH.Card2,
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (phanTram >= 1f) "Đã chạm trần — mai mới nói tiếp được."
+                else "Còn " + dinhDangPhut(tranGiay - homNay.giay),
+                style = SHType.Caption,
+                color = if (phanTram >= 1f) SH.Red else SH.TextDim,
+            )
+        } else {
+            Text("Chưa đặt trần ngày", style = SHType.Caption, color = SH.Amber)
+        }
+
+        Spacer(Modifier.height(12.dp))
+        MucThongSo("Số phiên hôm nay", homNay.soPhien.toString())
+        MucThongSo("7 ngày gần nhất", dinhDangPhut(giay7))
+        MucThongSo(
+            "Token hôm nay",
+            if (homNay.tokenTong > 0) dinhDangSo(homNay.tokenTong) else "--",
+        )
+
+        if (ds.any { it.giay > 0 }) {
+            Spacer(Modifier.height(12.dp))
+            Text("Những ngày gần đây", style = SHType.Caption, color = SH.TextDim)
+            Spacer(Modifier.height(4.dp))
+            ds.takeLast(7).reversed().forEach { n ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(
+                        n.ngay.removePrefix(n.ngay.take(5)).removePrefix("-"),
+                        style = SHType.Caption, color = SH.TextDim,
+                        modifier = Modifier.width(52.dp),
+                    )
+                    Text(dinhDangPhut(n.giay), style = SHType.Caption, color = SH.Text)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Ghi(
+            "Gói miễn phí thì không mất tiền",
+            "Project chưa gắn thanh toán thì vượt hạn mức chỉ bị trả lỗi 429, " +
+                "không phát sinh phí. Chỉ khi bạn gắn thẻ hoặc dùng tín dụng từ gói " +
+                "AI Pro thì mọi token mới được tính tiền — lúc đó cái trần ngày ở " +
+                "bên trái mới thật sự là cái phanh.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Vì sao số token chỉ là cận dưới",
+            "Tài liệu Google không nói rõ usageMetadata là số của riêng từng gói tin " +
+                "hay số cộng dồn cả phiên. App lấy giá trị lớn nhất thấy được: đúng " +
+                "nếu là số cộng dồn, và thấp hơn thực tế nếu là số từng gói. Số phút " +
+                "thì do app tự đếm nên luôn chính xác.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Số thật nằm ở Google",
+            "Hạn mức miễn phí của riêng tài khoản bạn xem ở aistudio.google.com/rate-limit. " +
+                "Hóa đơn thật thì ở Google Cloud Billing. Con số ở đây để bạn tự canh, " +
+                "không thay được hai chỗ đó.",
+        )
+    }
+}
+
+private fun dinhDangPhut(giay: Int): String = when {
+    giay <= 0 -> "0 phút"
+    giay < 60 -> "$giay giây"
+    else -> {
+        val p = giay / 60
+        val g = giay % 60
+        if (g == 0) "$p phút" else "$p phút $g giây"
+    }
+}
+
+private fun dinhDangSo(n: Long): String =
+    n.toString().reversed().chunked(3).joinToString(".").reversed()
 
 @Composable
 private fun GhiChuGiongNoi() {
@@ -1059,7 +1193,7 @@ private fun SettingsPreview() {
             SettingsScreen(
                 CauHinhMqtt(), KetNoi.ChuaCauHinh,
                 CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                CauHinhThoiTiet(), CauHinhGiongNoi(),
+                CauHinhThoiTiet(), CauHinhGiongNoi(), emptyList(),
                 {}, {}, {}, {}, {},
             )
         }

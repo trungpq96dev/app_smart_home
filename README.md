@@ -278,9 +278,34 @@ Không đọc thì đệm đầy, và lúc mở khóa sẽ bắn đi một cục
 ### Tiền và thời gian
 
 Gemini Live tính **theo phút nói chuyện**. Máy này treo tường, một lần quên tắt
-mic là tính tiền cả ngày. Nên phiên luôn tự đóng khi im lặng (mặc định 45 giây)
-và có trần cứng (mặc định 10 phút, Live API tự cắt ở 15 phút). Bảng thoại có
-đồng hồ đếm. Đừng tắt hai thứ đó.
+mic là tính tiền cả ngày. Ba lớp phanh:
+
+| Lớp | Mặc định | Chặn cái gì |
+|---|---|---|
+| Im lặng thì tự đóng | 45 giây | Quên bấm tắt |
+| Trần một phiên | 10 phút | Một lần nói quá dài (Live API tự cắt ở 15 phút) |
+| **Trần mỗi ngày** | **30 phút** | **Tổng cả ngày — đây là cái phanh thật sự** |
+
+Chạm trần ngày thì app **không cho mở phiên mới** cho tới hôm sau, và nói rõ lý do
+chứ không im lặng từ chối. Kiểm ngay lúc bấm mic chứ không đợi tới giữa phiên: mở
+đường rồi mới cắt là đã tiêu mất một ít token.
+
+Thẻ **Đã dùng bao nhiêu** ở Cài đặt → Trợ lý giọng nói hiện số phút hôm nay, thanh
+tiến độ so với trần, số phiên, tổng 7 ngày và số token. Số liệu giữ 30 ngày trong
+DataStore.
+
+> **Gói miễn phí thì không thể mất tiền.** Project chưa gắn thanh toán thì vượt hạn
+> mức chỉ bị trả lỗi `429`, không phát sinh phí. Cái trần ngày chỉ thật sự là phanh
+> khi bạn đã gắn thẻ hoặc dùng tín dụng từ gói AI Pro — lúc đó mọi token đều được tính.
+
+**Số phút do app tự đếm nên luôn đúng. Số token thì chỉ là cận dưới**: tài liệu Google
+không nói rõ `usageMetadata` là số của riêng từng gói tin hay số cộng dồn cả phiên, nên
+app lấy **giá trị lớn nhất** thấy được — đúng nếu là số cộng dồn, thấp hơn thực tế nếu
+là số từng gói. Cộng dồn mà đoán sai hướng thì con số báo ra gấp hàng chục lần số thật,
+sai kiểu đó còn tệ hơn không có số.
+
+Hạn mức miễn phí của riêng tài khoản bạn chỉ xem được ở `aistudio.google.com/rate-limit`;
+hóa đơn thật ở Google Cloud Billing. Con số trong app để tự canh, không thay được hai chỗ đó.
 
 ### Khóa API để ở đâu
 

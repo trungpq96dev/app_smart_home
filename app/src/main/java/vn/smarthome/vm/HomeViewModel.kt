@@ -43,6 +43,7 @@ import vn.smarthome.data.ota.ReleaseInfo
 import vn.smarthome.data.giongnoi.CauHinhGiongNoi
 import vn.smarthome.data.giongnoi.CauHinhGiongNoiStore
 import vn.smarthome.data.giongnoi.HanhDongNha
+import vn.smarthome.data.giongnoi.MucDungNgay
 import vn.smarthome.data.giongnoi.PhienGiongNoi
 import vn.smarthome.data.lunar.AmLich
 import vn.smarthome.ui.theme.SH
@@ -135,6 +136,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     val phienGiongNoi: StateFlow<PhienGiongNoi>
         get() = troLy.phien
+
+    /** Muc dung 30 ngay gan nhat cua tro ly giong noi. */
+    val mucDungGiongNoi: StateFlow<List<MucDungNgay>>
+        get() = troLy.mucDung
 
     fun batTatGiongNoi() = troLy.batTat(cauHinhGiongNoi.value)
 
