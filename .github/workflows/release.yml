@@ -35,17 +35,40 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      # Neu da cau hinh Keystore trong GitHub Secrets thi giai ma de ky ban release chuan
+      # Neu da cau hinh Keystore trong GitHub Secrets thi giai ma de ky ban release chuan.
+      #
+      # KHONG dat lai `if: env.HAS_KEYSTORE == 'true'` o day. Bien env khai bao
+      # ngay trong buoc nay CHUA ton tai luc GitHub tinh dieu kien `if` cua chinh
+      # no, nen dieu kien luon sai va buoc nay luon bi bo qua - ke ca khi secret
+      # da co. Hau qua khong lo ra ngay: build van xanh, release van co file APK,
+      # nhung APK do ky bang khoa DEBUG. Cai de len may dang chay ban ky bang
+      # khoa release thi Android tu choi, bao "chua cai dat duoc goi do xung dot".
+      # (Dung dung `if: secrets.* != ''` de thay the: buoc `if` khong doc duoc
+      # context `secrets`.) Kiem bang shell trong `run` thi khong vuong cho nao.
       - name: Restore Keystore from Secrets (neu co)
-        if: ${{ env.HAS_KEYSTORE == 'true' }}
         env:
-          HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > smarthome-release.jks
-          echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > smarthome-release.jks
+            printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
+            echo "Da nap keystore that -> APK se duoc ky bang khoa release."
+          else
+            echo "::warning::Thieu secret KEYSTORE_BASE64 - APK se ky bang khoa DEBUG."
+            echo "::warning::Ban nay KHONG cai de len duoc may dang chay ban ky bang khoa release."
+          fi
 
       - name: Build Release APK
         run: ./gradlew assembleRelease
+
+      # In ra khoa da ky, de lan sau nhin log la biet ngay thay vi phai cai thu
+      # len may tinh bang moi phat hien sai khoa.
+      - name: In chu ky cua APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --print-certs "$APK" | grep -iE "certificate DN|SHA-256 digest" || true
 
       - name: Prepare APK Asset
         id: prepare_asset
