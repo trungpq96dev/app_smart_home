@@ -155,6 +155,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onOpenStats = { current = Dest.STATS.route },
                         onRefreshWeather = vm::taiLaiThoiTiet,
                         onOpenWifi = { showWifi = true },
+                        onOpenLich = { current = Dest.UTILITIES.route },
                     )
 
                     dest == Dest.SETTINGS -> SettingsScreen(

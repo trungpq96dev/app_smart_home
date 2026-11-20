@@ -2,6 +2,7 @@ package vn.smarthome
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -59,6 +60,17 @@ class ShellSmokeTest {
         rule.onNodeWithText("Quạt trần").assertIsDisplayed()
         rule.onNodeWithText("Điều hòa").assertIsDisplayed()
         rule.onNodeWithText("Chế độ hoạt động").assertIsDisplayed()
+    }
+
+    @Test
+    fun bam_dong_ho_lich_o_trang_chu_mo_man_lich_am() {
+        start()
+        // O dong ho / am lich ben phai tieu de Trang chu la loi tat vao man
+        // Tien ich. Tim theo chuoi "Âm " chu khong go cung ngay am lich:
+        // ngay do doi moi ngay, viet cung la test tu do khi qua nua dem.
+        rule.onNode(hasText("Âm ", substring = true)).performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Tiện ích · Lịch vạn niên").assertIsDisplayed()
     }
 
     @Test

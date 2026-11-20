@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Home
@@ -43,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +54,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import vn.smarthome.data.DemoData
 import vn.smarthome.data.RoomUi
+import vn.smarthome.data.lunar.AmLich
 import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.ui.components.DemoBadge
@@ -63,12 +66,14 @@ import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatTile
 import vn.smarthome.ui.components.StatusPill
 import vn.smarthome.ui.components.WeatherCard
+import vn.smarthome.ui.shell.ClockNow
 import vn.smarthome.ui.shell.rememberClock
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SHType
 import vn.smarthome.ui.theme.SmartHomeTheme
 import vn.smarthome.vm.HomeState
+import java.time.LocalDate
 
 /**
  * Trang chu.
@@ -88,8 +93,9 @@ fun HomeScreen(
     onOpenStats: () -> Unit,
     onRefreshWeather: () -> Unit,
     onOpenWifi: () -> Unit = {},
+    onOpenLich: () -> Unit = {},
 ) {
-    val clock = rememberClock()
+    val clock = rememberClock(seconds = true)
 
     Column(Modifier.fillMaxSize()) {
 
@@ -108,6 +114,12 @@ fun HomeScreen(
                     )
                     Text(clock.greeting, style = SHType.Caption, color = SH.TextDim, maxLines = 1)
                 }
+                DongHoLich(
+                    clock = clock,
+                    onOpenLich = onOpenLich,
+                    modifier = Modifier.fillMaxHeight(),
+                )
+                Spacer(Modifier.width(10.dp))
                 if (DemoData.IS_DEMO) {
                     DemoBadge()
                     Spacer(Modifier.width(8.dp))
@@ -302,6 +314,57 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Dong ho that + ngay am lich, nam ben phai thanh tieu de Trang chu.
+ *
+ * Bam vao la mo man Tien ich de xem full lich van nien (am lich ca thang).
+ *
+ * Ngay am chi tinh lai khi chuoi ngay duong doi chu khong phai moi giay: dong
+ * ho nhay tung giay, con am lich thi mot ngay moi doi mot lan.
+ */
+@Composable
+private fun DongHoLich(
+    clock: ClockNow,
+    onOpenLich: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val am = remember(clock.date) {
+        val d = LocalDate.now()
+        AmLich.tuDuongLich(d.dayOfMonth, d.monthValue, d.year)
+    }
+    val canChi = remember(am) { AmLich.canChi(am) }
+
+    Row(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(SH.Card2)
+            .clickable(onClick = onOpenLich)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(horizontalAlignment = Alignment.End) {
+            Text(clock.time, style = SHType.Value, color = SH.Text, maxLines = 1)
+            Text(clock.date, style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+        }
+
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.width(1.dp).height(30.dp).background(SH.Border))
+        Spacer(Modifier.width(10.dp))
+
+        Icon(Icons.Filled.CalendarMonth, null, tint = SH.Amber, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Column {
+            Text(
+                "Âm " + am.ngay + "/" + am.thang + (if (am.nhuan) " (nhuận)" else ""),
+                style = SHType.BodyMed,
+                color = SH.Amber,
+                maxLines = 1,
+            )
+            Text("Năm " + canChi.nam, style = SHType.Caption, color = SH.TextDim, maxLines = 1)
         }
     }
 }

@@ -15,7 +15,7 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 
 | Màn | Trạng thái |
 |---|---|
-| Trang chủ | Đủ: header + 4 ô số liệu + thẻ phòng vuốt ngang + 4 ô thao tác nhanh + dải trạng thái |
+| Trang chủ | Đủ: header (kèm đồng hồ + ngày âm lịch, bấm vào mở lịch vạn niên) + 4 ô số liệu + thẻ phòng vuốt ngang + 4 ô thao tác nhanh + dải trạng thái |
 | Điều khiển phòng | Đủ: 2 công tắc + điều hòa −/+ + 4 chế độ + lịch hẹn |
 | Camera an ninh | **Hình thật từ camera Tuya** qua go2rtc. Chưa khai báo go2rtc thì vẫn là ô giữ chỗ |
 | Thống kê & Báo cáo | Đủ: 5 tab. **Tab Điện năng dùng số thật từ MQTT**, 4 tab kia là dữ liệu mẫu |
