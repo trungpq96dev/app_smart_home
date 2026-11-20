@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import vn.smarthome.data.congtac.OThietBi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -117,7 +118,14 @@ fun QuickActionTile(
     }
 }
 
-/** Hang thiet bi co cong tac gat (Den phong, Quat tran...). */
+/**
+ * Hang thiet bi co cong tac gat (Den phong, Quat tran...).
+ *
+ * [o] = null thi giu nguyen hanh vi cu (thiet bi mau, va moi preview/test san
+ * co khong phai sua). Co [o] la thiet bi THAT: luc do man hinh khong duoc tu
+ * bia trang thai - khong ro thi ve dau gach "—" va an han Switch di, chu
+ * tuyet doi khong ve mot cai cong tac nam o the TAT.
+ */
 @Composable
 fun DeviceSwitchRow(
     icon: ImageVector,
@@ -126,34 +134,64 @@ fun DeviceSwitchRow(
     checked: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    o: OThietBi? = null,
 ) {
+    val that = o as? OThietBi.That
+    // Dang cho thi ve o the nguoi dung vua gat toi, cho do mat tu nhien.
+    val veBat = that?.let { it.mong ?: it.bat ?: false } ?: checked
+    val roRang = that == null || that.dangCho || (that.online && that.bat != null)
+    val ghiChu = that?.ghiChu
+
     SmartCard(modifier = modifier.defaultMinSize(minHeight = Dim.DeviceRowH), padding = 10.dp) {
         Row(
             Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(icon, if (checked) color else SH.TextOff, size = 36.dp, iconSize = 19.dp)
+            IconBadge(
+                icon,
+                if (roRang && veBat) color else SH.TextOff,
+                size = 36.dp,
+                iconSize = 19.dp,
+            )
             Spacer(Modifier.width(10.dp))
-            Text(
-                label,
-                style = SHType.CardTitle,
-                color = SH.Text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Switch(
-                checked = checked,
-                onCheckedChange = { onToggle() },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = SH.Green,
-                    checkedBorderColor = SH.Green,
-                    uncheckedThumbColor = SH.TextDim,
-                    uncheckedTrackColor = SH.Card2,
-                    uncheckedBorderColor = SH.Border,
-                ),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = SHType.CardTitle,
+                    color = SH.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (ghiChu != null) {
+                    Text(
+                        ghiChu,
+                        style = SHType.Label,
+                        color = if (that?.dangCho == true) SH.TextDim else SH.Amber,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (!roRang) {
+                // Khong ro thi noi thang la khong ro. Mot cai cong tac gat
+                // duoc, nam o the TAT, trong khi app khong he biet den dang
+                // sang hay khong, la loi noi doi ton it pixel nhat trong app.
+                Text("—", style = SHType.CardTitle, color = SH.TextDim)
+            } else {
+                Switch(
+                    checked = veBat,
+                    enabled = that == null || that.gatDuoc,
+                    onCheckedChange = { onToggle() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = SH.Green,
+                        checkedBorderColor = SH.Green,
+                        uncheckedThumbColor = SH.TextDim,
+                        uncheckedTrackColor = SH.Card2,
+                        uncheckedBorderColor = SH.Border,
+                    ),
+                )
+            }
         }
     }
 }

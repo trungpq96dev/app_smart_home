@@ -1,0 +1,31 @@
+name: congtac-bridge
+
+services:
+  congtac-bridge:
+    build: .
+    image: congtac-bridge:1.0
+    container_name: congtac-bridge
+    restart: unless-stopped
+
+    # local_key cua den + mat khau MQTT nam trong .env, khong nhung vao anh.
+    env_file:
+      - .env
+
+    # Bridge mac dinh du: container chi MO KET NOI RA (192.168.0.100:6668,
+    # 192.168.0.103:5555, Mosquitto 192.168.0.50:1883). Khong mo cong vao,
+    # va khong can network_mode: host.
+    #
+    # Chi can host network neu muon bridge tu do IP bang quang ba UDP -
+    # DUNG LAM. Dat IP tinh tren router thi don gian va chan doan duoc hon.
+
+    mem_limit: 128m
+    cpus: 0.5
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "3"

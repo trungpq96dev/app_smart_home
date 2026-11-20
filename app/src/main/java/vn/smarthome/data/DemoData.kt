@@ -48,6 +48,15 @@ import kotlin.random.Random
  *
  * Chip "DU LIEU MAU" tren header lay tu hang so IS_DEMO ngay duoi - tat no
  * khi da co du lieu that.
+ *
+ * TU 21/11/2026 CO NAY HEP NGHIA LAI. Nha da co hai cong tac THAT (bed1: den
+ * Tuya + quat CozyLife, qua `congtac/#`), nen IS_DEMO khong con noi thay cho
+ * cac thiet bi nua - no chi con noi ve SO LIEU TONG QUAN o day (nhiet do
+ * trong nha, do am, kWh hien tai, bieu do Thong ke).
+ *
+ * Cau hoi "thiet bi nay that hay mau" hoi `CongTacState.laThat(phong,
+ * thietBi)`, nguon la `congtac/info` tu bridge - KHONG hoi hang so nay, va
+ * khong hard-code danh sach thiet bi that o bat ky dau trong app.
  */
 object DemoData {
 

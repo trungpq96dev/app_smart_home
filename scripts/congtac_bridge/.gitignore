@@ -1,0 +1,11 @@
+.env
+*.env
+!cau_hinh.mau.env
+__pycache__/
+*.pyc
+
+# tinytuya wizard sinh ra may file nay - CHUA local_key CUA MOI THIET BI
+# TUYA trong tai khoan, ke ca camera. Repo nay cong khai tren GitHub.
+devices.json
+snapshot.json
+tuya-raw.json

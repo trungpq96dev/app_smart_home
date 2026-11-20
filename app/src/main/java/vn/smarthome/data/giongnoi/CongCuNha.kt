@@ -40,6 +40,18 @@ interface HanhDongNha {
     /** Trang thai hien tai cua mot thiet bi, de biet "dao" thanh bat hay tat. */
     fun dangBat(phong: String, thietBi: String): Boolean?
 
+    /**
+     * True khi cap (phong, thietBi) la cong tac THAT - lenh se doi do vat
+     * ngoai doi chu khong chi doi hinh tren man hinh.
+     *
+     * Nguon: `congtac/info` tu bridge. KHONG hard-code o day - them cong tac
+     * thu ba thi sua .env tren server, khong phai build lai APK.
+     */
+    fun laThat(phong: String, thietBi: String): Boolean
+
+    /** Ten tieng Viet cac cong tac that, de nhet vao loi dan. Rong = chua co cai nao. */
+    fun thietBiThat(): List<String>
+
     /** Doi man hinh. Tra ve false neu khong co dich do. */
     fun moManHinh(dich: String): Boolean
 
@@ -119,16 +131,23 @@ class CongCuNha(
         }
 
         val ketQua = mutableListOf<String>()
+        var moiCaiDeuThat = true
         for (p in dsPhong) {
             val ten = nha.tenPhong(p) ?: continue
+            val that = nha.laThat(p, thietBi)
+            if (!that) moiCaiDeuThat = false
             val r = motPhong(p, ten, thietBi, hanhDong, giaTri) ?: return loi(
                 "Chưa làm được \"$hanhDong\" với \"$thietBi\"."
             )
             ketQua += r
-            if (guiMqtt) nha.guiMqtt(p, thietBi, hanhDong, giaTri)
+            // Thiet bi THAT: nha.datDen/datQuat da ban lenh ra MQTT roi. Ban
+            // them o day la hai lenh cho mot cau noi - cong tac nhay hai lan.
+            if (guiMqtt && !that) nha.guiMqtt(p, thietBi, hanhDong, giaTri)
         }
         if (ketQua.isEmpty()) return loi("Không có phòng nào để điều khiển.")
-        return ok(ketQua.joinToString("; "))
+        // Con mot cai mau thi ca lenh coi la chua-that, de canh bao van hien.
+        // Tha canh bao thua con hon thieu.
+        return ok(ketQua.joinToString("; "), that = moiCaiDeuThat)
     }
 
     /** Tra ve null neu cap thiet_bi/hanh_dong khong hop le. */
@@ -140,7 +159,18 @@ class CongCuNha(
         giaTri: String?,
     ): String? = when (thietBi) {
         DEN, QUAT, DIEU_HOA, LICH_HEN -> {
-            val bat = batHayTat(hanhDong, nha.dangBat(ma, thietBi)) ?: return null
+            val dangBat = nha.dangBat(ma, thietBi)
+            // `dao` tren thiet bi THAT ma khong ro trang thai thi phai tu choi.
+            // batHayTat() coi khong-ro la "tat" roi dao thanh bat - doan the
+            // voi thiet bi mau thi hop ly, voi cong tac that dang mat ket noi
+            // thi la doan mo.
+            if (hanhDong == DAO && dangBat == null && nha.laThat(ma, thietBi)) {
+                throw LoiLenh(
+                    "Chưa biết ${tenThietBi(thietBi)} $ten đang bật hay tắt — " +
+                        "công tắc đang mất kết nối. Bạn muốn bật hay tắt?",
+                )
+            }
+            val bat = batHayTat(hanhDong, dangBat) ?: return null
             when (thietBi) {
                 DEN -> nha.datDen(ma, bat)
                 QUAT -> nha.datQuat(ma, bat)
@@ -155,8 +185,11 @@ class CongCuNha(
                 null
             }
             val tenTb = tenThietBi(thietBi)
-            if (nhiet != null) "$tenTb $ten: bật, $nhiet độ"
-            else "$tenTb $ten: " + (if (bat) "bật" else "tắt")
+            // Thiet bi that: luc ham nay tra ve, lenh moi roi broker - cong
+            // tac chua chac da nhan. Noi "da gui lenh bat" chu dung noi "bat".
+            val xong = if (nha.laThat(ma, thietBi)) "đã gửi lệnh " else ""
+            if (nhiet != null) "$tenTb $ten: ${xong}bật, $nhiet độ"
+            else "$tenTb $ten: " + xong + (if (bat) "bật" else "tắt")
         }
 
         NHIET_DO -> when (hanhDong) {
@@ -239,7 +272,14 @@ class CongCuNha(
 
     // ---------------------------------------------------------------
 
-    private fun ok(cau: String) = JSONObject().put("ok", true).put("ket_qua", cau)
+    /**
+     * [that] = lenh nay di toi thiet bi THAT.
+     *
+     * TroLyGiongNoi doc co nay de quyet dinh co gan dong xam "chua noi thiet
+     * bi that" hay khong. Mac dinh false: thieu co thi canh bao - huong an toan.
+     */
+    private fun ok(cau: String, that: Boolean = false) =
+        JSONObject().put("ok", true).put("ket_qua", cau).put("that", that)
 
     private fun loi(cau: String) = JSONObject().put("ok", false).put("loi", cau)
 
@@ -266,7 +306,14 @@ class CongCuNha(
         const val TANG = "tang"
         const val GIAM = "giam"
 
-        val MUC_HOP_LE = listOf("trang_thai_nha", "dien", "server", "wifi", "thoi_tiet", "lich_am")
+        /**
+         * `cong_tac` tach rieng khoi `trang_thai_nha` co chu dinh: muc do
+         * tron that lan mau, nen cau "den phong ngu 1 co dang sang that
+         * khong" se duoc tra loi bang mot so mau.
+         */
+        val MUC_HOP_LE = listOf(
+            "trang_thai_nha", "dien", "server", "wifi", "thoi_tiet", "lich_am", "cong_tac",
+        )
 
         fun docCheDo(s: String?): String? = when (s?.trim()?.lowercase()) {
             "ngu", "sleep" -> "ngu"
@@ -401,7 +448,11 @@ class CongCuNha(
                                     "dien: điện EVN. server: máy chủ serverubuntu. " +
                                         "wifi: modem. thoi_tiet: Open-Meteo. " +
                                         "lich_am: lịch âm hôm nay. " +
-                                        "trang_thai_nha: đèn/quạt/điều hòa từng phòng.",
+                                        "trang_thai_nha: đèn/quạt/điều hòa từng phòng " +
+                                        "(gồm cả thiết bị mẫu). " +
+                                        "cong_tac: các công tắc Wi-Fi THẬT — đang nối " +
+                                        "được không, đang bật hay tắt. Hỏi thiết bị có " +
+                                        "bật thật không thì dùng mục này.",
                                     JSONArray().apply { MUC_HOP_LE.forEach { put(it) } },
                                 ),
                             ),

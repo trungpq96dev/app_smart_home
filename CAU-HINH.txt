@@ -41,8 +41,9 @@ File mã nguồn: app/src/main/java/vn/smarthome/data/dien/CauHinhMqtt.kt
 -------------------------------------------------------------------------------
 3. CÁC TOPIC MQTT
 -------------------------------------------------------------------------------
-App subscribe 3 nhánh: dien/#  wifi/#  server/#   (QoS 1, mọi topic RETAINED)
-App CHỈ publish đúng 1 topic: wifi/cmd  (lệnh "reboot" modem)
+App subscribe 4 nhánh: dien/#  wifi/#  server/#  congtac/#   (QoS 1, RETAINED)
+App publish 2 topic: wifi/cmd  (lệnh "reboot" modem)
+                     smarthome/control  (lệnh bật/tắt công tắc, KHÔNG retained)
 
 --- dien/#  (nguồn: script dien_evn chạy Docker trên serverubuntu, 4 cữ/ngày) --
 dien/trangthai          "ok" | "loi"
@@ -77,10 +78,43 @@ server/diennang_ngay    điện năng CPU theo ngày
 server/capnhat          mốc thời gian
 Không có cảm biến -> publish null -> app hiện "—", không bịa số.
 
+--- congtac/#  (nguồn: scripts/congtac_bridge/ chạy Docker trên serverubuntu) ---
+congtac/info            JSON danh sách công tắc bridge đang quản. APP DỰNG DANH
+                        SÁCH TỪ ĐÂY, không hard-code - thêm công tắc thứ ba thì
+                        sửa .env trên server, không phải build lại APK.
+congtac/thietbi/<mã>    JSON trạng thái một công tắc. <mã> = <phòng>_<thiết bị>,
+                        ví dụ bed1_den, bed1_quat.
+congtac/trangthai       "online" | "offline"  <-- LWT của bridge
+congtac/capnhat         mốc thời gian mỗi vòng poll
+congtac/cmd/result      kết quả một lệnh vừa thực thi (KHÔNG retained)
+smarthome/control       <-- APP GHI VÀO ĐÂY. Payload:
+                        {"device":"bed1_den","room":"bed1","action":"ON",
+                         "source":"man_hinh|voice","id":"<mã lệnh>"}
+
+LUẬT: online=false thì is_on PHẢI là null, không phải false. App đọc null là vẽ
+"—" chứ không vẽ công tắc ở thế TẮT - xem docs/KE-HOACH-CONGTAC.md mục 3.3.
+Bridge chép lại "id" của lệnh vào "tra_loi_id"; app dùng nó để gỡ cờ "đang chờ"
+(so chuỗi, KHÔNG so mốc thời gian - đồng hồ server và tablet không bao giờ khớp).
+
+Hai công tắc (đo 21/11/2026):
+  Đèn Phòng ngủ 1   Tuya/Smart Life  192.168.0.100  TCP 6668  protocol 3.3
+                    MAC 84:7a:b6:1f:95:fb   device_id eb74553feb16595327lzam
+                    local_key: CHƯA CÓ - nằm trong .env trên server, không ở đây
+  Quạt Phòng ngủ 1  CozyLife         192.168.0.103  TCP 5555
+                    MAC 00:50:c2:ec:bf:27   did 727700990050c2ecbf27
+  CẢ HAI IP đang nằm trong dải DHCP động -> phải đặt Address Reservation trên
+  router, không thì mất điện một lần là đổi IP. TL-WR840N mất hết reservation
+  khi reset về mặc định.
+
+CẢNH BÁO: từ nay MQTT điều khiển được vật thể trong nhà, mà Mosquitto vẫn chưa
+có acl_file. Mất mật khẩu iot trước đây là lộ số liệu; giờ là bật tắt được đèn
+phòng ngủ - và mật khẩu đó nằm trong máy tính bảng treo tường.
+
 Kiểm tra nhanh trên server (thay <pass> bằng mật khẩu tài khoản iot):
   mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "dien/#"   -v
   mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "server/#" -v
   mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "wifi/#"   -v
+  mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "congtac/#" -v
 
 
 -------------------------------------------------------------------------------
