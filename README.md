@@ -2,9 +2,10 @@
 
 App nhà thông minh cho **Samsung Galaxy Tab A7 Lite** nằm ngang, Kotlin + Jetpack Compose.
 
-Hai thứ đã chạy bằng dữ liệu thật: **số điện** (EVN → MQTT) và **hình camera**
-(camera Tuya → go2rtc). Phần còn lại — đèn, quạt, rèm, cảm biến — vẫn là khung giao diện
-chạy trên số liệu mẫu: bấm được, gạt được, đổi được, nhưng chưa nối tới thiết bị nào.
+Ba thứ đã chạy bằng số thật: **số điện** (EVN → MQTT), **hình camera**
+(camera Tuya → go2rtc) và **lịch âm** (tính tại chỗ, không cần mạng). Phần còn lại —
+đèn, quạt, rèm, cảm biến — vẫn là khung giao diện chạy trên số liệu mẫu: bấm được,
+gạt được, đổi được, nhưng chưa nối tới thiết bị nào.
 
 Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](docs/screenshots).
 
@@ -18,8 +19,13 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 | Điều khiển phòng | Đủ: 2 công tắc + điều hòa −/+ + 4 chế độ + lịch hẹn |
 | Camera an ninh | **Hình thật từ camera Tuya** qua go2rtc. Chưa khai báo go2rtc thì vẫn là ô giữ chỗ |
 | Thống kê & Báo cáo | Đủ: 5 tab. **Tab Điện năng dùng số thật từ MQTT**, 4 tab kia là dữ liệu mẫu |
-| Cài đặt | Hai cột: broker MQTT (số điện) và go2rtc (hình camera) |
-| Thiết bị / Cảm biến / Tự động hóa | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
+| Thiết bị | Đủ: lưới thẻ thiết bị gom từ các phòng, bấm mở đúng phòng đó |
+| Tự động hóa | Đủ: thẻ hệ thống bơm AquaControl (mở thẳng app `vn.aquacontrol`) + các kịch bản tự động |
+| WiFi gia đình | 5 tab. **Dùng số thật từ `wifi/#`** khi `wifi_collector` đang chạy; tab Bảo mật và Nâng cao còn nhiều phần là dữ liệu mẫu |
+| Server | **Số thật từ `server/#`**: CPU/RAM/ổ đĩa/nhiệt độ/Docker của `serverubuntu`. Chỉ xem, không điều khiển |
+| Cài đặt | Tab *Dịch vụ & Kết nối* (ba cột: broker MQTT, go2rtc, Open-Meteo) và tab *Cập nhật hệ thống* (OTA qua GitHub) |
+| Tiện ích · Lịch vạn niên | **Đủ và dùng số thật**: lịch âm/dương, Can Chi, ngày lễ, giờ hoàng đạo. Tính tại chỗ nên không cần mạng |
+| Cảm biến | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
 
 ### Thao tác thật sự hoạt động
 
@@ -39,6 +45,8 @@ màn và xoay máy**: bật đèn ở màn chi tiết phòng rồi quay về Tra
 | Chọn camera bên trái | Đổi luồng đang xem; luồng cũ bị cắt ngay |
 | Đổi tab Điện năng → Gas | Biểu đồ, số liệu, đơn vị, màu đổi theo |
 | Đổi "7 ngày" → 14 / 30 ngày | Đổi số cột biểu đồ |
+| Bấm một ngày trong lịch | Thẻ bên phải đổi theo: âm lịch, Can Chi, lễ, giờ hoàng đạo |
+| Bấm ◀ / ▶ ở lịch | Đổi tháng; bấm ngày mờ của tháng khác thì lịch nhảy luôn sang tháng đó |
 | Nút Back của máy | Thoát màn con trước, chưa thoát app ngay |
 
 ---
@@ -203,6 +211,43 @@ Camera có micro và go2rtc phát kèm tiếng, nên khung hình **có tiếng**
 
 ---
 
+## Lịch âm: tính tại chỗ, không cần mạng
+
+Màn **Tiện ích** là màn duy nhất chạy số thật mà **không nối đi đâu cả**. Không MQTT,
+không HTTP, không khoá API — mất mạng vẫn đúng, và vì vậy cũng không bao giờ phải hiện
+`--` như các màn kia.
+
+Thuật toán là bản mã nguồn mở của **Hồ Ngọc Đức**, port sang Kotlin trong
+`data/lunar/AmLich.kt`. Chép nguyên công thức, **không "làm gọn" hệ số nào**: mọi hằng số
+trong phần tính trăng mới và kinh độ mặt trời đều là hệ số thiên văn, đổi một chữ số là
+lệch ngày Tết.
+
+> **Múi giờ cố định +7.** Âm lịch Việt Nam chốt ngày theo giờ Hà Nội, Trung Quốc dùng +8
+> nên có năm hai bên lệch nhau đúng một ngày. Đừng đổi tham số đó thành giờ máy.
+
+### Test đối chiếu bằng ngày Tết thật
+
+Đây là chỗ dễ tự lừa mình nhất: cho chạy một lần, chép kết quả ra làm mốc, rồi test nào
+cũng xanh — nhưng chỉ chứng minh được code **không đổi**, không chứng minh được code
+**đúng**. Nên mốc so sánh trong `AmLichTest.kt` là những thứ tra được trên tờ lịch giấy:
+
+- Mùng 1 Tết các năm 2023 → 2027 (Quý Mão, Giáp Thìn, Ất Tỵ, Bính Ngọ, Đinh Mùi)
+- Năm 2025 **phải có tháng 6 nhuận** — quét cả 365 ngày để tìm
+- Năm 2026 **không được có** tháng nhuận nào
+- Ngày 30 Tết vẫn thuộc năm cũ
+- Can Chi ngày xoay đúng vòng 60, tháng âm chỉ dài 29 hoặc 30 ngày
+
+### Ba chỗ cố ý làm khác bản thiết kế
+
+1. **Bỏ cột menu con** (Thời tiết / Điện lực EVN / Không khí AQI). Hai mục đầu đã có thật
+   ở Trang chủ và màn Thống kê, mục thứ ba chưa có nguồn. Ba thẻ bấm vào không ra gì sẽ
+   ăn 150dp bề ngang của màn chỉ rộng 818dp.
+2. **Lễ âm lịch không tính trong tháng nhuận** — mùng 5/5 nhuận không phải Tết Đoan Ngọ.
+3. **Đếm ngày tới Rằm / Mùng 1 bằng cách duyệt thật từng ngày**, không lấy `15 − ngày`.
+   Tháng âm lúc 29 lúc 30 ngày, trừ thẳng là lệch một ngày ở cuối tháng thiếu.
+
+---
+
 ## Cái gì CHƯA có — và chỗ để cắm vào sau
 
 | Chưa có | Cắm vào đâu |
@@ -211,7 +256,8 @@ Camera có micro và go2rtc phát kèm tiếng, nên khung hình **có tiếng**
 | Ảnh phòng | `ui/components/ImagePlaceholder.kt` — đổi thân hàm thành `Image(...)`. Mọi chỗ gọi đều đi qua đây |
 | Ảnh tĩnh / quay video ở màn Camera | Ảnh tĩnh cần `ffmpeg` trên máy chạy go2rtc (`/api/frame.jpeg` trả 500 khi thiếu). Hình trực tiếp thì không cần |
 | Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại |
-| 3 màn Thiết bị / Cảm biến / Tự động hóa | `ui/screens/PlaceholderScreen.kt` (màn Cài đặt đã làm xong) |
+| Màn Cảm biến | `ui/screens/PlaceholderScreen.kt` — màn trống duy nhất còn lại |
+| Thời tiết / Điện lực / AQI trong màn Tiện ích | Bản thiết kế có cột menu con 4 mục, hiện chỉ làm mục Lịch. Thêm cột đó vào `TienIchScreen.kt` khi có nội dung thật |
 | Chế độ sáng, font Inter, ký release | Xem BUILD.md |
 
 ---
@@ -240,14 +286,17 @@ data/
   DemoData.kt   TOÀN BỘ số liệu mẫu
   dien/         CauHinhMqtt, DienState, MqttDien — số điện thật qua MQTT
   camera/       CauHinhCamera, Go2rtc — hình camera thật qua go2rtc
+  lunar/        AmLich — đổi âm lịch, Can Chi, giờ hoàng đạo. Kotlin thuần,
+                không dính Compose/Android nên test chạy thẳng trên JVM
 vm/
   HomeViewModel.kt   State + các hàm toggle
 ui/
-  theme/        Color, Dimens (ngân sách 893×533dp), Type, Theme
+  theme/        Color, Dimens (ngân sách 1006×601dp), Type, Theme
   components/   SmartCard, StatTile, QuickActionTile, DeviceSwitchRow, TempStepperRow,
                 ChoiceChip, ImagePlaceholder, BarChart, ArcGauge, PagerDots…
   shell/        Nav, SideNav, TopBar, AppShell, Clock
-  screens/      Home, RoomDetail, Camera, Stats, Placeholder
+  screens/      Home, RoomDetail, Camera, Stats, ChiTietDien, Devices, Automation,
+                Server, Wifi, Settings, TienIch, Placeholder
 ```
 
 ### Hai quyết định đáng nói
