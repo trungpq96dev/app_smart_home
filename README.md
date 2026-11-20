@@ -25,7 +25,7 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 | Server | **Số thật từ `server/#`**: CPU/RAM/ổ đĩa/nhiệt độ/Docker của `serverubuntu`. Chỉ xem, không điều khiển |
 | Cài đặt | Tab *Dịch vụ & Kết nối* (ba cột: broker MQTT, go2rtc, Open-Meteo) và tab *Cập nhật hệ thống* (OTA qua GitHub) |
 | Tiện ích · Lịch vạn niên | **Đủ và dùng số thật**: lịch âm/dương, Can Chi, ngày lễ, giờ hoàng đạo. Tính tại chỗ nên không cần mạng |
-| Cảm biến | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
+| Cảm biến | **Số thật từ `cuktech/charger/#`**: công suất, điện áp, dòng điện và giao thức sạc của từng cổng củ sạc CUKTECH 10 Ultra. Chỉ xem |
 | Trợ lý giọng nói | Nút mic nổi trên mọi màn. **Nói chuyện thật với Gemini Live**, điều khiển thiết bị và chuyển màn bằng giọng nói, trả lời câu hỏi bằng số thật |
 
 ### Thao tác thật sự hoạt động
@@ -379,9 +379,56 @@ cũng xanh — nhưng chỉ chứng minh được code **không đổi**, không
 | Ảnh tĩnh / quay video ở màn Camera | Ảnh tĩnh cần `ffmpeg` trên máy chạy go2rtc (`/api/frame.jpeg` trả 500 khi thiếu). Hình trực tiếp thì không cần |
 | Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại; `guiLenhDieuKhien()` và topic `smarthome/control` đã dựng sẵn cho giọng nói |
 | Từ khóa đánh thức ("Này trợ lý") | Chưa có. Gemini Live không làm wake-word, phải thêm thư viện riêng (Porcupine/Vosk) — stream 24/7 thì hóa đơn và pin đều không chịu nổi |
-| Màn Cảm biến | `ui/screens/PlaceholderScreen.kt` — màn trống duy nhất còn lại |
+| Bật/tắt cổng củ sạc từ tablet | `cuktech-ble-server` có sẵn topic ghi `cuktech/charger/port`. App hiện chỉ đọc — muốn điều khiển thì đi qua `guiLenhDieuKhien()` như công tắc, đừng nhét vào luồng đọc |
+| Nhiệt độ / quạt củ sạc | **Không làm được**: củ sạc không phát hai số này. Bản thiết kế đầu tiên có, đo ra thì không tồn tại |
 | Thời tiết / Điện lực / AQI trong màn Tiện ích | Bản thiết kế có cột menu con 4 mục, hiện chỉ làm mục Lịch. Thêm cột đó vào `TienIchScreen.kt` khi có nội dung thật |
 | Chế độ sáng, font Inter, ký release | Xem BUILD.md |
+
+---
+
+## Củ sạc CUKTECH 10 Ultra: số thật qua Bluetooth
+
+Màn **Cảm biến** hiện công suất từng cổng của củ sạc. Củ sạc không nói chuyện trực tiếp với
+app — đường đi:
+
+```
+CUKTECH 10 Ultra  →(BLE GATT, bắt tay MiOT)→  cuktech-ble-server (serverubuntu)
+                  →(MQTT retained)→  Mosquitto  →  app subscribe cuktech/#
+```
+
+`cuktech-ble-server` là [dự án MIT của người khác](https://github.com/kairui1108/cuktech-ble-server),
+ghim ở tag `v2.0.1`, chạy bằng systemd dưới user thường trên `serverubuntu`.
+
+### Số liệu KHÔNG nằm trong quảng bá BLE
+
+Đo ngày 21/11/2026: củ sạc có phát gói MiBeacon (`FE95`) nhưng khung chỉ dài 11 byte và cờ
+"object" **tắt** — tức không chở số liệu nào. 48 gói liên tiếp giống hệt nhau. Mọi con số
+chỉ lấy được sau khi **kết nối GATT và bắt tay MiOT bằng token**, trên characteristic
+`0x001b` của service `FE95`.
+
+Nghĩa là không thể dùng ESP32 + OpenMQTTGateway kiểu nghe-quảng-bá cho con này. Máy chạy
+phải giữ một kết nối BLE sống, nên nó nằm trên server chứ không nằm trên tablet.
+
+### Ba thứ củ sạc không có
+
+Không có **nhiệt độ**, không có **tốc độ quạt**, không có **công suất tổng**. Tổng trên màn
+hình là app tự cộng từ 4 cổng, và dòng chữ dưới số nói rõ như vậy.
+
+### Cổng trống gửi ít trường hơn cổng đang sạc
+
+```json
+đang sạc: {"voltage":20.1,"current":2.3,"power":46.2,"active":true,"protocol":"PD","enabled":true}
+cổng trống: {"voltage":0.0,"current":0.0,"power":0.0,"active":false,"protocol":"idle"}
+```
+
+Cổng trống thiếu hẳn `enabled`, nên `CongSac.choPhep` là nullable — khai `Boolean = true` là
+bịa ra một sự thật không có trong gói. Và cổng sáng hay mờ quyết định bằng `active`, **không**
+phải so `power > 0.5`: sạc gần đầy pin thì dòng tụt về gần 0 mà cổng vẫn đang sạc thật.
+
+### Chưa có gói nào thì nói thẳng
+
+`CuktechState` khởi tạo rỗng, không mượn `DemoData` như màn Server và WiFi. Chưa nhận gói thì
+màn hình hiện "Chưa có số từ củ sạc" chứ không vẽ một củ sạc tưởng tượng đang ra 85 W.
 
 ---
 

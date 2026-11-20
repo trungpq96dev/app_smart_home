@@ -149,13 +149,25 @@ class ShellSmokeTest {
     }
 
     @Test
-    fun cac_man_chua_lam_van_mo_duoc() {
+    fun man_cam_bien_hien_cu_sac_cuktech() {
         start()
-        // Thiet bi va Tu dong hoa deu da lam xong roi, nen CAM BIEN la man
-        // placeholder duy nhat con lai.
+        // Cam bien khong con la placeholder: no la man cu sac CUKTECH 10 Ultra,
+        // doc tu `cuktech/charger/#`.
         rule.onNodeWithText("Cảm biến").performClick()
         rule.mainClock.advanceTimeByFrame()
-        rule.onNodeWithText("Màn hình này sẽ làm ở giai đoạn sau").assertIsDisplayed()
+        rule.onNodeWithText("Củ sạc CUKTECH 10 Ultra").assertIsDisplayed()
+    }
+
+    @Test
+    fun man_cam_bien_khong_bia_so_khi_chua_co_goi() {
+        start()
+        rule.onNodeWithText("Cảm biến").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        // Test chay khong co broker -> CuktechState rong. Man hinh PHAI noi
+        // thang la chua co so, tuyet doi khong duoc ve mot cu sac dang ra 85W.
+        // Day la luat da ap cho tab Dien nang va nhiet do server.
+        rule.onNodeWithText("Chưa có số từ củ sạc").assertIsDisplayed()
+        rule.onNodeWithText("CHƯA CÓ SỐ").assertIsDisplayed()
     }
 
     @Test
