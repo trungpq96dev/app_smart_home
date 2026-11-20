@@ -43,7 +43,7 @@ class GeminiLiveTest {
 
     @Test
     fun xin_tieng_chu_khong_phai_chu() {
-        val m = setup().getJSONArray("responseModalities")
+        val m = setup().getJSONObject("generationConfig").getJSONArray("responseModalities")
         assertEquals(1, m.length())
         assertEquals("AUDIO", m.getString(0))
     }
@@ -53,11 +53,44 @@ class GeminiLiveTest {
         val s = setup(CauHinhGiongNoi(khoaApi = "k", giongDoc = "Kore"))
         assertEquals(
             "Kore",
-            s.getJSONObject("speechConfig")
+            s.getJSONObject("generationConfig")
+                .getJSONObject("speechConfig")
                 .getJSONObject("voiceConfig")
                 .getJSONObject("prebuiltVoiceConfig")
                 .getString("voiceName"),
         )
+    }
+
+    /**
+     * Chan dung cai loi da lam hong ban v0.5.0.
+     *
+     * `responseModalities` va `speechConfig` dat o cap ngoai cua `setup` thi
+     * server dong duong ngay voi ma 1007:
+     *
+     *     Invalid JSON payload received. Unknown name "speechConfig"
+     *     at 'setup': Cannot find field.
+     *
+     * Bai hoc that su: test cu CO chay va CO xanh, nhung no khang dinh dung
+     * cai cau truc sai - vi ma nguon va test deu viet tu cung mot gia dinh
+     * sai. Test chi chot duoc hinh dang, khong chot duoc hinh dang DUNG.
+     * Cho nay phai doi chieu trang API reference, khong phai trang huong dan.
+     */
+    @Test
+    fun setup_chi_duoc_chua_dung_cac_truong_server_nhan() {
+        val s = setup()
+        val choPhep = setOf(
+            "model", "generationConfig", "systemInstruction", "tools",
+            "realtimeInputConfig", "sessionResumption", "contextWindowCompression",
+            "inputAudioTranscription", "outputAudioTranscription",
+            "proactivity", "historyConfig", "labels",
+        )
+        val dangGui = s.keys().asSequence().toList()
+        val la = dangGui.filterNot { it in choPhep }
+        assertTrue("Truong server khong nhan: $la", la.isEmpty())
+
+        // Hai cai nay la thu phong o cap ngoai - phai nam trong generationConfig.
+        assertFalse(s.has("responseModalities"))
+        assertFalse(s.has("speechConfig"))
     }
 
     @Test

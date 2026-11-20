@@ -244,9 +244,21 @@ class GeminiLive(private val nghe: Nghe) {
         /**
          * Dung goi `setup`.
          *
-         * Dat `responseModalities` va `speechConfig` o CAP NGOAI cua `setup`,
-         * dung nhu vi du trong tai lieu Google ngay 20/11/2026. Model phai co
-         * tien to `models/`.
+         * `responseModalities` va `speechConfig` PHAI nam trong
+         * `generationConfig`, KHONG phai o cap ngoai cua `setup`.
+         *
+         * Dat sai cap thi server dong duong ngay voi ma 1007 va cau:
+         *
+         *     Invalid JSON payload received. Unknown name "speechConfig"
+         *     at 'setup': Cannot find field.
+         *
+         * Da mac dung loi nay ngay 20/11/2026. Vi sao mac: vi du trong trang
+         * huong dan cua Google viet `responseModalities` o cap ngoai - nhung
+         * do la cau hinh cua SDK, khong phai hinh dang that tren duong day.
+         * Trang API reference moi la cho dung: `BidiGenerateContentSetup` chi
+         * co 12 truong, va hai cai nay khong nam trong do.
+         *
+         * Model phai co tien to `models/`.
          */
         fun dungSetup(
             cauHinh: CauHinhGiongNoi,
@@ -255,16 +267,20 @@ class GeminiLive(private val nghe: Nghe) {
         ): JSONObject {
             val setup = JSONObject()
                 .put("model", "models/" + cauHinh.model.trim().removePrefix("models/"))
-                .put("responseModalities", JSONArray().put("AUDIO"))
                 .put(
-                    "speechConfig",
-                    JSONObject().put(
-                        "voiceConfig",
-                        JSONObject().put(
-                            "prebuiltVoiceConfig",
-                            JSONObject().put("voiceName", cauHinh.giongDoc),
+                    "generationConfig",
+                    JSONObject()
+                        .put("responseModalities", JSONArray().put("AUDIO"))
+                        .put(
+                            "speechConfig",
+                            JSONObject().put(
+                                "voiceConfig",
+                                JSONObject().put(
+                                    "prebuiltVoiceConfig",
+                                    JSONObject().put("voiceName", cauHinh.giongDoc),
+                                ),
+                            ),
                         ),
-                    ),
                 )
                 .put(
                     "systemInstruction",

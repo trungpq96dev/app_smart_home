@@ -261,6 +261,32 @@ khớp bản ghi ở trên) và trên CI — tag `v0.5.0` build `success`, phát
 > release, trên máy thật. Tính tới lúc ghi dòng này, chưa ai bấm nút mic trên
 > máy thật lần nào.
 
+### Gemini Live đóng kết nối ngay khi bấm mic (v0.5.0 — đã sửa ở v0.5.1)
+
+Bấm nút mic là hỏng ngay:
+
+```
+Invalid JSON payload received. Unknown name "speechConfig" at 'setup': Cannot find field.
+```
+
+Gói `setup` đặt `responseModalities` và `speechConfig` ở **cấp ngoài**. Đúng ra chúng
+phải nằm trong `generationConfig`. Server trả mã đóng 1007 và app hiện nguyên câu đó.
+
+**Vì sao mắc**: trang *hướng dẫn* của Google viết ví dụ
+`{"setup": {"model": ..., "responseModalities": ["AUDIO"]}}` — nhưng đó là hình dạng
+cấu hình của **SDK**, không phải hình dạng thật trên đường dây. Trang
+[API reference](https://aistudio.google.com/api-reference/live) mới là chỗ đúng:
+`BidiGenerateContentSetup` có đúng 12 trường và không có hai cái kia.
+
+> **Bài học đắt hơn bản thân lỗi**: `GeminiLiveTest` lúc đó CÓ chạy và CÓ xanh — nó
+> khẳng định `setup.responseModalities` tồn tại. Nhưng mã nguồn và test đều viết ra từ
+> **cùng một giả định sai**, nên test chỉ chốt được *hình dạng*, không chốt được *hình
+> dạng đúng*. Test không bao giờ thay được việc đối chiếu tài liệu tham chiếu.
+>
+> Test bây giờ có `setup_chi_duoc_chua_dung_cac_truong_server_nhan` — liệt kê trắng 12
+> trường hợp lệ và bắt lỗi mọi tên lạ. Thêm trường mới vào `setup` mà quên cập nhật
+> danh sách đó thì test đỏ ngay, không phải đợi bấm mic trên máy thật mới biết.
+
 ### Build release chết vì khóa file — không phải lỗi code
 
 Gặp ngày 20/11/2026:
