@@ -109,14 +109,38 @@ và tỉ lệ màn hình thật vẫn có thể lệch đôi chút.
 build.bat assembleRelease
 ```
 
-APK ở `app\build\outputs\apk\release\app-release.apk` — **2,05 MB**, nhỏ hơn bản debug
-(18,2 MB) khoảng 9 lần nhờ R8 rút gọn code và `isShrinkResources`.
+APK ở `app\build\outputs\apk\release\app-release.apk` — **2,00 MB** (2.099.968 byte),
+nhỏ hơn bản debug (17,4 MB) khoảng **8,7 lần** nhờ R8 rút gọn code và `isShrinkResources`.
 
-> **Trước khi thêm trợ lý giọng nói, bản release chỉ 939 KB.** OkHttp + Okio + phần
-> mã giọng nói làm `classes.dex` phình lên 1,49 MB (nén), cộng 40 KB danh sách
-> public-suffix mà OkHttp luôn gói kèm. Tức là **phình hơn gấp đôi** — nhiều hơn
-> ước lượng 300-500 KB lúc lên kế hoạch. Vẫn nhỏ so với một app Android bình
-> thường, nhưng nếu sau này phải ép cỡ xuống thì OkHttp là chỗ đầu tiên để nhìn.
+### Trợ lý giọng nói làm APK nặng thêm bao nhiêu
+
+Đo bằng chính các file APK do CI phát hành, nên cùng một điều kiện build:
+
+| Tag | Byte | | So với bản trước |
+|---|---:|---|---|
+| v0.3.0 | 1.894.469 | 1,81 MB | |
+| v0.4.0 | 1.910.853 | 1,82 MB | +16 KB |
+| v0.4.2 | 1.910.853 | 1,82 MB | +0 |
+| **v0.5.0** | **2.099.968** | **2,00 MB** | **+185 KB** ← OkHttp + mã giọng nói |
+
+Tức là **+185 KB**, đúng tầm ước lượng 300–500 KB lúc lên kế hoạch.
+
+> **Đừng lấy con số "939 KB" ở các bản ghi cũ làm mốc.** Bản ghi ngày 17/11/2026 của
+> tài liệu này viết APK release là 939 KB, nhưng APK CI phát hành đã là **1,81 MB ngay
+> từ v0.3.0** — tức con số cũ đo ở một trạng thái khác và không so sánh được. Ngày
+> 20/11/2026 người viết đã một lần dùng nhầm nó làm mốc rồi kết luận sai rằng trợ lý
+> giọng nói "làm APK phình hơn gấp đôi".
+>
+> Muốn biết một tính năng làm nặng thêm bao nhiêu thì **so hai file APK do CI phát
+> hành**, đừng so với số chép trong tài liệu. Lấy cỡ thật bằng:
+>
+> ```
+> curl -s https://api.github.com/repos/trungpq96dev/app_smart_home/releases | grep '"size"'
+> ```
+
+Nếu sau này phải ép cỡ xuống thì OkHttp là chỗ đầu tiên để nhìn: riêng danh sách
+public-suffix nó luôn gói kèm đã 40 KB, mà app không dùng cookie nên không bao giờ
+đụng tới.
 
 ### Khoá ký
 
@@ -227,12 +251,15 @@ gói aar** nên không phải giữ lớp nào bằng tay. `proguard-rules.pro` 
 dòng `-dontwarn` cho các lớp chỉ dùng trên JVM máy chủ (Conscrypt, BouncyCastle,
 OpenJSSE, Animal Sniffer) — không có trên Android và không bao giờ chạy ở đây.
 
-`assembleRelease` chạy sạch, APK ký đúng khóa cũ (vân tay khớp bản ghi ở trên).
+`assembleRelease` chạy sạch ở cả hai nơi: trên máy này (APK ký đúng khóa cũ, vân tay
+khớp bản ghi ở trên) và trên CI — tag `v0.5.0` build `success`, phát hành
+`SmartHome-v0.5.0.apk`. Hai file chênh nhau 4 byte, tức là cùng một thứ.
 
 > **Vẫn còn nợ phần quan trọng nhất**: cài bản release lên SM-T225 rồi **thật sự
 > bấm nút mic**. Đúng bài học của Paho — build sạch và test xanh không chứng minh
 > được gì về thư viện mạng; nó chỉ lộ nguyên hình khi thực sự mở kết nối, ở bản
-> release, trên máy thật.
+> release, trên máy thật. Tính tới lúc ghi dòng này, chưa ai bấm nút mic trên
+> máy thật lần nào.
 
 ### Build release chết vì khóa file — không phải lỗi code
 
