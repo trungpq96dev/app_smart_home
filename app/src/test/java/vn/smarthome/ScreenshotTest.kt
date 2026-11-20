@@ -32,6 +32,7 @@ import vn.smarthome.ui.screens.TienIchScreen
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
+import vn.smarthome.data.giongnoi.CauHinhGiongNoi
 import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.KetNoi
@@ -176,8 +177,8 @@ class ScreenshotTest {
                 SettingsScreen(
                     CauHinhMqtt(), KetNoi.ChuaCauHinh,
                     CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                    CauHinhThoiTiet(),
-                    {}, {}, {}, {},
+                    CauHinhThoiTiet(), CauHinhGiongNoi(),
+                    {}, {}, {}, {}, {},
                 )
             }
         }

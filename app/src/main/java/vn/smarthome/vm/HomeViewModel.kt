@@ -40,7 +40,18 @@ import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.data.ota.OtaManager
 import vn.smarthome.data.ota.OtaStatus
 import vn.smarthome.data.ota.ReleaseInfo
+import vn.smarthome.data.giongnoi.CauHinhGiongNoi
+import vn.smarthome.data.giongnoi.CauHinhGiongNoiStore
+import vn.smarthome.data.giongnoi.HanhDongNha
+import vn.smarthome.data.giongnoi.PhienGiongNoi
+import vn.smarthome.data.lunar.AmLich
 import vn.smarthome.ui.theme.SH
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalDate
 
 data class HomeState(
     val rooms: List<RoomUi> = DemoData.rooms(),
@@ -62,6 +73,7 @@ data class HomeState(
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CauHinhStore(app)
+    private val storeGiongNoi = CauHinhGiongNoiStore(app)
     private val storeCam = CauHinhCameraStore(app)
     private val storeThoiTiet = CauHinhThoiTietStore(app)
     private val mqtt = MqttDien()
@@ -98,6 +110,41 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Dia diem thoi tiet nguoi dung chon trong Cai dat. */
     val cauHinhThoiTiet: StateFlow<CauHinhThoiTiet> = storeThoiTiet.cauHinh
         .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhThoiTiet())
+
+    // ---- Tro ly giong noi ----
+
+    val cauHinhGiongNoi: StateFlow<CauHinhGiongNoi> = storeGiongNoi.cauHinh
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhGiongNoi())
+
+    /**
+     * Lenh doi man hinh do giong noi phat ra.
+     *
+     * Phai la SharedFlow chu khong phai StateFlow: dieu huong la SU KIEN, noi
+     * "mo camera" hai lan lien tiep thi StateFlow nuot lan thu hai vi gia tri
+     * khong doi. `replay = 0` de xoay may khong mo lai man cu.
+     */
+    private val _lenhDieuHuong = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val lenhDieuHuong: SharedFlow<String> = _lenhDieuHuong.asSharedFlow()
+
+    /**
+     * Cai nguoi noi chuyen. Khoi tao LUOI (by lazy) va khong mo mic o day -
+     * ShellSmokeTest dung thang AppShell() nen moi thu nang trong init deu
+     * chay trong Robolectric.
+     */
+    private val troLy by lazy { TroLyGiongNoi(app, viewModelScope, hanhDongNha) }
+
+    val phienGiongNoi: StateFlow<PhienGiongNoi>
+        get() = troLy.phien
+
+    fun batTatGiongNoi() = troLy.batTat(cauHinhGiongNoi.value)
+
+    fun dongGiongNoi() = troLy.tat()
+
+    fun xoaLoiGiongNoi() = troLy.xoaLoi()
+
+    fun luuCauHinhGiongNoi(c: CauHinhGiongNoi) {
+        viewModelScope.launch { storeGiongNoi.luu(c) }
+    }
 
     // ---- OTA Update ----
     val otaManager = OtaManager(app)
@@ -258,6 +305,30 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(rooms = s.rooms.map { if (it.id == roomId) block(it) else it })
     }
 
+    // ---- Dat thang trang thai (giong noi dung, khong phai dao) ----
+    //
+    // Nut tren man hinh thi DAO la dung: nguoi ta nhin thay cong tac roi moi
+    // bam. Giong noi thi khong: "bat den phong khach" luc den dang bat ma lai
+    // dao thanh tat la lam nguoc y nguoi noi.
+
+    fun datDen(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(lightOn = bat) }
+
+    fun datQuat(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(fanOn = bat) }
+
+    fun datDieuHoa(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(acOn = bat) }
+
+    fun datLichHen(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(scheduleOn = bat) }
+
+    fun datNhietDo(roomId: String, doC: Int): Int {
+        val kep = doC.coerceIn(16, 30)
+        editRoom(roomId) { it.copy(acTemp = kep) }
+        return _state.value.rooms.firstOrNull { it.id == roomId }?.acTemp ?: kep
+    }
+
+    fun datONhanh(id: String, bat: Boolean) = _state.update { s ->
+        s.copy(quick = s.quick.map { if (it.id == id) it.copy(on = bat) else it })
+    }
+
     // ---- Camera ----
 
     fun selectCamera(index: Int) = _state.update { it.copy(selectedCamera = index) }
@@ -303,6 +374,231 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Cai Gemini thuc su dong vao app.
+    //
+    // Doc so lieu thi lay tu dung cac StateFlow dang chay that. Chua co so thi
+    // tra `co_so: false` kem ly do - khong bao gio bia mot con so, dung nguyen
+    // tac cua du an (xem README muc "Vi sao co chip DU LIEU MAU").
+    // ---------------------------------------------------------------
+
+    private val hanhDongNha = object : HanhDongNha {
+
+        override fun maPhong(): List<String> = _state.value.rooms.map { it.id }
+
+        override fun tenPhong(ma: String): String? =
+            _state.value.rooms.firstOrNull { it.id == ma }?.name
+
+        override fun datDen(phong: String, bat: Boolean) = this@HomeViewModel.datDen(phong, bat)
+
+        override fun datQuat(phong: String, bat: Boolean) = this@HomeViewModel.datQuat(phong, bat)
+
+        override fun datDieuHoa(phong: String, bat: Boolean) =
+            this@HomeViewModel.datDieuHoa(phong, bat)
+
+        override fun datLichHen(phong: String, bat: Boolean) =
+            this@HomeViewModel.datLichHen(phong, bat)
+
+        override fun datNhietDo(phong: String, doC: Int): Int =
+            this@HomeViewModel.datNhietDo(phong, doC)
+
+        override fun chinhNhietDo(phong: String, buoc: Int): Int {
+            changeAcTemp(phong, buoc)
+            return _state.value.rooms.firstOrNull { it.id == phong }?.acTemp ?: 26
+        }
+
+        override fun datCheDo(phong: String, cheDo: String) {
+            val m = when (cheDo) {
+                "ngu" -> RoomMode.SLEEP
+                "nha" -> RoomMode.HOME
+                "vang_nha" -> RoomMode.AWAY
+                else -> RoomMode.CUSTOM
+            }
+            setMode(phong, m)
+        }
+
+        override fun datONhanh(id: String, bat: Boolean) = this@HomeViewModel.datONhanh(id, bat)
+
+        override fun dangBat(phong: String, thietBi: String): Boolean? {
+            if (phong == "nhanh") {
+                return _state.value.quick.firstOrNull { it.id == thietBi }?.on
+            }
+            val p = _state.value.rooms.firstOrNull { it.id == phong } ?: return null
+            return when (thietBi) {
+                "den" -> p.lightOn
+                "quat" -> p.fanOn
+                "dieu_hoa" -> p.acOn
+                "lich_hen" -> p.scheduleOn
+                else -> null
+            }
+        }
+
+        override fun moManHinh(dich: String): Boolean {
+            val hopLe = dich in DICH_HOP_LE ||
+                (dich.startsWith("phong:") && tenPhong(dich.removePrefix("phong:")) != null)
+            if (!hopLe) return false
+            // tryEmit chu khong phai emit: day duoc goi tu luong cua OkHttp,
+            // khong phai coroutine. extraBufferCapacity=4 nen khong mat lenh.
+            return _lenhDieuHuong.tryEmit(dich)
+        }
+
+        override fun docSoLieu(muc: String): JSONObject = when (muc) {
+            "trang_thai_nha" -> jsonTrangThaiNha()
+            "dien" -> jsonDien()
+            "server" -> jsonServer()
+            "wifi" -> jsonWifi()
+            "thoi_tiet" -> jsonThoiTiet()
+            "lich_am" -> jsonLichAm()
+            else -> chuaCoSo("Không biết mục này.")
+        }
+
+        override fun chupTrangThai(): String = _state.value.rooms.joinToString("\n") { p ->
+            "- ${p.name}: đèn ${batTat(p.lightOn)}, quạt ${batTat(p.fanOn)}, " +
+                "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ, chế độ ${p.mode.label}"
+        }
+
+        override fun guiMqtt(
+            phong: String,
+            thietBi: String,
+            hanhDong: String,
+            giaTri: String?,
+        ): Boolean {
+            val o = JSONObject()
+                .put("device", if (phong == "nhanh") "nhanh_$thietBi" else phong + "_" + thietBi)
+                .put("room", phong)
+                .put("action", hanhDong.uppercase())
+                .put("source", "voice")
+            if (giaTri != null) o.put("value", giaTri)
+            return mqtt.guiLenhDieuKhien(o.toString())
+        }
+    }
+
+    private fun batTat(b: Boolean) = if (b) "bật" else "tắt"
+
+    companion object {
+        /**
+         * Nhung dich `mo_man_hinh` nhan.
+         *
+         * Phai khop voi nhanh `when` trong AppShell. Them man moi thi them o CA
+         * HAI cho - de lech thi giong noi bao "da mo" ma man hinh khong doi.
+         */
+        val DICH_HOP_LE = listOf(
+            "trang_chu", "thiet_bi", "camera", "cam_bien", "tu_dong_hoa",
+            "cai_dat", "server", "thong_ke", "tien_ich", "chi_tiet_dien", "wifi",
+        )
+    }
+
+    private fun chuaCoSo(lyDo: String) = JSONObject().put("co_so", false).put("ly_do", lyDo)
+
+    private fun jsonTrangThaiNha(): JSONObject {
+        val phong = JSONArray()
+        _state.value.rooms.forEach { p ->
+            phong.put(
+                JSONObject()
+                    .put("ma", p.id).put("ten", p.name)
+                    .put("den", p.lightOn).put("quat", p.fanOn)
+                    .put("dieu_hoa", p.acOn).put("nhiet_do", p.acTemp)
+                    .put("che_do", p.mode.label)
+                    .put("lich_hen", p.scheduleOn)
+                    .put("gio_hen", p.scheduleTime),
+            )
+        }
+        val nhanh = JSONArray()
+        _state.value.quick.forEach { nhanh.put(JSONObject().put("ma", it.id).put("bat", it.on)) }
+        return JSONObject()
+            .put("co_so", true)
+            .put("phong", phong)
+            .put("o_nhanh", nhanh)
+            .put("thiet_bi_that", !DemoData.IS_DEMO)
+    }
+
+    private fun jsonDien(): JSONObject {
+        val d = dien.value
+        if (!d.coSoLieu) {
+            return chuaCoSo(
+                when (val k = ketNoi.value) {
+                    is KetNoi.Loi -> k.moTa
+                    KetNoi.ChuaCauHinh -> "Chưa khai báo broker MQTT trong Cài đặt."
+                    else -> "Đang chờ số điện đầu tiên từ broker."
+                },
+            )
+        }
+        val o = JSONObject().put("co_so", true).put("nguon", "EVN qua MQTT")
+        d.ngaySanLuong?.let { o.put("san_luong_ngay_gan_nhat_kwh", it) }
+        d.ngay?.let { o.put("ngay_gan_nhat", it) }
+        d.thangSanLuong?.let { o.put("san_luong_thang_nay_kwh", it) }
+        d.thangTien?.let { o.put("tien_thang_nay_dong", it) }
+        d.congToChiSo?.let { o.put("chi_so_cong_to", it) }
+        d.congNoSoTien?.let { o.put("cong_no_dong", it) }
+        d.tongKwh(7)?.let { o.put("tong_7_ngay_kwh", it) }
+        d.tongKwh(30)?.let { o.put("tong_30_ngay_kwh", it) }
+        d.capNhat?.let { o.put("cap_nhat_luc", it) }
+        return o
+    }
+
+    private fun jsonServer(): JSONObject {
+        val s = server.value
+        if (!s.isRealData) return chuaCoSo("Chưa nhận được số từ topic server/# của serverubuntu.")
+        return JSONObject()
+            .put("co_so", true)
+            .put("ten_may", s.info.hostname)
+            .put("he_dieu_hanh", s.info.os)
+            .put("cpu_phan_tram", s.metric.cpuPercent)
+            .put("ram_phan_tram", s.metric.ramPercent)
+            .put("ram_dung_gb", s.metric.ramUsedGb)
+            .put("ram_tong_gb", s.info.ramTotalGb)
+            .put("dia_phan_tram", s.metric.diskPercent)
+            .put("dia_dung_gb", s.metric.diskUsedGb)
+            .put("dia_tong_gb", s.info.diskTotalGb)
+            .put("nhiet_do_cpu", s.metric.cpuTempC ?: JSONObject.NULL)
+            .put("chay_lien_tuc_ngay", s.info.uptimeDays)
+            .put("so_container_docker", s.containers.size)
+    }
+
+    private fun jsonWifi(): JSONObject {
+        val w = wifi.value
+        if (!w.isRealData) return chuaCoSo("Chưa nhận được số từ topic wifi/# - wifi_collector chưa chạy.")
+        return JSONObject()
+            .put("co_so", true)
+            .put("ten_mang", w.info.ssid)
+            .put("dang_noi", w.info.isConnected)
+            .put("tin_hieu_dbm", w.info.signalDbm)
+            .put("tai_xuong_mbps", w.info.downloadMbps)
+            .put("tai_len_mbps", w.info.uploadMbps)
+            .put("so_thiet_bi_dang_noi", w.devices.count { it.isOnline })
+    }
+
+    private fun jsonThoiTiet(): JSONObject = when (val t = thoiTiet.value) {
+        is ThoiTietUi.Co -> JSONObject()
+            .put("co_so", true)
+            .put("dia_diem", t.data.diaDiem)
+            .put("nhiet_do", t.data.hienTai.nhietDo)
+            .put("cam_giac_nhu", t.data.hienTai.camGiac)
+            .put("do_am", t.data.hienTai.doAm)
+            .put("gio_kmh", t.data.hienTai.gio)
+            .put("cap_nhat_luc", t.data.gioCapNhat)
+
+        is ThoiTietUi.Loi -> chuaCoSo(t.moTa)
+        ThoiTietUi.DangTai -> chuaCoSo("Đang tải thời tiết từ Open-Meteo.")
+    }
+
+    /** Lich am tinh tai cho, khong can mang - nen muc nay luon co so. */
+    private fun jsonLichAm(): JSONObject {
+        val hom = LocalDate.now()
+        val am = AmLich.tuDuongLich(hom.dayOfMonth, hom.monthValue, hom.year)
+        val cc = AmLich.canChi(am)
+        return JSONObject()
+            .put("co_so", true)
+            .put("duong_lich", "${hom.dayOfMonth}/${hom.monthValue}/${hom.year}")
+            .put("am_lich", "${am.ngay}/${am.thang}" + if (am.nhuan) " nhuận" else "")
+            .put("nam_am", am.nam)
+            .put("can_chi_ngay", cc.ngay)
+            .put("can_chi_thang", cc.thang)
+            .put("can_chi_nam", cc.nam)
+            .put("gio_hoang_dao", JSONArray().apply { AmLich.gioHoangDao(cc.chiNgay).forEach { put(it) } })
+            .put("su_kien", AmLich.suKien(hom.dayOfMonth, hom.monthValue, am) ?: JSONObject.NULL)
     }
 
     fun dongHopThoaiCapNhat() {

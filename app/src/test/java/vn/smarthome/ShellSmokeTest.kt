@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -188,5 +189,47 @@ class ShellSmokeTest {
         rule.mainClock.advanceTimeByFrame()
         // Co dong dem thiet bi va it nhat mot the Den.
         rule.onAllNodesWithText("Đèn").onFirst().assertIsDisplayed()
+    }
+
+    // ---------------------------------------------------------------
+    // Tro ly giong noi
+    // ---------------------------------------------------------------
+
+    @Test
+    fun nut_mic_hien_tren_moi_man() {
+        start()
+        rule.onNodeWithContentDescription("Bật trợ lý giọng nói").assertIsDisplayed()
+        // Doi sang man khac thi nut van con - no noi tren khung chu khong
+        // thuoc man nao.
+        rule.onNodeWithText("Thiết bị").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithContentDescription("Bật trợ lý giọng nói").assertIsDisplayed()
+    }
+
+    /**
+     * Bam mic khi CHUA dien khoa Gemini: phai bao va day sang man Cai dat,
+     * tuyet doi khong duoc chet app hay mo mic.
+     *
+     * Day la duong di that cua lan dau cai app - khong co khoa nao trong
+     * DataStore, va ma nguon thi khong nhung san khoa nao.
+     */
+    @Test
+    fun bam_mic_khi_chua_co_khoa_thi_mo_man_cai_dat() {
+        start()
+        rule.onNodeWithContentDescription("Bật trợ lý giọng nói").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Trợ lý giọng nói").assertIsDisplayed()
+    }
+
+    @Test
+    fun tab_tro_ly_giong_noi_trong_cai_dat_mo_duoc() {
+        start()
+        rule.onNodeWithText("Cài đặt").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Trợ lý giọng nói").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Trợ lý giọng nói — Gemini Live").assertIsDisplayed()
+        rule.onNodeWithText("Khóa API Gemini").assertIsDisplayed()
+        rule.onNodeWithText("Model").assertIsDisplayed()
     }
 }

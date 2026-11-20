@@ -26,6 +26,7 @@ Build: xem [BUILD.md](BUILD.md). Ảnh chụp từng màn: [docs/screenshots](do
 | Cài đặt | Tab *Dịch vụ & Kết nối* (ba cột: broker MQTT, go2rtc, Open-Meteo) và tab *Cập nhật hệ thống* (OTA qua GitHub) |
 | Tiện ích · Lịch vạn niên | **Đủ và dùng số thật**: lịch âm/dương, Can Chi, ngày lễ, giờ hoàng đạo. Tính tại chỗ nên không cần mạng |
 | Cảm biến | Màn trống, nói rõ "sẽ làm ở giai đoạn sau" |
+| Trợ lý giọng nói | Nút mic nổi trên mọi màn. **Nói chuyện thật với Gemini Live**, điều khiển thiết bị và chuyển màn bằng giọng nói, trả lời câu hỏi bằng số thật |
 
 ### Thao tác thật sự hoạt động
 
@@ -211,6 +212,102 @@ Camera có micro và go2rtc phát kèm tiếng, nên khung hình **có tiếng**
 
 ---
 
+## Trợ lý giọng nói: nói chuyện thật, không có mẫu câu nào
+
+Nút mic ở góc dưới bên phải, nổi trên mọi màn. Bấm một cái là mở phiên, nói
+chuyện qua lại tự nhiên, bấm lại hoặc im lặng 45 giây thì tự đóng.
+
+**Không có bảng từ khóa nào trong mã nguồn.** Hiểu câu nói là việc của
+[Gemini Live API](https://aistudio.google.com/docs/live-api); app chỉ khai báo
+ba hàm cho nó gọi. Nên *"nóng quá, hạ điều hòa phòng ngủ 1 xuống 24 độ giúp
+anh"* chạy đúng mà không ai phải viết câu đó ở đâu cả.
+
+```
+Mic 16kHz ──► AudioRecord ──base64──┐
+                                    ├──► WebSocket WSS ──► Gemini Live
+Loa 24kHz ◄── AudioTrack ◄──base64──┘            │
+                                                  │ toolCall
+                                                  ▼
+                                             CongCuNha
+                                    ┌─────────────┼──────────────┐
+                                    ▼             ▼              ▼
+                            HomeViewModel   đổi màn hình    smarthome/control
+```
+
+Máy tính bảng nối **thẳng** tới Gemini, không qua `serverubuntu`. Bớt một chặng
+mạng nên đáp nhanh hơn, không phải nuôi thêm một container, và server tắt thì
+trợ lý vẫn sống.
+
+### Ba hàm khai cho Gemini
+
+Ít hàm thì model gọi đúng hơn, nên gộp còn ba thay vì mỗi việc một hàm:
+
+| Hàm | Làm gì |
+|---|---|
+| `dieu_khien_thiet_bi` | Đèn, quạt, điều hòa, nhiệt độ, chế độ phòng, lịch hẹn, 4 ô nhanh. Nhận cả `tat_ca` |
+| `mo_man_hinh` | Chuyển màn, kể cả mở thẳng một phòng (`phong:living`) |
+| `doc_so_lieu` | Điện EVN, server, WiFi, thời tiết, lịch âm, trạng thái cả nhà |
+
+`system_instruction` khai sẵn sơ đồ nhà và một ảnh chụp trạng thái lúc mở
+phiên, nên *"đèn phòng khách đang bật không"* trả lời được ngay mà không tốn
+một vòng gọi hàm.
+
+### Bật là bật, không phải đảo
+
+Nút trên màn hình thì **đảo** là đúng — người ta nhìn thấy công tắc rồi mới
+bấm. Giọng nói thì không: nói *"bật đèn phòng khách"* lúc đèn đang bật mà lại
+đảo thành tắt là làm ngược hẳn ý người nói. Nên `HomeViewModel` có thêm một bộ
+hàm `datDen`/`datQuat`/`datDieuHoa` đặt thẳng trạng thái, tách khỏi các hàm
+`toggle*` mà giao diện dùng. Có test riêng cho đúng chỗ này.
+
+### Khử vọng — chỗ dễ hỏng nhất
+
+Loa phát tiếng Gemini lọt vào mic thì Gemini nghe chính nó và **tự nói chuyện
+với mình**, không dừng lại được. Hai lớp chặn:
+
+1. `AudioRecord` dùng nguồn `VOICE_COMMUNICATION` (không phải `MIC`) và
+   `AudioTrack` dùng `USAGE_VOICE_COMMUNICATION`. Phải là **cả hai đầu** thì
+   Android mới ghép được cặp tín hiệu cho chip DSP khử vọng phần cứng.
+2. Máy không có `AcousticEchoCanceler` thì app tự chuyển sang **bán song
+   công**: ngừng gửi mic trong lúc loa còn tiếng. Mất khả năng ngắt lời giữa
+   chừng, nhưng không bao giờ vào vòng lặp. Ép bật/tắt được ở màn Cài đặt.
+
+Lúc khóa mic thì **vẫn đọc hết đệm của `AudioRecord`**, chỉ không gửi đi.
+Không đọc thì đệm đầy, và lúc mở khóa sẽ bắn đi một cục tiếng của quá khứ.
+
+### Tiền và thời gian
+
+Gemini Live tính **theo phút nói chuyện**. Máy này treo tường, một lần quên tắt
+mic là tính tiền cả ngày. Nên phiên luôn tự đóng khi im lặng (mặc định 45 giây)
+và có trần cứng (mặc định 10 phút, Live API tự cắt ở 15 phút). Bảng thoại có
+đồng hồ đếm. Đừng tắt hai thứ đó.
+
+### Khóa API để ở đâu
+
+Trong DataStore của máy tính bảng, gõ ở màn **Cài đặt → Trợ lý giọng nói** —
+đúng chỗ của mật khẩu MQTT và tài khoản go2rtc. **Không nhúng vào mã nguồn**:
+mã nguồn ở GitHub, và bản APK release được phát hành công khai ở GitHub
+Releases cho cơ chế OTA, nên ai tải APK về cũng moi được thứ build vào trong đó.
+
+### Ô "Model" là ô nhập tay — cố ý
+
+Google đổi tên model Live khá thường xuyên. Tra ngày 20/11/2026 thì tài liệu
+chính thức gọi `gemini-3.8-live` là model mặc định, trong khi các hướng dẫn
+trôi nổi vẫn chép `gemini-2.5-flash-native-audio-preview-*` và
+`gemini-3.1-flash-live-preview`. Để ô nhập tay thì đổi model về sau là gõ lại
+một ô, không phải build lại APK và cài lại máy.
+
+### Đèn quạt vẫn chưa nối thiết bị thật
+
+Nói *"bật đèn phòng khách"* sẽ gạt công tắc trên màn hình và Gemini xác nhận
+bằng giọng — nhưng **không có bóng đèn nào sáng**. Theo nguyên tắc *"không bịa
+số"* của dự án, bảng thoại ghi một dòng xám *"chỉ đổi trên màn hình — chưa nối
+thiết bị thật"* dưới mỗi lệnh, và `system_instruction` dặn Gemini nói thật nếu
+bị hỏi thẳng. Bật tuỳ chọn **Bắn lệnh ra MQTT** thì mỗi lệnh còn đi kèm một
+JSON vào `smarthome/control` — đường dựng sẵn cho ESP32, hiện chưa ai nghe.
+
+---
+
 ## Lịch âm: tính tại chỗ, không cần mạng
 
 Màn **Tiện ích** là màn duy nhất chạy số thật mà **không nối đi đâu cả**. Không MQTT,
@@ -255,7 +352,8 @@ cũng xanh — nhưng chỉ chứng minh được code **không đổi**, không
 | Dữ liệu thật cho đèn/quạt/rèm/cảm biến | `data/DemoData.kt` — **toàn bộ số liệu mẫu còn lại nằm đúng một file này** |
 | Ảnh phòng | `ui/components/ImagePlaceholder.kt` — đổi thân hàm thành `Image(...)`. Mọi chỗ gọi đều đi qua đây |
 | Ảnh tĩnh / quay video ở màn Camera | Ảnh tĩnh cần `ffmpeg` trên máy chạy go2rtc (`/api/frame.jpeg` trả 500 khi thiếu). Hình trực tiếp thì không cần |
-| Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại |
+| Điều khiển thiết bị qua MQTT | `vm/HomeViewModel.kt` — các hàm toggle đổi thành gửi lệnh rồi chờ thiết bị xác nhận. Lớp MQTT đã có sẵn ở `data/dien/MqttDien.kt` để dùng lại; `guiLenhDieuKhien()` và topic `smarthome/control` đã dựng sẵn cho giọng nói |
+| Từ khóa đánh thức ("Này trợ lý") | Chưa có. Gemini Live không làm wake-word, phải thêm thư viện riêng (Porcupine/Vosk) — stream 24/7 thì hóa đơn và pin đều không chịu nổi |
 | Màn Cảm biến | `ui/screens/PlaceholderScreen.kt` — màn trống duy nhất còn lại |
 | Thời tiết / Điện lực / AQI trong màn Tiện ích | Bản thiết kế có cột menu con 4 mục, hiện chỉ làm mục Lịch. Thêm cột đó vào `TienIchScreen.kt` khi có nội dung thật |
 | Chế độ sáng, font Inter, ký release | Xem BUILD.md |
@@ -288,8 +386,11 @@ data/
   camera/       CauHinhCamera, Go2rtc — hình camera thật qua go2rtc
   lunar/        AmLich — đổi âm lịch, Can Chi, giờ hoàng đạo. Kotlin thuần,
                 không dính Compose/Android nên test chạy thẳng trên JVM
+  giongnoi/     CauHinhGiongNoi, GeminiLive (WebSocket), AmThanh (mic + loa),
+                CongCuNha (ba hàm khai cho Gemini), TrangThaiGiongNoi
 vm/
-  HomeViewModel.kt   State + các hàm toggle
+  HomeViewModel.kt   State + các hàm toggle + bản cài HanhDongNha cho giọng nói
+  TroLyGiongNoi.kt   Ghép WebSocket + mic + loa + công cụ thành một phiên
 ui/
   theme/        Color, Dimens (ngân sách 1006×601dp), Type, Theme
   components/   SmartCard, StatTile, QuickActionTile, DeviceSwitchRow, TempStepperRow,
@@ -307,8 +408,13 @@ ui/
 **Không dùng thư viện biểu đồ.** Biểu đồ cột và đồng hồ cung vẽ bằng `Canvas` thuần
 (`ui/components/Charts.kt`), đủ dùng ở kích thước này và không kéo thêm phụ thuộc nào.
 
-Phụ thuộc cố ý rút gọn: không Room, không Retrofit, không OkHttp, không MQTT, không KSP —
-khung giao diện không cần, giữ lại chỉ làm APK nặng và build chậm.
+Phụ thuộc cố ý rút gọn: không Room, không Retrofit, không KSP, không thư viện biểu đồ,
+không thư viện JSON — `HttpURLConnection` và `org.json` có sẵn trong Android là đủ cho
+Open-Meteo, go2rtc và OTA.
+
+Hai thứ phải thêm vì không có đường vòng: **Paho MQTT** (số điện thật) và **OkHttp**
+(WebSocket cho Gemini Live — Android không có client WebSocket nào sẵn, và
+`java.net.http.WebSocket` chỉ có từ API 34 trong khi minSdk là 26).
 
 ---
 

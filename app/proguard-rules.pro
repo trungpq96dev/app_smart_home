@@ -13,3 +13,19 @@
 #  Vi vay: giu nguyen ten moi thu trong Paho.
 -keep class org.eclipse.paho.client.mqttv3.** { *; }
 -dontwarn org.eclipse.paho.**
+
+# ---------------------------------------------------------------------------
+#  OkHttp / Okio - WebSocket toi Gemini Live
+# ---------------------------------------------------------------------------
+#  OkHttp mang san luat R8 trong chinh goi aar nen khong phai giu lop nao.
+#  Hai dong duoi chi de dap canh bao ve nhung lop CHI dung tren JVM may chu
+#  (Conscrypt, BouncyCastle, OpenJSSE, Animal Sniffer) - khong co tren Android
+#  va khong bao gio chay o day.
+#
+#  Bai hoc tu Paho o tren van con nguyen: thu vien nao dung reflection thi
+#  PHAI thu ban release tren may that, dung tin ban debug va test.
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**

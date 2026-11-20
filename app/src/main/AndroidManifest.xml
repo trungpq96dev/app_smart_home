@@ -19,6 +19,20 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
+      Tu 20/11/2026: tro ly giong noi Gemini Live.
+
+      RECORD_AUDIO la quyen nguy hiem, phai xin luc chay (minSdk 26) - xem
+      MainActivity. App chi mo mic khi nguoi dung bam nut mic, khong bao gio
+      nghe san; khong co tu khoa danh thuc.
+
+      MODIFY_AUDIO_SETTINGS de bat bo khu vong AcousticEchoCanceler va dat
+      che do thoai cho luong ra - thieu quyen nay thi loa phat tieng Gemini
+      lot vao mic va no tu noi chuyen voi chinh no.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
       Tuong thich Package Visibility tren Android 11+ (API 30+):
       Cho phep SmartHomeApp kiem tra va khoi chay truc tiep ung dung AquaControl.
     -->

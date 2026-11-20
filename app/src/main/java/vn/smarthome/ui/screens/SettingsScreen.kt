@@ -57,6 +57,8 @@ import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.DienTopic
+import vn.smarthome.data.giongnoi.BanSongCong
+import vn.smarthome.data.giongnoi.CauHinhGiongNoi
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.data.ota.OtaStatus
 import vn.smarthome.data.ota.ReleaseInfo
@@ -91,9 +93,11 @@ fun SettingsScreen(
     cauHinhCamera: CauHinhCamera,
     trangThaiCam: TrangThaiCam,
     cauHinhThoiTiet: CauHinhThoiTiet,
+    cauHinhGiongNoi: CauHinhGiongNoi,
     onLuu: (CauHinhMqtt) -> Unit,
     onLuuCamera: (CauHinhCamera) -> Unit,
     onLuuThoiTiet: (CauHinhThoiTiet) -> Unit,
+    onLuuGiongNoi: (CauHinhGiongNoi) -> Unit,
     onBack: () -> Unit,
     otaStatus: OtaStatus = OtaStatus.Idling,
     currentVersion: String = "0.1",
@@ -117,6 +121,11 @@ fun SettingsScreen(
                     text = "Dịch vụ & Kết nối",
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
+                )
+                TabButton(
+                    text = "Trợ lý giọng nói",
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                 )
                 TabButton(
                     text = if (coBanMoi) "Cập nhật (Có bản mới!)" else "Cập nhật hệ thống",
@@ -147,6 +156,18 @@ fun SettingsScreen(
                 }
                 SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
                     FormThoiTiet(cauHinhThoiTiet, onLuuThoiTiet)
+                }
+            }
+        } else if (selectedTab == 2) {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+            ) {
+                SmartCard(Modifier.weight(3f).fillMaxHeight(), padding = 14.dp) {
+                    FormGiongNoi(cauHinhGiongNoi, onLuuGiongNoi)
+                }
+                SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 14.dp) {
+                    GhiChuGiongNoi()
                 }
             }
         } else {
@@ -457,6 +478,183 @@ private fun FormThoiTiet(cauHinh: CauHinhThoiTiet, onLuu: (CauHinhThoiTiet) -> U
             "Mặc định Hà Nội",
             "Để trống hoặc nhập sai thì app vẫn lấy thời tiết Hà Nội. Đổi địa điểm " +
                 "xong là thẻ ở Trang chủ tự tải lại ngay.",
+        )
+    }
+}
+
+// ---------------------------------------------------------- Tro ly giong noi
+
+@Composable
+private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> Unit) {
+    var khoa by remember(cauHinh.khoaApi) { mutableStateOf(cauHinh.khoaApi) }
+    var model by remember(cauHinh.model) { mutableStateOf(cauHinh.model) }
+    var giong by remember(cauHinh.giongDoc) { mutableStateOf(cauHinh.giongDoc) }
+    var guiMqtt by remember(cauHinh.guiMqtt) { mutableStateOf(cauHinh.guiMqtt) }
+    var banSongCong by remember(cauHinh.banSongCong) { mutableStateOf(cauHinh.banSongCong) }
+    var imLang by remember(cauHinh.giayImLangTuDong) {
+        mutableStateOf(cauHinh.giayImLangTuDong.toString())
+    }
+    var toiDa by remember(cauHinh.giayToiDaPhien) {
+        mutableStateOf(cauHinh.giayToiDaPhien.toString())
+    }
+
+    val sIm = imLang.trim().toIntOrNull()
+    val sToiDa = toiDa.trim().toIntOrNull()
+    // Tran phien khong duoc vuot 15 phut: Live API tu cat phien audio o do.
+    val hopLe = khoa.isNotBlank() && model.isNotBlank() &&
+        sIm != null && sIm in 0..600 &&
+        sToiDa != null && sToiDa in 60..900
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Trợ lý giọng nói — Gemini Live", style = SHType.CardTitle, color = SH.Text)
+        Text(
+            "Nói chuyện tự nhiên và điều khiển thiết bị bằng giọng nói. " +
+                "Máy tính bảng nối thẳng tới Gemini, không qua server nào.",
+            style = SHType.Caption, color = SH.TextDim,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        OMatKhau("Khóa API Gemini", khoa, { khoa = it }, "lấy ở Google AI Studio")
+        Spacer(Modifier.height(8.dp))
+
+        O("Model", model, { model = it }, CauHinhGiongNoi.MODEL_MAC_DINH)
+        Text(
+            "Google đổi tên model Live khá thường xuyên nên ô này nhập tay. " +
+                "Báo \"Không có model này\" thì tra lại tên trên trang model của Google.",
+            style = SHType.Caption, color = SH.TextDim,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Text("Giọng đọc", style = SHType.Caption, color = SH.TextDim)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CauHinhGiongNoi.GIONG_CO_SAN.take(4).forEach { g ->
+                ChipGiong(g, giong == g) { giong = g }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CauHinhGiongNoi.GIONG_CO_SAN.drop(4).forEach { g ->
+                ChipGiong(g, giong == g) { giong = g }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        CongTac(
+            bat = guiMqtt,
+            onDoi = { guiMqtt = it },
+            ten = "Bắn lệnh ra MQTT",
+            phu = "Gửi thêm vào smarthome/control — chưa thiết bị nào nghe topic này",
+        )
+
+        Spacer(Modifier.height(4.dp))
+        Text("Khử vọng (tiếng loa lọt vào mic)", style = SHType.Caption, color = SH.TextDim)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BanSongCong.entries.forEach { b ->
+                ChipGiong(b.nhan, banSongCong == b) { banSongCong = b }
+            }
+        }
+        Text(
+            "Tự động: máy không có bộ khử vọng phần cứng thì tạm ngừng mic lúc loa " +
+                "đang nói. Trợ lý tự nói chuyện với chính nó thì chọn \"Luôn bật\".",
+            style = SHType.Caption, color = SH.TextDim,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) {
+                O("Im lặng bao lâu thì đóng (giây)", imLang, { imLang = it }, "45", soThoi = true)
+            }
+            Box(Modifier.weight(1f)) {
+                O("Trần một phiên (giây)", toiDa, { toiDa = it }, "600", soThoi = true)
+            }
+        }
+        if (!hopLe) {
+            Text(
+                "Cần khóa API và tên model. Im lặng 0-600 giây (0 là không tự đóng), " +
+                    "trần phiên 60-900 giây.",
+                style = SHType.Caption, color = SH.Amber,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                onLuu(
+                    CauHinhGiongNoi(
+                        khoaApi = khoa,
+                        model = model,
+                        giongDoc = giong,
+                        guiMqtt = guiMqtt,
+                        banSongCong = banSongCong,
+                        giayImLangTuDong = sIm ?: cauHinh.giayImLangTuDong,
+                        giayToiDaPhien = sToiDa ?: cauHinh.giayToiDaPhien,
+                    )
+                )
+            },
+            enabled = hopLe,
+            colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+            modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+        ) {
+            Text("Lưu cấu hình trợ lý", style = SHType.Button, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ChipGiong(nhan: String, chon: Boolean, onChon: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (chon) SH.Blue else SH.Card2)
+            .clickable(onClick = onChon)
+            .padding(horizontal = 9.dp, vertical = 5.dp),
+    ) {
+        Text(nhan, style = SHType.Caption, color = if (chon) Color.White else SH.TextDim)
+    }
+}
+
+@Composable
+private fun GhiChuGiongNoi() {
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Cần biết", style = SHType.CardTitle, color = SH.Text)
+        Spacer(Modifier.height(10.dp))
+
+        Ghi(
+            "Khóa nằm trên máy tính bảng",
+            "Khóa lưu trong DataStore của máy, đã loại khỏi sao lưu đám mây, và " +
+                "KHÔNG nằm trong mã nguồn — vì mã nguồn ở GitHub và bản APK phát " +
+                "hành công khai cho OTA. Siết thêm thì đặt hạn mức cho khóa ở Google " +
+                "AI Studio.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Tính tiền theo phút",
+            "Gemini Live tính theo thời lượng nói chuyện. Máy này treo tường nên " +
+                "phiên luôn tự đóng khi im lặng và có trần cứng — đừng tắt hai thứ đó.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Đèn quạt vẫn là dữ liệu mẫu",
+            "Nói \"bật đèn phòng khách\" sẽ gạt công tắc trên màn hình, nhưng chưa " +
+                "có bóng đèn thật nào nối vào. Bảng thoại ghi rõ điều đó dưới mỗi lệnh.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Số liệu thì thật",
+            "Hỏi điện, server, WiFi, thời tiết, lịch âm thì trợ lý đọc đúng số đang " +
+                "có. Chưa nối được nguồn nào thì nó nói thẳng là chưa có số, " +
+                "không bịa.",
+        )
+        Spacer(Modifier.height(10.dp))
+        Ghi(
+            "Quyền micro",
+            "Lần đầu bấm nút mic, Android sẽ hỏi quyền. Từ chối thì nút mic vẫn " +
+                "hiện nhưng không thu được gì.",
         )
     }
 }
@@ -861,8 +1059,8 @@ private fun SettingsPreview() {
             SettingsScreen(
                 CauHinhMqtt(), KetNoi.ChuaCauHinh,
                 CauHinhCamera(), TrangThaiCam.ChuaCauHinh,
-                CauHinhThoiTiet(),
-                {}, {}, {}, {},
+                CauHinhThoiTiet(), CauHinhGiongNoi(),
+                {}, {}, {}, {}, {},
             )
         }
     }

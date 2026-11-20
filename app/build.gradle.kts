@@ -25,8 +25,8 @@ android {
         applicationId = "vn.smarthome"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.2"
+        versionCode = 8
+        versionName = "0.5.0"
         resourceConfigurations += listOf("vi", "en")
     }
 
@@ -112,6 +112,13 @@ dependencies {
     // MQTT. Dung ban Java thuan, KHONG dung Paho Android Service (da bo hoang).
     // Phan tu ket noi lai tu viet trong MqttDien.kt.
     implementation(libs.paho.mqtt)
+
+    // WebSocket cho Gemini Live. Day la thu vien HTTP dau tien cua du an -
+    // README truoc do ghi "khong OkHttp", cau do khong con dung tu 20/11/2026.
+    // Vi sao phai them: Android KHONG co client WebSocket nao san. HttpURLConnection
+    // (dang dung o OpenMeteo/Go2rtc/OtaManager) khong noi duoc WebSocket, va
+    // java.net.http.WebSocket chi co tu API 34 - minSdk cua app la 26.
+    implementation(libs.okhttp)
 
     // Kiem thu khoi dong chay tren JVM (Robolectric) - khong can may that.
     testImplementation(libs.junit)

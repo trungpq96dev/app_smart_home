@@ -18,6 +18,16 @@ import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.data.wifi.WifiTopic
 import kotlin.random.Random
 
+/**
+ * Topic app GHI vao de dieu khien thiet bi.
+ *
+ * Tach rieng khoi [DienTopic] co chu dinh: `dien/#` la so do script dien_evn
+ * quyet dinh, app khong duoc ghi vao do. Day la topic rieng cua app.
+ */
+object DieuKhienTopic {
+    const val CMD = "smarthome/control"
+}
+
 /** Trang thai duong truyen toi EMQX. */
 sealed interface KetNoi {
     data object ChuaCauHinh : KetNoi
@@ -164,6 +174,29 @@ class MqttDien {
                     c.publish(WifiTopic.CMD, msg)
                 } catch (_: Exception) {}
             }
+        }
+    }
+
+    /**
+     * Ban mot lenh dieu khien thiet bi ra `smarthome/control`.
+     *
+     * Them ngay 20/11/2026 cho tro ly giong noi. CHUA co thiet bi nao subscribe
+     * topic nay - day la dau noi dung san cho ESP32 ve sau. Vi vay ham tra ve
+     * "da gui len broker hay chua", KHONG phai "thiet bi da nhan hay chua":
+     * hai thu do khac nhau va lan lon chung la noi doi voi nguoi dung.
+     *
+     * Khong dung retained: lenh bat den la mot su kien, giu lai thi thiet bi
+     * nao vua cam dien len cung bat den theo mot lenh tu hom qua.
+     */
+    fun guiLenhDieuKhien(json: String): Boolean {
+        val c = client ?: return false
+        if (!c.isConnected) return false
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+            c.publish(DieuKhienTopic.CMD, msg)
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 

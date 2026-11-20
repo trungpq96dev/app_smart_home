@@ -70,15 +70,28 @@ APK này cài song song được với `AquaControl` — khác package (`vn.smar
 build.bat testDebugUnitTest
 ```
 
-Hai bộ test, chạy trên JVM bằng Robolectric, **không cần máy tính bảng**:
+Các bộ test chạy trên JVM bằng Robolectric, **không cần máy tính bảng**:
 
-- `ShellSmokeTest` — 5 test: app mở được, điều hướng được, đổi tab thống kê được,
-  các màn chưa làm vẫn mở được. Mục đích là bắt lỗi chết app lúc chạy (thiếu icon,
-  chia cho 0, vẽ cung âm...) — những thứ không lộ ra lúc biên dịch.
+- `ShellSmokeTest` — app mở được, điều hướng được, đổi tab thống kê được, các màn
+  chưa làm vẫn mở được, nút mic hiện trên mọi màn và bấm khi chưa có khóa Gemini
+  thì đẩy sang màn Cài đặt chứ không chết. Mục đích là bắt lỗi chết app lúc chạy
+  (thiếu icon, chia cho 0, vẽ cung âm...) — những thứ không lộ ra lúc biên dịch.
 - `ScreenshotTest` — vẽ từng màn ra file PNG ở `app\build\screenshots\`, đúng
   **1340 × 800 px** (qualifier `w1006dp-h601dp-land-tvdpi` = 213 dpi — đo thật bằng
   `adb shell wm density`, không phải đoán).
   Dùng để soi tràn bố cục, chữ bị cắt, thẻ chồng nhau mà không cần cắm máy.
+- `CongCuNhaTest` — phần đọc lệnh của Gemini. Gemini là hộp đen: nó gọi hàm với
+  tham số thiếu, sai chính tả, hoặc tên phòng không có thật. Mọi trường hợp đó phải
+  trả về một câu tiếng Việt để nó hỏi lại người dùng, **không được ném ngoại lệ làm
+  đứt cả phiên nói chuyện**. Có test riêng cho chỗ "bật đèn lúc đèn đang bật thì vẫn
+  là bật, không được đảo thành tắt".
+- `GeminiLiveTest` — hình dạng gói `setup` gửi cho Live API. Sai một tên trường ở
+  đây thì trên máy thật chỉ thấy "nối được mà trợ lý câm như hến" — rất khó lần ra.
+  Có một test khẳng định **khóa API không lọt vào gói setup** (khóa đi bằng tham số
+  truy vấn của URL; nhét vào gói là một đường cho nó lọt vào log).
+- `AmLichTest`, `DienStateTest`, `CauHinhCameraTest` — xem README.
+
+Chạy xong một lượt ngày 20/11/2026: **96 test, không cái nào hỏng**.
 
 Bản chụp gần nhất: `docs\screenshots\` (render trên máy tính) và `docs\device\`
 (chụp từ chính Tab A7 Lite qua `adb exec-out screencap`).
@@ -96,8 +109,14 @@ và tỉ lệ màn hình thật vẫn có thể lệch đôi chút.
 build.bat assembleRelease
 ```
 
-APK ở `app\build\outputs\apk\release\app-release.apk` — **939 KB**, nhỏ hơn bản debug
-(16 MB) khoảng 17 lần nhờ R8 rút gọn code và `isShrinkResources`.
+APK ở `app\build\outputs\apk\release\app-release.apk` — **2,05 MB**, nhỏ hơn bản debug
+(18,2 MB) khoảng 9 lần nhờ R8 rút gọn code và `isShrinkResources`.
+
+> **Trước khi thêm trợ lý giọng nói, bản release chỉ 939 KB.** OkHttp + Okio + phần
+> mã giọng nói làm `classes.dex` phình lên 1,49 MB (nén), cộng 40 KB danh sách
+> public-suffix mà OkHttp luôn gói kèm. Tức là **phình hơn gấp đôi** — nhiều hơn
+> ước lượng 300-500 KB lúc lên kế hoạch. Vẫn nhỏ so với một app Android bình
+> thường, nhưng nếu sau này phải ép cỡ xuống thì OkHttp là chỗ đầu tiên để nhìn.
 
 ### Khoá ký
 
@@ -200,6 +219,48 @@ máy chủ broker"*.
 
 > Rút ra: thêm thư viện nào dùng reflection thì **phải thử bản release trên máy thật**,
 > đừng tin bản debug và test.
+
+### OkHttp qua được R8 (20/11/2026)
+
+Thêm OkHttp cho trợ lý giọng nói. Khác Paho: OkHttp **mang sẵn luật R8 trong chính
+gói aar** nên không phải giữ lớp nào bằng tay. `proguard-rules.pro` chỉ thêm mấy
+dòng `-dontwarn` cho các lớp chỉ dùng trên JVM máy chủ (Conscrypt, BouncyCastle,
+OpenJSSE, Animal Sniffer) — không có trên Android và không bao giờ chạy ở đây.
+
+`assembleRelease` chạy sạch, APK ký đúng khóa cũ (vân tay khớp bản ghi ở trên).
+
+> **Vẫn còn nợ phần quan trọng nhất**: cài bản release lên SM-T225 rồi **thật sự
+> bấm nút mic**. Đúng bài học của Paho — build sạch và test xanh không chứng minh
+> được gì về thư viện mạng; nó chỉ lộ nguyên hình khi thực sự mở kết nối, ở bản
+> release, trên máy thật.
+
+### Build release chết vì khóa file — không phải lỗi code
+
+Gặp ngày 20/11/2026:
+
+```
+Execution failed for task ':app:minifyReleaseWithR8'
+> classes.dex: The process cannot access the file because it is being used by another process
+```
+
+Nguyên nhân: **hai Gradle daemon cùng build một thư mục `app\build`**. Phân biệt
+bằng command line của tiến trình java — daemon nào dùng `D:\gradle-home\caches` là
+của `build.bat`, daemon nào dùng `C:\Users\Admin\.gradle\caches` là của ai đó gọi
+thẳng `gradlew.bat`.
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Select-Object ProcessId, CreationDate, CommandLine
+```
+
+Dừng daemon dùng cache trên C (nhẹ tay hơn kill, và chỉ dừng daemon trong registry
+của C chứ không đụng daemon của `build.bat`):
+
+```powershell
+$env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot"; Remove-Item Env:\GRADLE_USER_HOME -ErrorAction SilentlyContinue; .\gradlew.bat --stop
+```
+
+> Đừng kill bừa tiến trình java — có thể đang là build dở của một phiên làm việc
+> khác trên cùng thư mục này.
 
 ---
 

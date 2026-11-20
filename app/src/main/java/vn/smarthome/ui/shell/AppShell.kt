@@ -1,6 +1,10 @@
 package vn.smarthome.ui.shell
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,9 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import vn.smarthome.ui.components.BangGiongNoi
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.components.OtaUpdateDialog
@@ -63,6 +71,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val server by vm.server.collectAsStateWithLifecycle()
     val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
     val showUpdateDialog by vm.showUpdateDialog.collectAsStateWithLifecycle()
+    val phienGiongNoi by vm.phienGiongNoi.collectAsStateWithLifecycle()
+    val cauHinhGiongNoi by vm.cauHinhGiongNoi.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -73,6 +83,44 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+
+    // ---- Tro ly giong noi ----
+
+    val ctx = LocalContext.current
+    val xinQuyenMic = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { duoc ->
+        if (duoc) vm.batTatGiongNoi()
+        else toast("Chưa cấp quyền micro nên chưa nói chuyện được.")
+    }
+
+    // Giong noi doi man hinh. Dieu huong van nam o day chu khong chuyen vao
+    // ViewModel: `current`/`openRoom` la chuyen cua khung hinh, va
+    // rememberSaveable giu chung qua luc xoay may.
+    LaunchedEffect(Unit) {
+        vm.lenhDieuHuong.collect { lenh ->
+            if (lenh.startsWith("phong:")) {
+                openRoom = lenh.removePrefix("phong:")
+                return@collect
+            }
+            openRoom = null
+            showChiTietDien = false
+            showWifi = false
+            when (lenh) {
+                "chi_tiet_dien" -> { current = Dest.STATS.route; showChiTietDien = true }
+                "wifi" -> showWifi = true
+                "trang_chu" -> current = Dest.HOME.route
+                "thiet_bi" -> current = Dest.DEVICES.route
+                "camera" -> current = Dest.CAMERA.route
+                "cam_bien" -> current = Dest.SENSORS.route
+                "tu_dong_hoa" -> current = Dest.AUTOMATION.route
+                "cai_dat" -> current = Dest.SETTINGS.route
+                "server" -> current = Dest.SERVER.route
+                "thong_ke" -> current = Dest.STATS.route
+                "tien_ich" -> current = Dest.UTILITIES.route
+            }
+        }
+    }
 
     // Nut Back cua may: thoat man con truoc, chua thoat app ngay.
     BackHandler(enabled = openRoom != null || showChiTietDien || showWifi || dest != Dest.HOME) {
@@ -164,11 +212,13 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         cauHinhCamera = cauHinhCamera,
                         trangThaiCam = trangThaiCam,
                         cauHinhThoiTiet = thoiTietCauHinh,
+                        cauHinhGiongNoi = cauHinhGiongNoi,
                         otaStatus = otaStatus,
                         currentVersion = vm.currentVersionName,
                         onLuu = vm::luuCauHinh,
                         onLuuCamera = vm::luuCauHinhCamera,
                         onLuuThoiTiet = vm::luuCauHinhThoiTiet,
+                        onLuuGiongNoi = vm::luuCauHinhGiongNoi,
                         onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
                         onBatDauCapNhat = vm::batDauCapNhat,
                         onBack = { current = Dest.HOME.route },
@@ -214,6 +264,27 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
 
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+
+        // Nut mic noi tren moi man. Goc duoi ben PHAI: canh trai la cot menu,
+        // canh duoi giua la snackbar.
+        BangGiongNoi(
+            phien = phienGiongNoi,
+            onBatTat = {
+                when {
+                    phienGiongNoi.dangChay -> vm.dongGiongNoi()
+                    !cauHinhGiongNoi.coKhoa() -> {
+                        toast("Chưa khai báo khóa Gemini. Vào Cài đặt → Trợ lý giọng nói.")
+                        current = Dest.SETTINGS.route
+                    }
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED -> vm.batTatGiongNoi()
+
+                    else -> xinQuyenMic.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onDong = { vm.dongGiongNoi(); vm.xoaLoiGiongNoi() },
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
 
         // Pop-up thong bao co ban cap nhat moi tren Git
         if (showUpdateDialog) {
