@@ -26,7 +26,12 @@ import vn.smarthome.data.dien.CauHinhMqtt
 import vn.smarthome.data.dien.CauHinhStore
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.KetNoi
+import vn.smarthome.data.dien.KetQuaGui
 import vn.smarthome.data.dien.MqttDien
+import vn.smarthome.data.congtac.CongTacState
+import vn.smarthome.data.congtac.HangChoCongTac
+import vn.smarthome.data.congtac.LenhCongTac
+import vn.smarthome.data.congtac.OThietBi
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.CauHinhCameraStore
 import vn.smarthome.data.camera.Go2rtc
@@ -41,6 +46,7 @@ import vn.smarthome.data.ota.OtaManager
 import vn.smarthome.data.ota.OtaStatus
 import vn.smarthome.data.ota.ReleaseInfo
 import vn.smarthome.data.giongnoi.CauHinhGiongNoi
+import vn.smarthome.data.giongnoi.CongCuNha
 import vn.smarthome.data.giongnoi.CauHinhGiongNoiStore
 import vn.smarthome.data.giongnoi.HanhDongNha
 import vn.smarthome.data.giongnoi.MucDungNgay
@@ -93,6 +99,33 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Trang thai duong truyen toi EMQX/Mosquitto. */
     val ketNoi: StateFlow<KetNoi> = mqtt.ketNoi
+
+    // ---- Cong tac Wi-Fi that (bed1: den Tuya + quat CozyLife) ----
+
+    /**
+     * Cong tac THAT, do bridge tren serverubuntu khai qua `congtac/info`.
+     *
+     * Day la nguon su that duy nhat cho cau hoi "thiet bi nay that hay mau".
+     * Khong hard-code o dau trong app: them cong tac thu ba thi sua .env tren
+     * server, khong phai build lai APK.
+     */
+    val congTac: StateFlow<CongTacState> = mqtt.congTac
+
+    private val hangCho = HangChoCongTac()
+
+    /** Phoi ra UI de ve "Dang gui lenh...". Doi moi lan hang cho doi. */
+    private val _cho = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val choCongTac: StateFlow<Map<String, Boolean>> = _cho.asStateFlow()
+
+    /**
+     * Cau can noi mot lan voi nguoi dung (khong gui duoc lenh, khong phan hoi...).
+     *
+     * SharedFlow chu khong phai StateFlow vi day la SU KIEN - cung ly do voi
+     * [_lenhDieuHuong]: bao "mat ket noi" hai lan lien tiep thi StateFlow nuot
+     * lan thu hai.
+     */
+    private val _thongBao = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val thongBao: SharedFlow<String> = _thongBao.asSharedFlow()
 
     val cauHinh: StateFlow<CauHinhMqtt> = store.cauHinh
         .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhMqtt())
@@ -191,6 +224,65 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             delay(4000L)
             kiemTraCapNhat(thuCong = false)
         }
+        // Mot chieu duy nhat: broker -> _state.rooms. Khong man nao phai doi
+        // cach doc trang thai bat/tat; chung chi nhan them OThietBi de biet ve
+        // dau gach "—" hay ve Switch.
+        viewModelScope.launch {
+            mqtt.congTac.collect { ct -> thuTrangThaiThat(ct) }
+        }
+        // Dong ho het gio cho hang cho. Quet moi giay la du min: nguoi dung
+        // khong phan biet duoc 6,0 voi 6,9 giay, ma mot coroutine moi lenh thi
+        // phai tu quan ly huy bo.
+        viewModelScope.launch {
+            while (true) {
+                delay(1000L)
+                quetQuaHan()
+            }
+        }
+    }
+
+    /** Gop trang thai that tu broker vao `rooms`, va go hang cho neu khop ma lenh. */
+    private fun thuTrangThaiThat(ct: CongTacState) {
+        var doiCho = false
+        ct.danhSach.forEach { tb ->
+            val tt = ct.trangThai[tb.ma] ?: return@forEach
+            if (hangCho.nhanTrangThai(tb.ma, tt.traLoiId)) doiCho = true
+        }
+        if (doiCho) dongBoCho()
+
+        _state.update { s ->
+            s.copy(
+                rooms = s.rooms.map { p ->
+                    var r = p
+                    // `?.bat?.let`: bat == null thi KHONG ghi gi, giu gia tri
+                    // biet duoc lan cuoi. Nhung OThietBi luc do la bat=null nen
+                    // man hinh ve "—" chu khong ve gia tri cu. Hai thu tach
+                    // nhau co chu dinh: `rooms` la "lan cuoi biet duoc",
+                    // OThietBi la "co duoc phep noi ra khong".
+                    ct.trangThaiCua(p.id, CongCuNha.DEN)?.bat?.let { r = r.copy(lightOn = it) }
+                    ct.trangThaiCua(p.id, CongCuNha.QUAT)?.bat?.let { r = r.copy(fanOn = it) }
+                    r
+                },
+            )
+        }
+    }
+
+    private fun quetQuaHan() {
+        val het = hangCho.quaHan(System.currentTimeMillis())
+        if (het.isEmpty()) return
+        dongBoCho()
+        val ct = congTac.value
+        het.forEach { ma ->
+            val ten = ct.danhSach.firstOrNull { it.ma == ma }?.ten ?: ma
+            _thongBao.tryEmit(
+                "$ten không phản hồi sau ${HangChoCongTac.GIAY_CHO_MAC_DINH} giây. " +
+                    "Không rõ lệnh đã chạy chưa.",
+            )
+        }
+    }
+
+    private fun dongBoCho() {
+        _cho.value = hangCho.anhChup()
     }
 
     // ---- Thoi tiet that qua Open-Meteo ----
@@ -291,9 +383,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Chi tiet phong ----
 
-    fun toggleLight(roomId: String) = editRoom(roomId) { it.copy(lightOn = !it.lightOn) }
+    fun toggleLight(roomId: String) =
+        gatCongTac(roomId, CongCuNha.DEN, dao = true, bat = false,
+            nguon = LenhCongTac.NGUON_MAN_HINH)
 
-    fun toggleFan(roomId: String) = editRoom(roomId) { it.copy(fanOn = !it.fanOn) }
+    fun toggleFan(roomId: String) =
+        gatCongTac(roomId, CongCuNha.QUAT, dao = true, bat = false,
+            nguon = LenhCongTac.NGUON_MAN_HINH)
 
     fun toggleAc(roomId: String) = editRoom(roomId) { it.copy(acOn = !it.acOn) }
 
@@ -316,9 +412,113 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     // bam. Giong noi thi khong: "bat den phong khach" luc den dang bat ma lai
     // dao thanh tat la lam nguoc y nguoi noi.
 
-    fun datDen(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(lightOn = bat) }
+    fun datDen(roomId: String, bat: Boolean) =
+        gatCongTac(roomId, CongCuNha.DEN, dao = false, bat = bat,
+            nguon = LenhCongTac.NGUON_GIONG_NOI)
 
-    fun datQuat(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(fanOn = bat) }
+    fun datQuat(roomId: String, bat: Boolean) =
+        gatCongTac(roomId, CongCuNha.QUAT, dao = false, bat = bat,
+            nguon = LenhCongTac.NGUON_GIONG_NOI)
+
+    // ---- Cua duy nhat di toi cong tac that ----
+
+    /**
+     * Gat mot cong tac. Nut tren man hinh va giong noi deu di qua day.
+     *
+     * Thiet bi MAU thi doi `_state` ngay nhu truoc, het. Thiet bi THAT thi
+     * dung lai TRUOC KHI publish o bon ca - vi gui mot lenh ma biet truoc no
+     * vo nghia thi tha noi thang con hon de nguoi dung nhin cong tac mo roi
+     * tu doan.
+     */
+    private fun gatCongTac(
+        roomId: String,
+        thietBi: String,
+        dao: Boolean,
+        bat: Boolean,
+        nguon: String,
+    ) {
+        val ct = congTac.value
+        val tb = ct.tim(roomId, thietBi)
+        if (tb == null) {
+            // Thiet bi mau: y nguyen hanh vi cu.
+            if (dao) {
+                editRoom(roomId) {
+                    if (thietBi == CongCuNha.DEN) it.copy(lightOn = !it.lightOn)
+                    else it.copy(fanOn = !it.fanOn)
+                }
+            } else {
+                editRoom(roomId) {
+                    if (thietBi == CongCuNha.DEN) it.copy(lightOn = bat) else it.copy(fanOn = bat)
+                }
+            }
+            return
+        }
+
+        val tt = ct.trangThai[tb.ma]
+        if (!ct.bridgeSong) {
+            _thongBao.tryEmit("Bộ nối công tắc chưa chạy trên máy chủ nên chưa gửi được lệnh.")
+            return
+        }
+        if (tt == null || !tt.online) {
+            _thongBao.tryEmit("${tb.ten} đang mất kết nối" + (tt?.lyDoLoi?.let { " ($it)" } ?: "") + ".")
+            return
+        }
+        // Dao ma khong biet dang o the nao thi KHONG duoc doan. Doan o day la
+        // "bam bat thi no tat" - rat kho chiu va rat kho tai hien.
+        if (dao && tt.bat == null) {
+            _thongBao.tryEmit(
+                "Chưa biết ${tb.ten} đang bật hay tắt nên không đảo được. " +
+                    "Hãy nói rõ bật hoặc tắt.",
+            )
+            return
+        }
+
+        val mong = if (dao) !tt.bat!! else bat
+        when (val kq = mqtt.guiLenh(roomId, thietBi, if (mong) "ON" else "OFF", nguon = nguon)) {
+            is KetQuaGui.DaGui -> {
+                hangCho.ganh(tb.ma, mong, kq.id, System.currentTimeMillis())
+                dongBoCho()
+            }
+            KetQuaGui.ChuaNoiBroker ->
+                _thongBao.tryEmit("Chưa nối broker MQTT nên chưa gửi được lệnh. Kiểm tra Cài đặt.")
+            is KetQuaGui.Loi ->
+                _thongBao.tryEmit("Không gửi được lệnh: ${kq.moTa}")
+        }
+    }
+
+    /**
+     * Mot o cong tac can gi de ve. Man hinh goi ham nay thay vi tu suy tu
+     * `rooms` - de luat "khong bia trang thai" nam dung mot cho.
+     *
+     * Nhan [ct] va [cho] la THAM SO chu khong tu doc `congTac.value` ben
+     * trong: ham nay duoc goi tu ham @Composable, va Compose chi ve lai khi
+     * no THAY mot State duoc doc. Doc `.value` o day thi noi goi khong dang
+     * ky theo doi gi ca, va "Dang gui lenh..." se khong bao gio hien ra cho
+     * toi khi co thu khac tinh co lam ve lai man hinh.
+     */
+    fun oThietBi(
+        roomId: String,
+        thietBi: String,
+        ct: CongTacState,
+        cho: Map<String, Boolean>,
+    ): OThietBi {
+        val tb = ct.tim(roomId, thietBi) ?: run {
+            val p = _state.value.rooms.firstOrNull { it.id == roomId }
+            val b = if (thietBi == CongCuNha.DEN) p?.lightOn else p?.fanOn
+            return OThietBi.Mau(b ?: false)
+        }
+        val tt = ct.trangThai[tb.ma]
+        val mong = cho[tb.ma]
+        return OThietBi.That(
+            ten = tb.ten,
+            bridgeSong = ct.bridgeSong,
+            online = tt?.online ?: false,
+            bat = tt?.bat,
+            dangCho = mong != null,
+            mong = mong,
+            lyDoLoi = tt?.lyDoLoi,
+        )
+    }
 
     fun datDieuHoa(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(acOn = bat) }
 
@@ -426,10 +626,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun datONhanh(id: String, bat: Boolean) = this@HomeViewModel.datONhanh(id, bat)
 
+        override fun laThat(phong: String, thietBi: String): Boolean =
+            congTac.value.laThat(phong, thietBi)
+
+        override fun thietBiThat(): List<String> = congTac.value.tenThietBiThat()
+
         override fun dangBat(phong: String, thietBi: String): Boolean? {
             if (phong == "nhanh") {
                 return _state.value.quick.firstOrNull { it.id == thietBi }?.on
             }
+            // Thiet bi that: su that nam o broker, khong nam o man hinh. Va
+            // mat ket noi thi tra null chu khong tra gia tri cuoi cung - de
+            // `dao` biet duong ma tu choi thay vi doan.
+            congTac.value.trangThaiCua(phong, thietBi)?.let { return if (it.online) it.bat else null }
             val p = _state.value.rooms.firstOrNull { it.id == phong } ?: return null
             return when (thietBi) {
                 "den" -> p.lightOn
@@ -450,6 +659,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun docSoLieu(muc: String): JSONObject = when (muc) {
+            "cong_tac" -> jsonCongTac()
             "trang_thai_nha" -> jsonTrangThaiNha()
             "dien" -> jsonDien()
             "server" -> jsonServer()
@@ -459,8 +669,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             else -> chuaCoSo("Không biết mục này.")
         }
 
+        /**
+         * Anh chup nay di THANG vao system_instruction, nen bia o day la
+         * Gemini noi sai suot ca phien. Thiet bi that ma khong ro trang thai
+         * phai in "khong ro", khong duoc in "tat".
+         */
         override fun chupTrangThai(): String = _state.value.rooms.joinToString("\n") { p ->
-            "- ${p.name}: đèn ${batTat(p.lightOn)}, quạt ${batTat(p.fanOn)}, " +
+            "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
+                "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
                 "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ, chế độ ${p.mode.label}"
         }
 
@@ -481,6 +697,45 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun batTat(b: Boolean) = if (b) "bật" else "tắt"
+
+    /** Mau thi lay tu man hinh; that thi lay tu broker, khong ro thi noi khong ro. */
+    private fun theNao(phong: String, thietBi: String, mau: Boolean): String {
+        val tt = congTac.value.trangThaiCua(phong, thietBi) ?: return batTat(mau)
+        if (!tt.online) return "không rõ (mất kết nối)"
+        return tt.bat?.let { batTat(it) } ?: "không rõ"
+    }
+
+    /**
+     * `congtac/#` cho giong noi.
+     *
+     * Tach khoi `trang_thai_nha` vi muc do tron that lan mau - cau hoi "den
+     * phong ngu 1 co dang sang that khong" ma tra loi bang so mau la noi doi.
+     */
+    private fun jsonCongTac(): JSONObject {
+        val ct = congTac.value
+        if (ct.danhSach.isEmpty()) {
+            return chuaCoSo(
+                "Chưa nhận được gì từ topic congtac/# — bộ nối trên máy chủ chưa chạy.",
+            )
+        }
+        val ds = JSONArray()
+        ct.danhSach.forEach { tb ->
+            val tt = ct.trangThai[tb.ma]
+            ds.put(
+                JSONObject()
+                    .put("ma", tb.ma).put("ten", tb.ten).put("he", tb.he)
+                    .put("online", tt?.online ?: false)
+                    // Khong ro thi JSONObject.NULL, khong phai false.
+                    .put("bat", if (tt?.online == true && tt.bat != null) tt.bat else JSONObject.NULL)
+                    .put("luc", tt?.luc ?: JSONObject.NULL)
+                    .put("loi", tt?.lyDoLoi ?: JSONObject.NULL),
+            )
+        }
+        return JSONObject()
+            .put("co_so", true)
+            .put("bo_noi", if (ct.bridgeSong) "đang chạy" else "không chạy")
+            .put("thiet_bi", ds)
+    }
 
     companion object {
         /**
@@ -507,7 +762,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     .put("dieu_hoa", p.acOn).put("nhiet_do", p.acTemp)
                     .put("che_do", p.mode.label)
                     .put("lich_hen", p.scheduleOn)
-                    .put("gio_hen", p.scheduleTime),
+                    .put("gio_hen", p.scheduleTime)
+                    // Co theo TUNG thiet bi, khong con mot co toan cuc: tu nay
+                    // bed1/den va bed1/quat la that con lai van la mau.
+                    .put("den_that", congTac.value.laThat(p.id, CongCuNha.DEN))
+                    .put("quat_that", congTac.value.laThat(p.id, CongCuNha.QUAT)),
             )
         }
         val nhanh = JSONArray()
@@ -516,7 +775,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             .put("co_so", true)
             .put("phong", phong)
             .put("o_nhanh", nhanh)
-            .put("thiet_bi_that", !DemoData.IS_DEMO)
+            // Khong con co toan cuc - that/mau nay theo tung thiet bi, o tren.
     }
 
     private fun jsonDien(): JSONObject {

@@ -38,6 +38,12 @@ class CongCuNhaTest {
         var manDangMo: String? = null
         var soLanGuiMqtt = 0
 
+        /** Cap "<phong>:<thietBi>" la cong tac THAT. Mac dinh rong = toan mau. */
+        val thatCua = mutableSetOf<String>()
+
+        /** `dangBat` tra null cho nhung cap nay - gia lap cong tac mat ket noi. */
+        val khongRo = mutableSetOf<String>()
+
         override fun maPhong() = listOf("living", "bed1")
 
         override fun tenPhong(ma: String): String? = when (ma) {
@@ -84,8 +90,13 @@ class CongCuNhaTest {
             daGoi += "datONhanh($id,$bat)"
         }
 
+        override fun laThat(phong: String, thietBi: String) = "$phong:$thietBi" in thatCua
+
+        override fun thietBiThat(): List<String> = thatCua.map { "Thiết bị $it" }
+
         override fun dangBat(phong: String, thietBi: String): Boolean? =
-            if (phong == "nhanh") oNhanh[thietBi]
+            if ("$phong:$thietBi" in khongRo) null
+            else if (phong == "nhanh") oNhanh[thietBi]
             else if (thietBi == "den") den[phong] else null
 
         override fun moManHinh(dich: String): Boolean {
@@ -454,5 +465,104 @@ class CongCuNhaTest {
 
         assertTrue("Tu khoa Gemini khong nhan: $la", la.isEmpty())
         assertTrue("Kieu phai viet HOA: $kieuSai", kieuSai.isEmpty())
+    }
+
+    // ---------- Cong tac THAT vs thiet bi MAU ----------
+
+    @Test
+    fun lenh_vao_thiet_bi_that_deo_co_that() {
+        val nha = NhaGia().apply { thatCua += "bed1:den" }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "bed1", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertTrue("Thiet bi that phai co that=true", kq.getBoolean("that"))
+    }
+
+    @Test
+    fun lenh_vao_thiet_bi_mau_khong_co_that() {
+        val kq = CongCuNha(NhaGia()).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "living", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertFalse("Thiet bi mau khong duoc coi la that", kq.getBoolean("that"))
+    }
+
+    @Test
+    fun tat_ca_ma_con_mot_cai_mau_thi_coi_la_chua_that() {
+        // Tha canh bao thua con hon thieu.
+        val nha = NhaGia().apply { thatCua += "bed1:den" }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "tat_ca", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertFalse(kq.getBoolean("that"))
+    }
+
+    @Test
+    fun thiet_bi_that_khong_bi_gui_lenh_hai_lan() {
+        // datDen() da ban lenh ra MQTT roi; ban them o CongCuNha la cong tac
+        // nhay hai lan cho mot cau noi.
+        val nha = NhaGia().apply { thatCua += "bed1:den" }
+        CongCuNha(nha, guiMqtt = true).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "bed1", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertEquals(0, nha.soLanGuiMqtt)
+    }
+
+    @Test
+    fun thiet_bi_mau_van_duoc_ban_ra_mqtt_khi_bat_co() {
+        val nha = NhaGia()
+        CongCuNha(nha, guiMqtt = true).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "living", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertEquals(1, nha.soLanGuiMqtt)
+    }
+
+    @Test
+    fun dao_cong_tac_that_dang_mat_ket_noi_thi_tu_choi() {
+        // Doan o day la "bam bat thi no tat".
+        val nha = NhaGia().apply { thatCua += "bed1:den"; khongRo += "bed1:den" }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "bed1", "thiet_bi" to "den", "hanh_dong" to "dao"),
+        )
+        assertFalse(kq.getBoolean("ok"))
+        assertTrue(kq.getString("loi").contains("mất kết nối"))
+        assertTrue("Khong duoc dong toi thiet bi", nha.daGoi.isEmpty())
+    }
+
+    @Test
+    fun dao_thiet_bi_mau_khong_ro_thi_van_bat_nhu_cu() {
+        // Khong lam hoi quy hanh vi cu cua thiet bi mau.
+        val nha = NhaGia().apply { khongRo += "living:den" }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "living", "thiet_bi" to "den", "hanh_dong" to "dao"),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertTrue(nha.daGoi.contains("datDen(living,true)"))
+    }
+
+    @Test
+    fun cau_tra_loi_cua_thiet_bi_that_noi_la_DA_GUI_LENH() {
+        // Luc tool tra ve, lenh moi roi broker - chua chac cong tac da nhan.
+        val nha = NhaGia().apply { thatCua += "bed1:den" }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "bed1", "thiet_bi" to "den", "hanh_dong" to "bat"),
+        )
+        assertTrue(kq.getString("ket_qua").contains("đã gửi lệnh"))
+    }
+
+    @Test
+    fun doc_so_lieu_nhan_muc_cong_tac() {
+        val kq = CongCuNha(NhaGia()).chay(CongCuNha.DOC_SO_LIEU, args("muc" to "cong_tac"))
+        assertTrue(kq.getBoolean("ok"))
     }
 }

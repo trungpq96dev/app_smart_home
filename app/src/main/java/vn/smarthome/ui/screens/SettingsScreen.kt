@@ -555,8 +555,8 @@ private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> U
         CongTac(
             bat = guiMqtt,
             onDoi = { guiMqtt = it },
-            ten = "Bắn lệnh ra MQTT",
-            phu = "Gửi thêm vào smarthome/control — chưa thiết bị nào nghe topic này",
+            ten = "Bắn cả lệnh của thiết bị mẫu ra MQTT",
+            phu = "Để gỡ rối. Lệnh vào công tắc THẬT thì luôn được gửi, không cần bật ô này",
         )
 
         Spacer(Modifier.height(4.dp))

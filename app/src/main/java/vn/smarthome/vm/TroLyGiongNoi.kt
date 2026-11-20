@@ -16,7 +16,6 @@ import vn.smarthome.data.giongnoi.MucDungStore
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import vn.smarthome.data.DemoData
 import vn.smarthome.data.giongnoi.BanSongCong
 import vn.smarthome.data.giongnoi.CauHinhGiongNoi
 import vn.smarthome.data.giongnoi.CheDoThoai
@@ -352,7 +351,13 @@ class TroLyGiongNoi(
         if (cau.isBlank()) return
         // Chi dong "chua noi thiet bi that" voi lenh DIEU KHIEN. Doc so lieu va
         // chuyen man la viec that, dong do o day la noi sai.
-        val chuaThat = thanhCong && ten == CongCuNha.DIEU_KHIEN && DemoData.IS_DEMO
+        //
+        // Tu 21/11/2026 khong dung co toan cuc DemoData.IS_DEMO nua: bed1/den
+        // va bed1/quat la that con lai van la mau, nen phai hoi theo TUNG lenh.
+        // CongCuNha da tra loi ho bang co `that`; thieu co thi canh bao -
+        // huong an toan.
+        val chuaThat = thanhCong && ten == CongCuNha.DIEU_KHIEN &&
+            !ketQua.optBoolean("that", false)
         _phien.update { p ->
             p.copy(daLam = (p.daLam + ViecDaLam(cau, thanhCong, chuaThat)).takeLast(4))
         }
@@ -386,13 +391,26 @@ class TroLyGiongNoi(
         append("Tuyệt đối không tự nghĩ ra số. Nếu doc_so_lieu trả về co_so bằng false ")
         append("thì nói thẳng là chưa có số và nói lý do.\n")
 
-        if (DemoData.IS_DEMO) {
+        // Danh sach thiet bi that lay tu `congtac/info` (retained), nen luc mo
+        // phien la da ve tu lau.
+        val that = nha.thietBiThat()
+        if (that.isEmpty()) {
             append(
                 "\nLƯU Ý QUAN TRỌNG: đèn, quạt, điều hòa, rèm trong nhà này HIỆN CHƯA NỐI " +
                     "thiết bị thật - lệnh chỉ đổi trạng thái hiển thị trên màn hình. " +
                     "Cứ xác nhận bình thường, nhưng nếu người dùng hỏi \"đèn có sáng thật không\" " +
                     "thì phải nói thật là chưa nối thiết bị.\n",
             )
+        } else {
+            append("\nLƯU Ý QUAN TRỌNG: trong nhà này CHỈ những thiết bị sau là thiết bị thật, ")
+            append("lệnh vào chúng sẽ bật tắt đồ vật ngoài đời: ")
+            append(that.joinToString(", ")).append(".\n")
+            append("Mọi thiết bị khác - đèn, quạt, điều hòa, rèm của các phòng còn lại - CHƯA ")
+            append("nối thiết bị thật, lệnh chỉ đổi trạng thái hiển thị trên màn hình. ")
+            append("Cứ xác nhận bình thường, nhưng nếu người dùng hỏi có thật không thì nói thẳng.\n")
+            append("Với thiết bị thật, lệnh đi qua bộ nối trên máy chủ; gửi xong chưa chắc công ")
+            append("tắc đã nhận. Đừng khẳng định \"đèn đã sáng\" - hãy nói \"mình đã gửi lệnh bật\". ")
+            append("Muốn biết chắc thì gọi doc_so_lieu với muc = cong_tac.\n")
         }
     }
 }

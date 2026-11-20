@@ -69,6 +69,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val server by vm.server.collectAsStateWithLifecycle()
+    val congTac by vm.congTac.collectAsStateWithLifecycle()
+    val choCongTac by vm.choCongTac.collectAsStateWithLifecycle()
     val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
     val showUpdateDialog by vm.showUpdateDialog.collectAsStateWithLifecycle()
     val phienGiongNoi by vm.phienGiongNoi.collectAsStateWithLifecycle()
@@ -163,6 +165,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onAcTemp = { d -> vm.changeAcTemp(room.id, d) },
                         onMode = { m -> vm.setMode(room.id, m) },
                         onToggleSchedule = { vm.toggleSchedule(room.id) },
+                        oDen = vm.oThietBi(room.id, "den", congTac, choCongTac),
+                        oQuat = vm.oThietBi(room.id, "quat", congTac, choCongTac),
                     )
 
                     showChiTietDien -> ChiTietDienScreen(
@@ -244,6 +248,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         state = state,
                         onOpenRoom = { id -> openRoom = id },
                         onBack = { current = Dest.HOME.route },
+                        congTac = congTac,
                     )
 
                     dest == Dest.AUTOMATION -> AutomationScreen(

@@ -38,6 +38,7 @@ import vn.smarthome.ui.components.DeviceSwitchRow
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.ImagePlaceholder
 import vn.smarthome.ui.components.RoundIconButton
+import vn.smarthome.data.congtac.OThietBi
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.TempStepperRow
 import vn.smarthome.ui.shell.TopBar
@@ -62,6 +63,9 @@ fun RoomDetailScreen(
     onAcTemp: (Int) -> Unit,
     onMode: (RoomMode) -> Unit,
     onToggleSchedule: () -> Unit,
+    /** Mac dinh null = thiet bi mau, hanh vi y nhu truoc. */
+    oDen: OThietBi? = null,
+    oQuat: OThietBi? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
 
@@ -97,6 +101,7 @@ fun RoomDetailScreen(
                     checked = room.lightOn,
                     onToggle = onToggleLight,
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    o = oDen,
                 )
                 DeviceSwitchRow(
                     icon = Icons.Filled.Air,
@@ -105,6 +110,7 @@ fun RoomDetailScreen(
                     checked = room.fanOn,
                     onToggle = onToggleFan,
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    o = oQuat,
                 )
                 TempStepperRow(
                     icon = Icons.Filled.AcUnit,

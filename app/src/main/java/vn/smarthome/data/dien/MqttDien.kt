@@ -12,6 +12,9 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import vn.smarthome.data.congtac.CongTacState
+import vn.smarthome.data.congtac.CongTacTopic
+import vn.smarthome.data.congtac.LenhCongTac
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.server.ServerTopic
 import vn.smarthome.data.wifi.WifiState
@@ -26,6 +29,20 @@ import kotlin.random.Random
  */
 object DieuKhienTopic {
     const val CMD = "smarthome/control"
+}
+
+/**
+ * Ket qua cua mot lan ban lenh dieu khien.
+ *
+ * Vi sao khong tra Boolean: man hinh can PHAN BIET "chua noi broker" voi
+ * "noi roi nhung publish nem loi" de noi dung cau cho nguoi dung. Hai thu do
+ * phai sua hai cho khac nhau.
+ */
+sealed interface KetQuaGui {
+    /** Da len broker. KHONG co nghia la cong tac da nhan - xem ghi chu o guiLenh. */
+    data class DaGui(val id: String) : KetQuaGui
+    data object ChuaNoiBroker : KetQuaGui
+    data class Loi(val moTa: String) : KetQuaGui
 }
 
 /** Trang thai duong truyen toi EMQX. */
@@ -56,6 +73,9 @@ class MqttDien {
 
     private val _server = MutableStateFlow(ServerState())
     val server: StateFlow<ServerState> = _server.asStateFlow()
+
+    private val _congTac = MutableStateFlow(CongTacState())
+    val congTac: StateFlow<CongTacState> = _congTac.asStateFlow()
 
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
@@ -120,6 +140,8 @@ class MqttDien {
                     _wifi.update { WifiState.gop(it, topic, payload) }
                 } else if (topic.startsWith("server/")) {
                     _server.update { ServerState.gop(it, topic, payload) }
+                } else if (topic.startsWith("congtac/")) {
+                    _congTac.update { CongTacState.gop(it, topic, payload) }
                 }
             }
 
@@ -139,18 +161,31 @@ class MqttDien {
     }
 
     /**
-     * Subscribe `dien/#` va `wifi/#` tu broker.
+     * Subscribe bon goc so lieu tu broker.
      */
     private fun dangKyTopic(c: MqttAsyncClient) {
         try {
-            val topics = arrayOf(DienTopic.GOC, WifiTopic.GOC, ServerTopic.GOC)
-            val qoss = intArrayOf(1, 1, 1)
+            val topics = GOC_CAN_DOC.toTypedArray()
+            // Sinh tu danh sach de khong bao gio lech do dai duoc nua.
+            val qoss = IntArray(GOC_CAN_DOC.size) { 1 }
             c.subscribe(topics, qoss, null, object : org.eclipse.paho.client.mqttv3.IMqttActionListener {
                 override fun onSuccess(token: IMqttToken?) {
-                    val cap = token?.grantedQos
-                    if (cap != null && cap.isNotEmpty() && cap[0] == 0x80) {
+                    // Ban cu chi kiem cap[0], tuc chi `dien/#`. Broker tu choi
+                    // goc thu hai tro di thi app IM LANG - man hinh trong ma
+                    // khong ai noi vi sao. Broker nha chua co acl_file nen loi
+                    // nay chua bao gio ban, nhung no se ban dung ngay siet ACL.
+                    val cap = token?.grantedQos ?: return
+                    if (cap.size != GOC_CAN_DOC.size) {
                         _ketNoi.value = KetNoi.Loi(
-                            "Broker từ chối cho đọc " + DienTopic.GOC +
+                            "Broker trả về ${cap.size} kết quả cho ${GOC_CAN_DOC.size} topic. " +
+                                "Không biết topic nào được cấp quyền — coi như chưa đọc được gì."
+                        )
+                        return
+                    }
+                    val tuChoi = GOC_CAN_DOC.filterIndexed { i, _ -> cap[i] == 0x80 }
+                    if (tuChoi.isNotEmpty()) {
+                        _ketNoi.value = KetNoi.Loi(
+                            "Broker từ chối cho đọc: " + tuChoi.joinToString(", ") +
                                 ". Cần cấp quyền subscribe cho tài khoản này trên Mosquitto."
                         )
                     }
@@ -178,12 +213,38 @@ class MqttDien {
     }
 
     /**
+     * Ban mot lenh dieu khien, tra ve ket qua noi duoc thanh cau.
+     *
+     * Tu 21/11/2026 da co nguoi nghe topic nay: `scripts/congtac_bridge/` chay
+     * tren serverubuntu. Nhung cau quan trong nhat van giu nguyen - ham nay
+     * tra ve "da gui len broker hay chua", KHONG phai "cong tac da nhan hay
+     * chua". Hai thu do khac nhau, va lan lon chung la noi doi voi nguoi dung.
+     * Do chinh la ly do ton tai cua buoc doi soat trong HomeViewModel.
+     */
+    fun guiLenh(
+        phong: String,
+        thietBi: String,
+        hanhDong: String,
+        giaTri: String? = null,
+        nguon: String,
+    ): KetQuaGui {
+        val c = client ?: return KetQuaGui.ChuaNoiBroker
+        if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
+        val id = LenhCongTac.maLenh()
+        val json = LenhCongTac.json(phong, thietBi, hanhDong, giaTri, nguon, id)
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+            c.publish(DieuKhienTopic.CMD, msg)
+            KetQuaGui.DaGui(id)
+        } catch (e: Exception) {
+            KetQuaGui.Loi(e.message ?: "không gửi được lệnh lên broker")
+        }
+    }
+
+    /**
      * Ban mot lenh dieu khien thiet bi ra `smarthome/control`.
      *
-     * Them ngay 20/11/2026 cho tro ly giong noi. CHUA co thiet bi nao subscribe
-     * topic nay - day la dau noi dung san cho ESP32 ve sau. Vi vay ham tra ve
-     * "da gui len broker hay chua", KHONG phai "thiet bi da nhan hay chua":
-     * hai thu do khac nhau va lan lon chung la noi doi voi nguoi dung.
+     * Tang thap, con lai cho duong giong noi cu. Duong moi dung [guiLenh].
      *
      * Khong dung retained: lenh bat den la mot su kien, giu lai thi thiet bi
      * nao vua cam dien len cung bat den theo mot lenh tu hom qua.
@@ -198,6 +259,16 @@ class MqttDien {
         } catch (e: Exception) {
             false
         }
+    }
+
+    companion object {
+        /**
+         * Bon goc so lieu app doc. Co TEN di kem de bao duoc dung goc nao bi
+         * broker tu choi - xem `dangKyTopic`.
+         */
+        val GOC_CAN_DOC = listOf(
+            DienTopic.GOC, WifiTopic.GOC, ServerTopic.GOC, CongTacTopic.GOC,
+        )
     }
 
     fun ngat() {
