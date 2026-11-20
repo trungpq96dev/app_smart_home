@@ -1,0 +1,222 @@
+===============================================================================
+ SMARTHOME APP - BẢNG TRA CẤU HÌNH
+ Repo: D:\SmartHomeApp  (github.com/trungpq96dev/app_smart_home)
+ Lập ngày: 20/11/2026 - đọc trực tiếp từ mã nguồn, không phải chép tay
+ LƯU Ý: file này KHÔNG chứa mật khẩu nào. Mật khẩu nằm ở DataStore trên máy
+        tính bảng và ở file .env trên serverubuntu.
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+1. CÁC MÁY TRONG MẠNG
+-------------------------------------------------------------------------------
+192.168.0.1     Router TP-Link TL-WR840N   (trang quản trị, tài khoản admin)
+192.168.0.50    serverubuntu               (Mosquitto + go2rtc + 2 collector)
+192.168.0.104   Camera Tuya                (chỉ mở cổng 6668 - cổng điều khiển
+                                            Tuya, KHÔNG phải video. 554/80/443/
+                                            8080 đều đóng -> bắt buộc qua go2rtc)
+                Máy tính bảng Samsung Galaxy Tab A7 Lite (SM-T225, Android 13)
+
+
+-------------------------------------------------------------------------------
+2. MQTT - BROKER MOSQUITTO  (màn Cài đặt > tab Broker MQTT)
+-------------------------------------------------------------------------------
+Host            192.168.0.50
+Cổng            1883
+TLS             TẮT  (cổng 8883 KHÔNG mở - tài liệu dien_evn ghi EMQX/8883/TLS
+                      là môi trường dự kiến, không phải môi trường thật.
+                      Đo tận nơi 18/11/2026)
+Tài khoản       iot
+Mật khẩu        <không ghi ở đây - điền trong màn Cài đặt>
+Client ID       để trống -> app tự sinh "tablet-smarthome-<6 số ngẫu nhiên>"
+                PHẢI khác client id của bộ bơm và bộ đèn; trùng id là broker
+                đá cả hai bên ra.
+
+Broker là Mosquitto, chưa cấu hình acl_file -> bất kỳ tài khoản nào đăng nhập
+được cũng đọc ghi được MỌI topic. Đừng mở broker ra Internet.
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/dien/CauHinhMqtt.kt
+
+
+-------------------------------------------------------------------------------
+3. CÁC TOPIC MQTT
+-------------------------------------------------------------------------------
+App subscribe 3 nhánh: dien/#  wifi/#  server/#   (QoS 1, mọi topic RETAINED)
+App CHỈ publish đúng 1 topic: wifi/cmd  (lệnh "reboot" modem)
+
+--- dien/#  (nguồn: script dien_evn chạy Docker trên serverubuntu, 4 cữ/ngày) --
+dien/trangthai          "ok" | "loi"
+dien/ngay/sanluong      kWh ngày gần nhất EVN đã chốt
+dien/ngay/ngay          YYYY-MM-DD
+dien/thang/sanluong     kWh lũy kế từ ngày chốt chỉ số
+dien/thang/tien         tiền ước tính, đã gồm VAT
+dien/congto/chiso       chỉ số công tơ
+dien/congno/sotien      công nợ
+dien/lichsu             JSON [{"ngay":"YYYY-MM-DD","kwh":0.0}, ...]
+dien/capnhat            YYYY-MM-DD HH:MM:SS
+dien/loi                rỗng = không sao
+APP KHÔNG BAO GIỜ GHI VÀO dien/ - ghi vào là đè lên số thật của đường ống.
+Độ tuổi số liệu: <8h = mới | 8-24h = cảnh báo | >24h = hỏng (không có Last Will)
+
+--- wifi/#  (nguồn: scripts/wifi_collector.py, mặc định 15 giây/lần) ----------
+wifi/info               JSON: ssid, security, signal_dbm, download_mbps, ...
+wifi/devices            JSON mảng thiết bị đang nối
+wifi/usage              JSON mảng 24 số (biểu đồ 24h)
+wifi/trangthai          "ok" | "loi"
+wifi/capnhat            mốc thời gian
+wifi/cmd                <-- APP GHI VÀO ĐÂY ("reboot")
+wifi/cmd/result         kết quả lệnh
+
+--- server/#  (nguồn: scripts/server_collector/, metrics 5 giây/lần) ---------
+server/info             hostname, os, kernel, cpu, ram tổng, disk tổng, uptime
+server/metrics          cpu%, ram, disk, nhiệt độ, load, mạng Rx/Tx
+server/docker           danh sách container
+server/nhietdo          các cảm biến nhiệt độ
+server/diennang         pin + RAPL CPU
+server/diennang_ngay    điện năng CPU theo ngày
+server/capnhat          mốc thời gian
+Không có cảm biến -> publish null -> app hiện "—", không bịa số.
+
+Kiểm tra nhanh trên server (thay <pass> bằng mật khẩu tài khoản iot):
+  mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "dien/#"   -v
+  mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "server/#" -v
+  mosquitto_sub -h 192.168.0.50 -u iot -P <pass> -t "wifi/#"   -v
+
+
+-------------------------------------------------------------------------------
+4. CAMERA - GO2RTC  (màn Cài đặt > tab Camera)
+-------------------------------------------------------------------------------
+Host            192.168.0.50     (chạy trên serverubuntu, KHÔNG phải máy Windows)
+Cổng            1984
+TLS             TẮT
+Tài khoản       <đặt trong go2rtc.yaml mục api: username/password>
+Mật khẩu        <không ghi ở đây>
+
+Đường đi:  Camera Tuya -> go2rtc (Docker, đăng nhập tài khoản Tuya) -> WebRTC
+           -> máy tính bảng.  App KHÔNG BAO GIỜ đăng nhập Tuya.
+App hỏi    http://192.168.0.50:1984/api/streams  để dựng danh sách camera
+Trang phát http://192.168.0.50:1984/stream.html?src=<tên>&width=100%25
+           (dấu % phải viết 100%25; để nguyên % thì khung hình tụt về 320px)
+
+Bắt buộc đặt api: username/password trong go2rtc.yaml - vì /api/streams trả về
+cả URL nguồn có chứa email và MẬT KHẨU tài khoản Tuya dạng chữ thường.
+Đã bịt lỗ này ngày 17/11/2026.
+
+Lần nối đầu mất 4-12 giây (go2rtc phải đăng nhập máy chủ Tuya).
+Thử lại phải THƯA: 4s -> 15s -> 40s, tối đa 3 lần. Thử 6 lần liên tiếp là Tuya
+chặn tạm, phải để yên 4 phút.
+Tắt tiếng camera: thêm &media=video vào CauHinhCamera.urlTrangPhat()
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/camera/CauHinhCamera.kt
+
+
+-------------------------------------------------------------------------------
+5. THỜI TIẾT - OPEN-METEO  (màn Cài đặt > tab Thời tiết)
+-------------------------------------------------------------------------------
+Địa điểm mặc định    Hà Nội
+Lat / Lon            21.0278 / 105.8342
+API                  https://api.open-meteo.com/v1/forecast  (không cần khóa)
+Nhịp tải lại         15 phút/lần, dự báo 4 ngày
+Không có gì bí mật ở đây nên không đụng tới quy tắc sao lưu.
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/thoitiet/OpenMeteo.kt
+
+
+-------------------------------------------------------------------------------
+6. CẬP NHẬT TỰ ĐỘNG (OTA)  (màn Cài đặt > tab Cập nhật)
+-------------------------------------------------------------------------------
+Repo            trungpq96dev/app_smart_home
+API             https://api.github.com/repos/<repo>/releases/latest
+Cơ chế          App tự kiểm tra sau khi khởi động 4 giây -> thấy tag mới hơn
+                thì hiện pop-up -> tải file *.apk trong assets -> giao cho
+                trình cài đặt Android qua FileProvider
+Quyền           REQUEST_INSTALL_PACKAGES
+Phát hành       đẩy tag v* lên GitHub -> workflow .github/workflows/release.yml
+                tự build APK release và tạo Release
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/ota/OtaManager.kt
+
+
+-------------------------------------------------------------------------------
+7. CÀI 2 COLLECTOR TRÊN SERVERUBUNTU
+-------------------------------------------------------------------------------
+--- server_collector (sức khỏe máy chủ) ---
+  scp -r scripts/server_collector serverubuntu@192.168.0.50:~/
+  ssh serverubuntu@192.168.0.50
+  cd ~/server_collector
+  cp cau_hinh.mau.env .env
+  nano .env          # điền MQTT_PASS (tài khoản iot, lấy từ ~/homeserver/.env)
+  chmod 600 .env
+  docker compose up -d --build
+.env:  MQTT_BROKER=127.0.0.1 (network_mode host)   MQTT_PORT=1883
+       MQTT_USER=iot   MQTT_PASS=<điền>   POLL_INTERVAL=5
+Chạy user 0:0 để đọc /sys và docker.sock; tất cả mount đều READ-ONLY.
+Không muốn lộ docker.sock -> bỏ dòng mount đó, thẻ Docker trên app sẽ trống.
+
+--- wifi_collector (cào số liệu router TP-Link) ---
+.env:  ROUTER_IP=192.168.0.1   ROUTER_USER=admin   ROUTER_PASS=<điền>
+       MQTT_BROKER=192.168.0.50 (trong container 127.0.0.1 là chính container!)
+       MQTT_PORT=1883   MQTT_USER=iot   MQTT_PASS=<điền>   POLL_INTERVAL=15
+ROUTER_PASS là mật khẩu trang quản trị router, KHÔNG phải mật khẩu WiFi.
+
+
+-------------------------------------------------------------------------------
+8. MÁY TÍNH BẢNG & KÍCH THƯỚC MÀN HÌNH
+-------------------------------------------------------------------------------
+Máy             Samsung Galaxy Tab A7 Lite (SM-T225), Android 13, nằm ngang
+Đo thật         adb shell wm size     -> 800x1340 px
+                adb shell wm density  -> 213 dpi (tvdpi)
+Density         1.33125  ->  vùng vẽ 1006 x 601 dp
+Chế độ kiosk    Ẩn cả thanh trạng thái lẫn thanh điều hướng -> dùng trọn
+                1006x601dp. Để nguyên hai thanh thì còn 1340x780px + dải đen.
+                Bỏ kiosk: xóa lời gọi hideSystemBars() trong MainActivity.
+CẢNH BÁO        Dự án AquaControl ghi 893x533 dp vì đoán density 1.5 - SAI với
+                máy này. Đừng chép lại.
+Màn hình luôn sáng: FLAG_KEEP_SCREEN_ON trong MainActivity.
+
+File mã nguồn: app/src/main/java/vn/smarthome/ui/theme/Dimens.kt
+
+
+-------------------------------------------------------------------------------
+9. BUILD & KÝ
+-------------------------------------------------------------------------------
+applicationId   vn.smarthome        (debug: vn.smarthome.debug)
+versionName     0.3.1       versionCode 4
+minSdk 26  /  targetSdk 35  /  compileSdk 35  /  Java 17
+Khóa ký         keystore.properties + smarthome-release.jks ở thư mục gốc
+                (CẢ HAI ĐỀU KHÔNG NẰM TRONG GIT)
+                Máy nào không có 2 file đó vẫn build release được, ký bằng
+                khóa debug.
+Lệnh hay dùng   build.bat assembleRelease
+                build.bat testDebugUnitTest  -> ảnh chụp ra app\build\screenshots\
+CI              GitHub Actions: đẩy tag v* hoặc chạy workflow_dispatch
+                Secrets cần có: KEYSTORE_BASE64, KEYSTORE_PROPERTIES
+
+
+-------------------------------------------------------------------------------
+10. CÔNG TẮC TRONG MÃ NGUỒN
+-------------------------------------------------------------------------------
+DemoData.IS_DEMO = true   -> bật/tắt chip "DỮ LIỆU MẪU" trên toàn app
+                             (file data/DemoData.kt - TOÀN BỘ số liệu mẫu còn
+                              lại nằm đúng một file này)
+Nguyên tắc      KHÔNG BỊA SỐ: mất kết nối thì hiện "--" và nói rõ lý do,
+                tuyệt đối không lấy số mẫu bù vào.
+Ngoại lệ đáng lưu ý: màn WiFi và màn Server vẫn lấy giá trị mặc định từ
+                DemoData khi MQTT chưa về, chỉ có cờ isRealData để phân biệt.
+
+
+-------------------------------------------------------------------------------
+11. CHỖ LƯU MẬT KHẨU (để biết khi đổi máy / cài lại)
+-------------------------------------------------------------------------------
+Trên máy tính bảng   DataStore của app, 3 file riêng:
+                     cau_hinh           (MQTT: host, cổng, tls, tài khoản, mk)
+                     cau_hinh_camera    (go2rtc: host, cổng, tls, tài khoản, mk)
+                     cau_hinh_thoitiet  (tên, lat, lon - không có gì bí mật)
+                     Đã loại khỏi sao lưu đám mây (res/xml/backup_rules.xml,
+                     data_extraction_rules.xml)
+Trên serverubuntu    ~/server_collector/.env, ~/wifi_collector/.env (chmod 600)
+                     go2rtc.yaml (chứa tài khoản Tuya + api user/pass)
+                     ~/homeserver/.env (tài khoản iot gốc)
+Trong mã nguồn       KHÔNG CÓ mật khẩu nào - vì mã nguồn nằm trên GitHub.
+
+===============================================================================
