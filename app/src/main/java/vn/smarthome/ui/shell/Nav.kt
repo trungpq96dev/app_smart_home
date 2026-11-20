@@ -3,6 +3,7 @@ package vn.smarthome.ui.shell
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
@@ -25,7 +26,8 @@ enum class Dest(
     AUTOMATION("automation", "Tự động hóa", Icons.Filled.AutoAwesome, true),
     SETTINGS("settings", "Cài đặt", Icons.Filled.Settings, false),
     SERVER("server", "Server", Icons.Filled.Dns, true),
-    STATS("stats", "Thống kê", Icons.Filled.BarChart, true);
+    STATS("stats", "Thống kê", Icons.Filled.BarChart, true),
+    UTILITIES("utilities", "Tiện ích", Icons.Filled.CalendarMonth, true);
 
     companion object {
         fun from(route: String?) = entries.firstOrNull { it.route == route } ?: HOME

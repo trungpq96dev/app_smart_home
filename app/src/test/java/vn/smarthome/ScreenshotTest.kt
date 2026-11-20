@@ -28,6 +28,7 @@ import vn.smarthome.ui.screens.RoomDetailScreen
 import vn.smarthome.ui.screens.ServerScreen
 import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
+import vn.smarthome.ui.screens.TienIchScreen
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
@@ -95,6 +96,17 @@ class ScreenshotTest {
     @Test
     fun chup_trang_chu() {
         shoot("1-trang-chu") { AppShell() }
+    }
+
+    @Test
+    fun chup_tien_ich_lich_am() {
+        // Ngay co dinh chu khong phai LocalDate.now(): anh chup phai giong nhau
+        // moi lan chay, neu khong thi khong doi chieu duoc voi lan truoc.
+        shoot("8-tien-ich-lich-am") {
+            Content {
+                TienIchScreen(onBack = {}, homNay = java.time.LocalDate.of(2026, 11, 20))
+            }
+        }
     }
 
     @Test

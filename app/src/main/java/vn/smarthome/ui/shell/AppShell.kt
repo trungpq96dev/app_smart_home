@@ -36,6 +36,7 @@ import vn.smarthome.ui.screens.RoomDetailScreen
 import vn.smarthome.ui.screens.ServerScreen
 import vn.smarthome.ui.screens.SettingsScreen
 import vn.smarthome.ui.screens.StatsScreen
+import vn.smarthome.ui.screens.TienIchScreen
 import vn.smarthome.ui.screens.WifiScreen
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -169,6 +170,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onLuuThoiTiet = vm::luuCauHinhThoiTiet,
                         onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
                         onBatDauCapNhat = vm::batDauCapNhat,
+                        onBack = { current = Dest.HOME.route },
+                    )
+
+                    dest == Dest.UTILITIES -> TienIchScreen(
                         onBack = { current = Dest.HOME.route },
                     )
 

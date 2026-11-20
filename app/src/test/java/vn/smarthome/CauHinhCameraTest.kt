@@ -20,9 +20,20 @@ import vn.smarthome.data.camera.CauHinhCamera
 class CauHinhCameraTest {
 
     @Test
-    fun `chua dien host thi chua day du`() {
-        assertFalse(CauHinhCamera().dayDu())
+    fun `host rong thi chua day du`() {
+        assertFalse(CauHinhCamera(host = "").dayDu())
         assertFalse(CauHinhCamera(host = "   ").dayDu())
+    }
+
+    @Test
+    fun `mac dinh da tro san ve serverubuntu`() {
+        // Tu ban 0.3.1 cau hinh mac dinh KHONG con rong: host 192.168.0.50 va
+        // cong 1984 duoc dien san de may cai moi tu len hinh, khong phai go tay.
+        // Doi mac dinh ve rong thi phai sua lai ca man Cai dat lan mo ta nay.
+        val macDinh = CauHinhCamera()
+        assertTrue(macDinh.dayDu())
+        assertEquals("192.168.0.50", macDinh.host)
+        assertEquals(1984, macDinh.cong)
     }
 
     @Test

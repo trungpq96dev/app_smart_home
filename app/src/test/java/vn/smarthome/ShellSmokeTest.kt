@@ -68,9 +68,12 @@ class ShellSmokeTest {
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Camera an ninh").assertIsDisplayed()
         rule.onNodeWithText("Chụp ảnh").assertIsDisplayed()
-        rule.onNodeWithText("Sân vườn").assertIsDisplayed()
-        // "Cửa chính" xuat hien 2 cho: dong trong danh sach va nhan duoi khung xem.
-        rule.onAllNodesWithText("Cửa chính").onFirst().assertIsDisplayed()
+        // KHONG kiem ten camera mau ("Sân vườn", "Cửa chính") o day nua.
+        // Tu khi go2rtc co dia chi mac dinh 192.168.0.50, AppShell do go2rtc
+        // ngay luc mo app: do xong la danh sach mau bi thay bang danh sach
+        // that (o day la rong, vi trong Robolectric khong goi duoc ai).
+        // Khang dinh ten camera mau tuc la dua vao viec lan do do CHUA kip
+        // xong - test se xanh hay do tuy may nhanh hay cham.
     }
 
     @Test
@@ -78,12 +81,14 @@ class ShellSmokeTest {
         start()
         rule.onNodeWithText("Cài đặt").performClick()
         rule.mainClock.advanceTimeByFrame()
+        // Ba duong noi ra ngoai phai CUNG nhin thay duoc trong tab "Dich vu &
+        // Ket noi", khong bat cuon hay doi tab moi thay.
         rule.onNodeWithText("Broker EMQX — số điện").assertIsDisplayed()
-        rule.onNodeWithText("Chưa khai báo broker").assertIsDisplayed()
-        // Cot thu hai: khai bao go2rtc de lay hinh camera. Hai duong noi ra
-        // ngoai phai cung nhin thay duoc, khong bat cuon moi thay.
         rule.onNodeWithText("go2rtc — hình camera").assertIsDisplayed()
-        rule.onNodeWithText("Chưa khai báo go2rtc").assertIsDisplayed()
+        rule.onNodeWithText("Thời tiết — Open-Meteo").assertIsDisplayed()
+        // KHONG kiem chu "Chưa khai báo ..." nua: tu khi broker va go2rtc co
+        // dia chi mac dinh, trang thai luc mo man la "Đang nối"/"Lỗi" tuy mang,
+        // chu khong con la "chua khai bao".
     }
 
     @Test
@@ -91,9 +96,11 @@ class ShellSmokeTest {
         start()
         rule.onNodeWithText("Thống kê").performClick()
         rule.mainClock.advanceTimeByFrame()
-        // Chua khai bao broker => khong duoc hien so mau nao, phai noi ro ly do.
+        // Chua nhan duoc dien/lichsu => khong duoc hien so mau nao.
+        // Dong ly do ben duoi doi theo trang thai duong truyen (chua khai bao /
+        // dang noi / loi) nen khong kiem o day; cai phai dung la man hinh noi
+        // thang ra rang chua co so, thay vi bay ra bieu do mau.
         rule.onNodeWithText("Chưa có số liệu điện").assertIsDisplayed()
-        rule.onNodeWithText("Chưa khai báo broker EMQX").assertIsDisplayed()
     }
 
     @Test
@@ -131,13 +138,35 @@ class ShellSmokeTest {
     @Test
     fun cac_man_chua_lam_van_mo_duoc() {
         start()
-        // Thiet bi da lam xong (hien luoi the), chi con Cam bien va Tu dong hoa
-        // la placeholder.
-        listOf("Cảm biến", "Tự động hóa").forEach { name ->
-            rule.onNodeWithText(name).performClick()
-            rule.mainClock.advanceTimeByFrame()
-            rule.onNodeWithText("Màn hình này sẽ làm ở giai đoạn sau").assertIsDisplayed()
-        }
+        // Thiet bi va Tu dong hoa deu da lam xong roi, nen CAM BIEN la man
+        // placeholder duy nhat con lai.
+        rule.onNodeWithText("Cảm biến").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Màn hình này sẽ làm ở giai đoạn sau").assertIsDisplayed()
+    }
+
+    @Test
+    fun man_tu_dong_hoa_hien_the_aquacontrol() {
+        start()
+        // Thay cho phan kiem cu: Tu dong hoa khong con la placeholder.
+        rule.onNodeWithText("Tự động hóa").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        // "AquaControl" co o ca tieu de the lan nut mo app, nen lay cai dau.
+        rule.onAllNodesWithText("AquaControl").onFirst().assertIsDisplayed()
+        rule.onNodeWithText("Hệ thống Bơm & Cấp Nước Tự Động").assertIsDisplayed()
+    }
+
+    @Test
+    fun muc_tien_ich_o_sidebar_mo_duoc_lich_am() {
+        start()
+        rule.onNodeWithText("Tiện ích").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Tiện ích · Lịch vạn niên").assertIsDisplayed()
+        // Lich am tinh tai cho, khong phu thuoc mang, nen hai muc nay luon co.
+        // Dung "Tháng Can Chi" chu khong phai "Ngày Can Chi": chu sau co o ca
+        // o so lieu tren dau lan dong chi tiet ben phai.
+        rule.onNodeWithText("Tháng Can Chi").assertIsDisplayed()
+        rule.onNodeWithText("Giờ hoàng đạo").assertIsDisplayed()
     }
 
     @Test
