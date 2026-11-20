@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag phiên bản cần phát hành (ví dụ: v0.3.0)'
+        required: false
+        default: 'v0.3.0'
 
 permissions:
   contents: write
@@ -46,9 +51,12 @@ jobs:
         id: prepare_asset
         run: |
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "refs/heads/main" ]; then
-            TAG_NAME="latest"
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG_NAME="${{ inputs.tag }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+          else
+            TAG_NAME="v0.3.0"
           fi
           RELEASE_APK="SmartHome-${TAG_NAME}.apk"
           cp "$APK_PATH" "$RELEASE_APK"
@@ -59,8 +67,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.prepare_asset.outputs.apk_path }}
-          tag_name: ${{ github.ref_name }}
-          name: Bản cập nhật ${{ github.ref_name }}
+          tag_name: ${{ steps.prepare_asset.outputs.tag_name }}
+          name: Bản cập nhật ${{ steps.prepare_asset.outputs.tag_name }}
           generate_release_notes: true
           draft: false
           prerelease: false
