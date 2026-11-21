@@ -21,6 +21,7 @@ import logging
 import socket
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple
 
 log = logging.getLogger(__name__)
@@ -38,18 +39,56 @@ class LoiDoc(Exception):
     """Khong doc duoc trang thai. Nem ra de `dao()` khong dam dao mo."""
 
 
+# --------------------------------------------------------------- tim thiet bi
+
+def quet_cong(mang: str, cong: int, timeout: float = 0.6, luong: int = 128) -> list[str]:
+    """Tra ve cac IP trong dai /24 dang mo `cong`.
+
+    Chi mo socket roi dong ngay, khong gui byte nao.
+
+    Vi sao quet cong chu khong nghe quang ba UDP: container o mang bridge
+    cua Docker KHONG nhan duoc goi broadcast cua LAN. Nghe quang ba thi
+    buoc phai doi sang `network_mode: host`, tuc cho container nhin thay
+    toan bo mang cua may chu - gia dat hon nhieu so voi mot vong quet 253
+    dia chi moi khi mat dau thiet bi.
+    """
+    goc = mang.split("/")[0].rsplit(".", 1)[0]
+    ds = ["%s.%d" % (goc, i) for i in range(1, 255)]
+
+    def mo(ip: str) -> str | None:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            return ip if s.connect_ex((ip, cong)) == 0 else None
+        except OSError:
+            return None
+        finally:
+            s.close()
+
+    with ThreadPoolExecutor(max_workers=luong) as ex:
+        return [ip for ip in ex.map(mo, ds) if ip]
+
+
 # ---------------------------------------------------------------- lop chung
 
 class Driver(ABC):
     he = "?"
+    #: Cong dac trung cua he, dung de quet khi phai di tim lai thiet bi.
+    cong_dac_trung = 0
 
     def __init__(self, cau: dict) -> None:
         self.id: str = cau["id"]
         self.ten: str = cau["ten"]
         self.phong: str = cau["phong"]
         self.loai: str = cau["loai"]
-        self.ip: str = cau["ip"]
+        self.ip: str = cau.get("ip", "")
         self.timeout: float = float(cau.get("timeout", 3.0))
+        #: Dai mang de quet khi di tim lai. Rong = tat tu dong tim.
+        self.mang: str = cau.get("mang", "")
+        #: Khoang cach toi thieu giua hai lan quet (giay) - quet lien tuc
+        #: moi vong poll thi vua cham vua lam phien ca mang.
+        self.cho_quet: float = float(cau.get("cho_quet", 120))
+        self._lan_quet = 0.0
 
     @abstractmethod
     def doc(self) -> KetQuaDoc:
@@ -70,6 +109,49 @@ class Driver(ABC):
         if not kq.online or kq.is_on is None:
             raise LoiDoc(kq.ly_do_loi or "khong doc duoc trang thai hien tai nen khong dam dao")
         return self.dat(not kq.is_on)
+
+    def xac_minh(self, ip: str) -> bool:
+        """Dung thiet bi CUA MINH co dang o `ip` khong?
+
+        Phai hoi thiet bi va doi chieu MA CO DINH cua no, khong duoc chi
+        thay cong mo roi ket luan: trong nha co the co nhieu thiet bi cung
+        he (camera Tuya cung mo 6668), va nhan nham thi bat nham do.
+        """
+        return False
+
+    def tim_lai_ip(self) -> str | None:
+        """Quet mang tim lai thiet bi theo ma co dinh cua no.
+
+        Day la thu thay cho viec dat IP tinh tren router: DHCP doi IP bao
+        nhieu lan cung duoc, ma khong ai phai sua cau hinh.
+        """
+        if not self.mang or not self.cong_dac_trung:
+            return None
+        bay_gio = time.monotonic()
+        if bay_gio - self._lan_quet < self.cho_quet:
+            return None
+        self._lan_quet = bay_gio
+
+        log.info("%s: mat dau o %s, quet %s cong %d de tim lai...",
+                 self.id, self.ip or "?", self.mang, self.cong_dac_trung)
+        ung_vien = quet_cong(self.mang, self.cong_dac_trung)
+        # Thu dia chi cu truoc neu no van nam trong danh sach - do la truong
+        # hop thuong gap nhat (thiet bi chi vua khoi dong lai).
+        if self.ip in ung_vien:
+            ung_vien.remove(self.ip)
+            ung_vien.insert(0, self.ip)
+        for ip in ung_vien:
+            try:
+                if self.xac_minh(ip):
+                    if ip != self.ip:
+                        log.warning("%s: DOI IP %s -> %s", self.id, self.ip or "?", ip)
+                    self.ip = ip
+                    return ip
+            except Exception:
+                continue
+        log.error("%s: quet %d may mo cong %d, khong may nao dung ma thiet bi.",
+                  self.id, len(ung_vien), self.cong_dac_trung)
+        return None
 
     def dong(self) -> None:
         """Tha socket luc tat bridge. Mac dinh khong giu gi."""
@@ -143,12 +225,39 @@ def doc_bat(msg: dict, dpid: str) -> bool | None:
 
 class CozyLifeDriver(Driver):
     he = "cozylife"
+    cong_dac_trung = 5555
 
     def __init__(self, cau: dict) -> None:
         super().__init__(cau)
         self.cong = int(cau.get("port", 5555))
+        self.cong_dac_trung = self.cong
         self.dpid = str(cau.get("dpid", "1"))
         self.gia_tri_bat = int(cau.get("gia_tri_bat", 255))
+        #: Ma co dinh cua thiet bi (`did` trong tra loi cmd 0). Day moi la
+        #: danh tinh; IP chi la cho no dang dung.
+        self.did = str(cau.get("did", "")).strip().lower()
+
+    def xac_minh(self, ip: str) -> bool:
+        """Hoi ly lich may o `ip` va doi chieu `did`.
+
+        Khong khai `did` thi khong xac minh duoc - tra False de khong nhan
+        bua mot may la. Cong 5555 cung la cong ADB cua Android, nen "mo
+        cong" tuyet doi khong du de ket luan.
+        """
+        if not self.did:
+            return False
+        cu, self.ip = self.ip, ip
+        try:
+            o = self._goi(CMD_LY_LICH, {"attr": [0]})
+            did = str(o.get("msg", {}).get("did", "")).strip().lower()
+            if did == self.did:
+                return True
+        except Exception:
+            pass
+        finally:
+            if self.ip == ip:
+                self.ip = cu
+        return False
 
     def _goi(self, cmd: int, msg: dict) -> dict:
         """Mo -> gui -> doc -> DONG.
@@ -191,7 +300,14 @@ class CozyLifeDriver(Driver):
         try:
             o = self._goi(CMD_HOI, {"attr": [0]})
         except LoiDoc as e:
-            return KetQuaDoc(False, None, str(e))
+            # Khong noi duoc: co the thiet bi mat dien, cung co the DHCP da
+            # doi IP cua no. Di tim mot lan roi thu lai truoc khi ket luan.
+            if self.tim_lai_ip() is None:
+                return KetQuaDoc(False, None, str(e))
+            try:
+                o = self._goi(CMD_HOI, {"attr": [0]})
+            except LoiDoc as e2:
+                return KetQuaDoc(False, None, str(e2))
         if o.get("res") != 0:
             return KetQuaDoc(True, None, "thiet bi tra loi loi res=%s" % o.get("res"))
         bat = doc_bat(o.get("msg", {}), self.dpid)
@@ -216,6 +332,34 @@ class CozyLifeDriver(Driver):
 
 class TuyaDriver(Driver):
     he = "tuya"
+    cong_dac_trung = 6668
+
+    def xac_minh(self, ip: str) -> bool:
+        """Thu noi toi `ip` bang device_id + local_key cua minh.
+
+        Giai ma duoc la dung may: local_key chi mo duoc dung mot thiet bi.
+        Camera Tuya trong nha cung mo 6668 nhung khoa khac nen se truot.
+        """
+        try:
+            import tinytuya
+        except ImportError:
+            return False
+        tb = None
+        try:
+            tb = tinytuya.OutletDevice(self.device_id, ip, self.local_key)
+            tb.set_version(float(self.version))
+            tb.set_socketTimeout(self.timeout)
+            tb.set_socketRetryLimit(1)
+            tt = tb.status()
+            return isinstance(tt, dict) and "dps" in tt
+        except Exception:
+            return False
+        finally:
+            if tb is not None:
+                try:
+                    tb.close()
+                except Exception:
+                    pass
 
     def __init__(self, cau: dict) -> None:
         super().__init__(cau)
@@ -286,7 +430,17 @@ class TuyaDriver(Driver):
             tt = self._thiet_bi().status()
         except Exception as e:
             self._ghi_loi()
-            return KetQuaDoc(False, None, "khong noi duoc %s:6668 (%s)" % (self.ip, e))
+            cu = self.ip
+            if self.tim_lai_ip() is not None and self.ip != cu:
+                # Doi IP that: phai vut instance cu di, no van om dia chi cu.
+                self.dong()
+                try:
+                    tt = self._thiet_bi().status()
+                except Exception as e2:
+                    return KetQuaDoc(False, None,
+                                     "khong noi duoc %s:6668 (%s)" % (self.ip, e2))
+            else:
+                return KetQuaDoc(False, None, "khong noi duoc %s:6668 (%s)" % (self.ip, e))
 
         if not isinstance(tt, dict) or "dps" not in tt:
             self._ghi_loi()

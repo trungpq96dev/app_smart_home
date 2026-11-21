@@ -102,9 +102,9 @@ Hai công tắc (đo 21/11/2026):
                     local_key: CHƯA CÓ - nằm trong .env trên server, không ở đây
   Quạt Phòng ngủ 1  CozyLife         192.168.0.103  TCP 5555
                     MAC 00:50:c2:ec:bf:27   did 727700990050c2ecbf27
-  CẢ HAI IP đang nằm trong dải DHCP động -> phải đặt Address Reservation trên
-  router, không thì mất điện một lần là đổi IP. TL-WR840N mất hết reservation
-  khi reset về mặc định.
+  KHÔNG cần đặt IP tĩnh: bridge tự tìm thiết bị theo MÃ CỐ ĐỊNH (gwId của
+  Tuya, did của CozyLife) khi mất dấu, rồi tự cập nhật IP. Hai dòng IP trong
+  .env chỉ là gợi ý để thử trước cho nhanh. Tắt tự dò thì để MANG= rỗng.
 
 CẢNH BÁO: từ nay MQTT điều khiển được vật thể trong nhà, mà Mosquitto vẫn chưa
 có acl_file. Mất mật khẩu iot trước đây là lộ số liệu; giờ là bật tắt được đèn
@@ -218,7 +218,7 @@ File mã nguồn: app/src/main/java/vn/smarthome/ui/theme/Dimens.kt
 9. BUILD & KÝ
 -------------------------------------------------------------------------------
 applicationId   vn.smarthome        (debug: vn.smarthome.debug)
-versionName     0.7.0       versionCode 12
+versionName     0.8.3       versionCode 15
 minSdk 26  /  targetSdk 35  /  compileSdk 35  /  Java 17
 Khóa ký         keystore.properties + smarthome-release.jks ở thư mục gốc
                 (CẢ HAI ĐỀU KHÔNG NẰM TRONG GIT)

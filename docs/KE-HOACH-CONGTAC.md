@@ -10,7 +10,7 @@ mọi khẳng định về thiết bị đều kèm gói tin bắt được.
 
 | Giai đoạn | Trạng thái |
 |---|---|
-| G0 — xác minh | **Xong, trừ G0-b.** Tìm ra cả hai thiết bị, xác nhận cả hai giao thức, lấy được `device_id` + protocol của đèn. **G0-c đã chốt: `dpid 1` đúng là quạt** (21/11, bật tắt thật, người nghe xác nhận). Còn G0-b: đặt IP tĩnh |
+| G0 — xác minh | **Xong.** Tìm ra cả hai thiết bị, xác nhận cả hai giao thức, lấy được `device_id` + protocol của đèn. **G0-c đã chốt: `dpid 1` đúng là quạt** (21/11, bật tắt thật, người nghe xác nhận). G0-b (IP tĩnh) đã bỏ: bridge tự dò theo mã thiết bị |
 | G1 — `local_key` | **Chưa bắt đầu.** Cần tài khoản `iot.tuya.com` — việc của người |
 | G2 — bridge | **ĐANG CHẠY THẬT** trên serverubuntu từ 21/11, chỉ với quạt (`DEN_BAT=0`) |
 | G3 — app Kotlin | **Xong**, đã phát hành v0.7.0 và cài lên tablet |
@@ -283,7 +283,11 @@ Phần lớn đã xong (mục 2). Còn ba việc, đều cần tay người, đ�
 
 * **G0-a — `.100` là công tắc hay là camera?** Rút điện công tắc đèn → quét lại cổng 6668 toàn
   dải. `.100` biến mất = đúng nó. Vẫn còn = `.100` là camera, và công tắc đèn chưa tìm thấy.
-* **G0-b — đặt IP tĩnh.** `192.168.0.1` → DHCP → Address Reservation → gán MAC
+* ~~**G0-b — đặt IP tĩnh.**~~ **KHÔNG CẦN NỮA** (21/11): bridge tự tìm thiết bị theo mã cố
+  định (`gwId` / `did`), DHCP đổi IP bao nhiêu lần cũng được. Xem
+  [`scripts/congtac_bridge/README.md`](../scripts/congtac_bridge/README.md) mục *Tự tìm thiết
+  bị*. Phần dưới giữ lại phòng khi muốn tắt tự dò (`MANG=`) và quay về IP cố định.
+* **G0-b (cũ) — đặt IP tĩnh.** `192.168.0.1` → DHCP → Address Reservation → gán MAC
   `84:7a:b6:1f:95:fb` và `00:50:c2:ec:bf:27` vào hai IP **ngoài dải cấp động** (xem DHCP Settings,
   thường `.100–.199` — tức là hai IP hiện tại đều đang nằm trong dải động và **sẽ đổi**). Rút
   điện hai công tắc 5 giây cho xin lease mới. TL-WR840N mất hết reservation khi reset về mặc

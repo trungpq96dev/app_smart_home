@@ -183,5 +183,75 @@ class TestDienGiaiLoiTuya(unittest.TestCase):
         self.assertIn("gi do moi", TuyaDriver.dien_giai({"Error": "gi do moi"}))
 
 
+class DriverTim(CozyLifeDriver):
+    """Driver gia de thu `tim_lai_ip` ma khong can mang that."""
+
+    def __init__(self, did: str, dung_ip: str, ung_vien: list) -> None:
+        super().__init__({"id": "g", "ten": "G", "phong": "bed1", "loai": "quat",
+                          "ip": "192.168.0.250", "did": did,
+                          "mang": "192.168.0.0/24", "cho_quet": 0})
+        self._dung_ip = dung_ip
+        self._ung_vien = ung_vien
+        self.da_hoi = []
+
+    def _quet(self):
+        return list(self._ung_vien)
+
+    def xac_minh(self, ip):
+        self.da_hoi.append(ip)
+        return ip == self._dung_ip
+
+
+class TestTimLaiIp(unittest.TestCase):
+    """DHCP doi IP thi bridge phai tu tim lai - day la thu thay cho viec
+    dat IP tinh tren router."""
+
+    def _chay(self, d):
+        import driver as mod
+        goc = mod.quet_cong
+        mod.quet_cong = lambda mang, cong, **kw: d._quet()
+        try:
+            return d.tim_lai_ip()
+        finally:
+            mod.quet_cong = goc
+
+    def test_tim_duoc_khi_thiet_bi_doi_ip(self):
+        d = DriverTim("abc", "192.168.0.77", ["192.168.0.10", "192.168.0.77"])
+        self.assertEqual("192.168.0.77", self._chay(d))
+        self.assertEqual("192.168.0.77", d.ip)
+
+    def test_thu_dia_chi_cu_TRUOC_TIEN(self):
+        # Truong hop thuong gap nhat: thiet bi chi vua khoi dong lai, IP cu.
+        d = DriverTim("abc", "192.168.0.250", ["192.168.0.10", "192.168.0.250"])
+        self.assertEqual("192.168.0.250", self._chay(d))
+        self.assertEqual(["192.168.0.250"], d.da_hoi)
+
+    def test_khong_may_nao_dung_ma_thi_tra_None_va_GIU_NGUYEN_ip(self):
+        d = DriverTim("abc", "192.168.0.99", ["192.168.0.10", "192.168.0.11"])
+        self.assertIsNone(self._chay(d))
+        self.assertEqual("192.168.0.250", d.ip)
+
+    def test_khong_khai_mang_thi_khong_quet(self):
+        d = DriverTim("abc", "192.168.0.77", ["192.168.0.77"])
+        d.mang = ""
+        self.assertIsNone(self._chay(d))
+        self.assertEqual([], d.da_hoi)
+
+    def test_cho_quet_chan_quet_lien_tuc(self):
+        # Thiet bi mat dien that thi khong duoc quet moi vong poll.
+        d = DriverTim("abc", "192.168.0.77", ["192.168.0.77"])
+        d.cho_quet = 9999
+        self.assertEqual("192.168.0.77", self._chay(d))
+        d2_hoi = len(d.da_hoi)
+        self.assertIsNone(self._chay(d))
+        self.assertEqual(d2_hoi, len(d.da_hoi), "lan hai phai bi chan")
+
+    def test_khong_khai_did_thi_khong_nhan_bua_may_nao(self):
+        # Cong 5555 cung la cong ADB cua Android - thay cong mo khong du.
+        d = CozyLifeDriver({"id": "g", "ten": "G", "phong": "bed1", "loai": "quat",
+                            "ip": "1.2.3.4", "mang": "192.168.0.0/24"})
+        self.assertFalse(d.xac_minh("192.168.0.50"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

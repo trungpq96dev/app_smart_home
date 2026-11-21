@@ -74,10 +74,16 @@ def nap_cau_hinh() -> list[Driver]:
     thiet bi co that, va app khong hard-code ten thiet bi nao ca.
     """
     timeout = so("POLL_TIMEOUT", 3.0)
+    # Dai mang de di tim lai thiet bi khi DHCP doi IP. Rong = tat tu dong tim
+    # (luc do IP trong .env phai dung, va phai dat IP tinh tren router).
+    mang = moi_truong("MANG", "192.168.0.0/24")
+    cho_quet = so("CHO_QUET", 120)
     ds: list[Driver] = []
 
     if bat_khong("DEN_BAT", True):
-        thieu = [k for k in ("DEN_IP", "DEN_DEVICE_ID", "DEN_LOCAL_KEY") if not moi_truong(k)]
+        # DEN_IP khong con bat buoc: co DEN_DEVICE_ID + DEN_LOCAL_KEY la du
+        # de di tim thiet bi tren mang.
+        thieu = [k for k in ("DEN_DEVICE_ID", "DEN_LOCAL_KEY") if not moi_truong(k)]
         if thieu:
             log.error("Bo qua den: thieu %s trong .env. "
                       "Chua co local_key thi dat DEN_BAT=0 cho tuong minh.", ", ".join(thieu))
@@ -94,11 +100,14 @@ def nap_cau_hinh() -> list[Driver]:
                 "version": moi_truong("DEN_VERSION", "3.3"),
                 "dp": moi_truong("DEN_DP", "1"),
                 "timeout": timeout,
+                "mang": mang,
+                "cho_quet": cho_quet,
             }))
 
     if bat_khong("QUAT_BAT", True):
-        if not moi_truong("QUAT_IP"):
-            log.error("Bo qua quat: thieu QUAT_IP trong .env.")
+        # Can IT NHAT mot trong hai: QUAT_DID (de tu tim) hoac QUAT_IP.
+        if not moi_truong("QUAT_DID") and not moi_truong("QUAT_IP"):
+            log.error("Bo qua quat: phai co QUAT_DID hoac QUAT_IP trong .env.")
         else:
             ds.append(dung_driver({
                 "he": "cozylife",
@@ -111,6 +120,9 @@ def nap_cau_hinh() -> list[Driver]:
                 "dpid": moi_truong("QUAT_DPID", "1"),
                 "gia_tri_bat": int(so("QUAT_GIA_TRI_BAT", 255)),
                 "timeout": timeout,
+                "did": moi_truong("QUAT_DID"),
+                "mang": mang,
+                "cho_quet": cho_quet,
             }))
 
     return ds
@@ -164,6 +176,10 @@ class Bridge:
         self.hang_doi: queue.Queue[dict] = queue.Queue(maxsize=64)
         self.chay = True
         self.cl: mqtt.Client | None = None
+        #: IP cua tung thiet bi tai lan publish `congtac/info` gan nhat.
+        #: Thiet bi doi IP ma khong publish lai thi `info` noi sai - app doc
+        #: no de hien trong man chan doan.
+        self._ip_da_bao: dict[str, str] = {}
 
     # ---- MQTT
 
@@ -182,7 +198,21 @@ class Bridge:
         log.info("Da noi broker. Nghe lenh o %s", self.topic_lenh)
         cl.subscribe(self.topic_lenh, qos=1)
         self.pub(self.t("trangthai"), "online")
+        self.pub_info()
+
+    def pub_info(self) -> None:
         self.pub(self.t("info"), payload_info(self.ds))
+        self._ip_da_bao = {d.id: d.ip for d in self.ds}
+
+    def pub_info_neu_doi(self) -> None:
+        """Publish lai `info` khi co thiet bi doi IP.
+
+        Phai goi sau MOI lan doc, khong chi trong vong poll: lan doc luc khoi
+        dong cung co the kich hoat tu tim va doi IP, ma luc do `info` vua
+        duoc publish o on_connect voi dia chi cu.
+        """
+        if any(self._ip_da_bao.get(d.id) != d.ip for d in self.ds):
+            self.pub_info()
 
     def on_message(self, cl, userdata, msg) -> None:
         """CHI parse roi bo vao hang doi.
@@ -302,6 +332,7 @@ class Bridge:
         # Doc mot lan ngay khi khoi dong de retained co so that tu dau.
         for d in self.ds:
             self.ghi_nhan(self.tt[d.id], d.doc(), "khoi_dong", ep_publish=True)
+        self.pub_info_neu_doi()
         self.pub(self.t("capnhat"), gio())
 
         while self.chay:
@@ -322,6 +353,7 @@ class Bridge:
                     self.ghi_nhan(self.tt[d.id], d.doc(), "thiet_bi")
                 except Exception:
                     log.exception("Loi khi doc %s, bo qua vong nay.", d.id)
+            self.pub_info_neu_doi()
             self.pub(self.t("capnhat"), gio())
 
     def dung(self, *_) -> None:
