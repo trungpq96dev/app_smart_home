@@ -103,6 +103,35 @@ hơn nhiều.
 
 ---
 
+## Tự tìm thiết bị khi DHCP đổi IP
+
+**Không phải đặt IP tĩnh trên router.** Bridge nhận diện thiết bị bằng **mã cố định**, IP chỉ
+là gợi ý để thử trước cho nhanh:
+
+| Hệ | Mã cố định | Lấy ở đâu |
+|---|---|---|
+| Tuya | `DEN_DEVICE_ID` (gwId) | gói quảng bá UDP 6667 — không cần tài khoản cloud |
+| CozyLife | `QUAT_DID` (did) | trả lời `cmd 0` |
+
+Mất dấu thiết bị thì bridge quét `MANG` ở cổng đặc trưng của hệ đó, hỏi từng máy và **đối
+chiếu mã** rồi mới nhận, sau đó tự cập nhật IP và publish lại `congtac/info`.
+
+> **Thấy cổng mở KHÔNG đủ để kết luận.** Cổng 5555 cũng là cổng ADB của Android; cổng 6668 thì
+> camera Tuya trong nhà cũng mở. Nên phải xác minh bằng mã: CozyLife so `did`, Tuya thì thử
+> giải mã bằng `device_id` + `local_key` (khoá chỉ mở được đúng một thiết bị). Không khai mã
+> thì bridge **từ chối nhận**, thà chịu offline còn hơn bật nhầm đồ của người khác.
+
+`CHO_QUET=120` chặn quét liên tục: thiết bị mất điện thật thì không nên quét lại mỗi vòng poll.
+Để `MANG` rỗng là tắt hẳn tính năng — lúc đó IP trong `.env` phải luôn đúng.
+
+Đo thật 21/11: `.env` đặt `QUAT_IP=192.168.0.177` (không tồn tại) → bridge quét và tìm đúng
+quạt ở `.103` trong **1,4 giây**.
+
+> `docker compose restart` **không đọc lại `.env`** — nó dùng lại container cũ với biến môi
+> trường cũ. Sửa `.env` xong phải `docker compose up -d --force-recreate`.
+
+---
+
 ## Chưa có `local_key` thì vẫn chạy được quạt
 
 Đặt `DEN_BAT=0` trong `.env`. Bridge bỏ qua hẳn đèn, `congtac/info` chỉ liệt kê quạt, và app tự
