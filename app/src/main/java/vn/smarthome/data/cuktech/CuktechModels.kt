@@ -38,6 +38,51 @@ object CuktechTopic {
      * voi tai lieu du an ghi "bat tay nam buoc, 30-60 giay".
      */
     const val CMD_BLE = "cuktech/charger/ble"
+
+    /** Topic app GHI de doi mot cai dat: `{"piid": 5, "value": 2}`. */
+    const val CMD_SET = "cuktech/charger/set"
+}
+
+/**
+ * So hieu PIID va cac lua chon hop le.
+ *
+ * Khoang gia tri lay tu `state.py` cua `cuktech-ble-server` (`PIID_RANGES`);
+ * server tu chan gia tri ngoai khoang, nhung app khong nen de nguoi dung bam
+ * ra mot gia tri chac chan bi chan.
+ *
+ * CHI khai nhung PIID da biet chac nghia. PIID 7, 17, 18, 21 thi chinh du an
+ * cung ghi "chua ro" hoac chua doi chieu duoc - khong dung.
+ */
+object CuktechPiid {
+    const val KICH_BAN = 5          // 1-4
+    const val SANG_MAN = 6          // 0-5
+    const val SAC_NHO_GIOT_A = 15   // 0-1
+    const val TU_TAT_MAN = 19       // 0-1
+    const val KHOA_XOAY = 20        // 0-1
+
+    /** PIID hen gio tat cua tung cong (so phut, 0-1440). */
+    fun henGio(cong: CongSacId): Int = when (cong) {
+        CongSacId.C1 -> 9
+        CongSacId.C2 -> 10
+        CongSacId.C3 -> 11
+        CongSacId.USB_A -> 12
+    }
+
+    /**
+     * Lua chon thoi gian sang man, xep theo thu tu nguoi doc chu khong theo
+     * so hieu: ma 5 la "1 phut" nhung phai dung dau danh sach.
+     */
+    val SANG_MAN_CHON = listOf(
+        5 to "1 phút", 1 to "5 phút", 2 to "10 phút", 3 to "30 phút", 4 to "Luôn sáng",
+    )
+
+    /**
+     * Lua chon hen gio tat cong. Khong cho go so tu do: man treo tuong go so
+     * la phai keo ban phim ao len, va 1440 gia tri thi khong ai can.
+     */
+    val HEN_GIO_CHON = listOf(
+        0 to "Tắt hẹn", 15 to "15 phút", 30 to "30 phút", 60 to "1 giờ", 120 to "2 giờ",
+    )
 }
 
 /**
@@ -84,12 +129,18 @@ data class CuktechCaiDat(
     val congBat: Map<CongSacId, Boolean> = emptyMap(),
     /** PIID 9-12, so phut. 0 = chua dat hen gio. */
     val henGioPhut: Map<CongSacId, Int> = emptyMap(),
+    /**
+     * Bang PIID THO, giu nguyen so.
+     *
+     * Vi sao can ca ban tho khi da co cac truong da dich: sau khi gui lenh
+     * doi cai dat, cach duy nhat biet cu sac da nghe la doc lai DUNG cai PIID
+     * vua gui. Doi soat tren ban tho thi mot vong lap lo duoc het, khong phai
+     * viet rieng cho tung truong.
+     */
+    val tho: Map<Int, Int> = emptyMap(),
 ) {
     companion object {
-        /** PIID 6 -> chu. Bang nay o PIID_DISPLAY cua thu vien. */
-        private val MAN_SANG = mapOf(
-            1 to "5 phút", 2 to "10 phút", 3 to "30 phút", 4 to "Luôn sáng", 5 to "1 phút",
-        )
+        private val MAN_SANG = CuktechPiid.SANG_MAN_CHON.toMap()
 
         /** PIID 9-12 theo thu tu C1, C2, C3, USB-A. */
         private val PIID_HEN_GIO = mapOf(
@@ -111,6 +162,13 @@ data class CuktechCaiDat(
                 for ((piid, cong) in PIID_HEN_GIO) so(piid)?.let { put(cong, it) }
             }
 
+            val tho = buildMap {
+                for (khoa in o.keys()) {
+                    val piid = khoa.toIntOrNull() ?: continue
+                    if (!o.isNull(khoa)) put(piid, o.optInt(khoa))
+                }
+            }
+
             return CuktechCaiDat(
                 kichBan = so(5)?.let { KichBan.tuMa(it) },
                 thoiGianSangMan = so(6)?.let { MAN_SANG[it] },
@@ -119,6 +177,7 @@ data class CuktechCaiDat(
                 sacNhoGiotUsbA = co(15),
                 congBat = congBat,
                 henGioPhut = henGio,
+                tho = tho,
             )
         }
     }

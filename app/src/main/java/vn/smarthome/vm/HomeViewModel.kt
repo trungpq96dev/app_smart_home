@@ -182,6 +182,55 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val _choCaiDatCuktech = MutableStateFlow<Set<Int>>(emptySet())
+
+    /** PIID dang cho cu sac xac nhan -> UI khoa muc do lai. */
+    val choCaiDatCuktech: StateFlow<Set<Int>> = _choCaiDatCuktech.asStateFlow()
+
+    /**
+     * Doi mot cai dat cua cu sac roi doi soat.
+     *
+     * Doi soat tren BANG PIID THO: doc lai dung cai `piid` vua gui va so voi
+     * `giaTri`. Mot vong lap lo duoc het sau muc, khong phai viet rieng cho
+     * tung truong - va quan trong hon, no so dung thu minh vua gui chu khong
+     * phai mot truong da dich co the trung nhau.
+     */
+    fun datCaiDatCuktech(piid: Int, giaTri: Int, baoLoi: (String) -> Unit) {
+        if (piid in _choCaiDatCuktech.value) return
+
+        when (val kq = mqtt.guiCaiDatCuktech(piid, giaTri)) {
+            is KetQuaGui.ChuaNoiBroker -> {
+                baoLoi("Chưa nối được broker nên chưa gửi được lệnh.")
+                return
+            }
+
+            is KetQuaGui.Loi -> {
+                baoLoi("Không gửi được lệnh: " + kq.moTa)
+                return
+            }
+
+            is KetQuaGui.DaGui -> Unit
+        }
+
+        _choCaiDatCuktech.update { it + piid }
+
+        viewModelScope.launch {
+            val hetHan = System.currentTimeMillis() + GIAY_CHO_CUKTECH * 1000L
+            while (System.currentTimeMillis() < hetHan) {
+                if (cuktech.value.caiDat?.tho?.get(piid) == giaTri) {
+                    _choCaiDatCuktech.update { it - piid }
+                    return@launch
+                }
+                delay(500)
+            }
+            _choCaiDatCuktech.update { it - piid }
+            baoLoi(
+                "Củ sạc chưa xác nhận đổi cài đặt sau $GIAY_CHO_CUKTECH giây. " +
+                    "Lệnh đã lên broker, nhưng thiết bị chưa đổi."
+            )
+        }
+    }
+
     private val _choCuktech = MutableStateFlow<Map<CongSacId, Boolean>>(emptyMap())
 
     /** Cong dang cho cu sac xac nhan -> UI ve trang thai "dang gui". */

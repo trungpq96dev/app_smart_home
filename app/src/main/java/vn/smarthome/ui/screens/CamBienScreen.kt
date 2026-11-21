@@ -1,9 +1,11 @@
 package vn.smarthome.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -26,18 +28,26 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UsbOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import vn.smarthome.data.cuktech.CongSac
 import vn.smarthome.data.cuktech.CongSacId
 import vn.smarthome.data.cuktech.CuktechCaiDat
+import vn.smarthome.data.cuktech.CuktechPiid
 import vn.smarthome.data.cuktech.CuktechState
+import vn.smarthome.data.cuktech.KichBan
 import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.EmptyState
 import vn.smarthome.ui.components.IconBadge
@@ -68,8 +78,13 @@ fun CamBienScreen(
     onDatCong: (CongSacId, Boolean) -> Unit = { _, _ -> },
     dangNoiLai: Boolean = false,
     onNoiLai: () -> Unit = {},
+    /** PIID dang cho cu sac xac nhan. */
+    choCaiDat: Set<Int> = emptySet(),
+    onDatCaiDat: (Int, Int) -> Unit = { _, _ -> },
     onBack: () -> Unit,
 ) {
+    var hopThoai by remember { mutableStateOf<HopThoaiCaiDat?>(null) }
+
     Column(Modifier.fillMaxSize()) {
 
         TopBar(title = "", onBack = onBack) {
@@ -144,10 +159,47 @@ fun CamBienScreen(
                 }
             }
 
-            HangCaiDat(cuktech.caiDat)
+            HangCaiDat(
+                cd = cuktech.caiDat,
+                choCaiDat = choCaiDat,
+                onDat = onDatCaiDat,
+                onMoHopThoai = { hopThoai = it },
+            )
         }
     }
+
+    when (hopThoai) {
+        HopThoaiCaiDat.KICH_BAN -> HopThoaiChon(
+            tieuDe = "Kịch bản phân phối công suất",
+            moTa = "Củ sạc tự chia công suất giữa các cổng theo kịch bản này.",
+            luaChon = KichBan.entries.map { it.ma to it.nhan },
+            dangChon = cuktech.caiDat?.kichBan?.ma,
+            onChon = { onDatCaiDat(CuktechPiid.KICH_BAN, it) },
+            onDong = { hopThoai = null },
+        )
+
+        HopThoaiCaiDat.SANG_MAN -> HopThoaiChon(
+            tieuDe = "Thời gian sáng màn hình",
+            moTa = "Màn hình trên thân củ sạc tắt sau bao lâu không ai đụng tới.",
+            luaChon = CuktechPiid.SANG_MAN_CHON,
+            dangChon = cuktech.caiDat?.tho?.get(CuktechPiid.SANG_MAN),
+            onChon = { onDatCaiDat(CuktechPiid.SANG_MAN, it) },
+            onDong = { hopThoai = null },
+        )
+
+        HopThoaiCaiDat.HEN_GIO -> HopThoaiHenGio(
+            cd = cuktech.caiDat,
+            choCaiDat = choCaiDat,
+            onDat = onDatCaiDat,
+            onDong = { hopThoai = null },
+        )
+
+        null -> Unit
+    }
 }
+
+/** Ba muc phai chon trong danh sach; ba muc con lai la cong tac nen bam thang. */
+private enum class HopThoaiCaiDat { KICH_BAN, SANG_MAN, HEN_GIO }
 
 /**
  * Bang canh bao khi co gi do khong on.
@@ -402,47 +454,247 @@ private fun NutNguon(dangBat: Boolean, dangCho: Boolean?, onBam: () -> Unit) {
 }
 
 /**
- * Hang cai dat doc tu bang PIID trong `cuktech/charger/settings`. CHI XEM -
- * doi cai dat la viec khac, chua lam.
+ * Hang cai dat doc tu bang PIID trong `cuktech/charger/settings`.
  *
- * Thieu truong nao thi hien "—": chua nhan goi `settings` thi khong biet gi ca.
+ * Ba muc 0/1 (tu tat man, khoa xoay, sac nho giot) bam thang la dao. Ba muc
+ * con lai phai chon trong danh sach nen mo hop thoai.
+ *
+ * Thieu truong nao thi hien "—" va KHONG cho bam: chua biet gia tri hien tai
+ * thi khong dao duoc, dao la doan.
  */
 @Composable
-private fun HangCaiDat(cd: CuktechCaiDat?) {
+private fun HangCaiDat(
+    cd: CuktechCaiDat?,
+    choCaiDat: Set<Int>,
+    onDat: (Int, Int) -> Unit,
+    onMoHopThoai: (HopThoaiCaiDat) -> Unit,
+) {
     SmartCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconBadge(Icons.Filled.Tune, SH.Purple, size = 30.dp, iconSize = 16.dp)
             Spacer(Modifier.width(10.dp))
 
-            OCaiDat("Kịch bản", cd?.kichBan?.nhan)
-            OCaiDat("Sáng màn", cd?.thoiGianSangMan)
-            OCaiDat("Tự tắt màn", cd?.tuTatManNhanRoi?.let { if (it) "Bật" else "Tắt" })
-            OCaiDat("Khoá xoay", cd?.khoaXoayMan?.let { if (it) "Bật" else "Tắt" })
-            OCaiDat("Sạc nhỏ giọt A", cd?.sacNhoGiotUsbA?.let { if (it) "Bật" else "Tắt" })
+            OCaiDat(
+                nhan = "Kịch bản",
+                giaTri = cd?.kichBan?.nhan,
+                dangCho = CuktechPiid.KICH_BAN in choCaiDat,
+                onBam = { onMoHopThoai(HopThoaiCaiDat.KICH_BAN) },
+            )
+            OCaiDat(
+                nhan = "Sáng màn",
+                giaTri = cd?.thoiGianSangMan,
+                dangCho = CuktechPiid.SANG_MAN in choCaiDat,
+                onBam = { onMoHopThoai(HopThoaiCaiDat.SANG_MAN) },
+            )
+            OCongTac("Tự tắt màn", cd?.tuTatManNhanRoi, CuktechPiid.TU_TAT_MAN, choCaiDat, onDat)
+            OCongTac("Khoá xoay", cd?.khoaXoayMan, CuktechPiid.KHOA_XOAY, choCaiDat, onDat)
+            OCongTac(
+                "Sạc nhỏ giọt A", cd?.sacNhoGiotUsbA, CuktechPiid.SAC_NHO_GIOT_A,
+                choCaiDat, onDat,
+            )
 
             val hen = cd?.henGioPhut?.filterValues { it > 0 }
             OCaiDat(
-                "Hẹn tắt",
-                when {
+                nhan = "Hẹn tắt",
+                giaTri = when {
                     hen == null -> null
                     hen.isEmpty() -> "Chưa đặt"
                     else -> hen.entries.joinToString(", ") { "${it.key.nhan} ${it.value} phút" }
                 },
+                dangCho = CongSacId.entries.any { CuktechPiid.henGio(it) in choCaiDat },
+                onBam = { onMoHopThoai(HopThoaiCaiDat.HEN_GIO) },
             )
         }
     }
 }
 
+/** Mot muc 0/1: bam thang la dao, khong qua hop thoai. */
 @Composable
-private fun RowScope.OCaiDat(nhan: String, giaTri: String?) {
-    Column(Modifier.weight(1f)) {
+private fun RowScope.OCongTac(
+    nhan: String,
+    dangBat: Boolean?,
+    piid: Int,
+    choCaiDat: Set<Int>,
+    onDat: (Int, Int) -> Unit,
+) {
+    OCaiDat(
+        nhan = nhan,
+        giaTri = dangBat?.let { if (it) "Bật" else "Tắt" },
+        dangCho = piid in choCaiDat,
+        mauGiaTri = when (dangBat) {
+            true -> SH.Green
+            false -> SH.TextDim
+            null -> null
+        },
+        onBam = dangBat?.let { { onDat(piid, if (it) 0 else 1) } },
+    )
+}
+
+@Composable
+private fun RowScope.OCaiDat(
+    nhan: String,
+    giaTri: String?,
+    dangCho: Boolean = false,
+    mauGiaTri: Color? = null,
+    onBam: (() -> Unit)? = null,
+) {
+    Column(
+        Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (onBam != null && !dangCho) Modifier.clickable(onClick = onBam) else Modifier
+            )
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+    ) {
         Text(nhan, style = SHType.Caption, color = SH.TextOff, maxLines = 1)
         Text(
-            giaTri ?: "—",
+            when {
+                dangCho -> "Đang đổi…"
+                giaTri != null -> giaTri
+                else -> "—"
+            },
             style = SHType.BodyMed,
-            color = if (giaTri == null) SH.TextOff else SH.Text,
+            color = when {
+                dangCho -> SH.Amber
+                giaTri == null -> SH.TextOff
+                else -> mauGiaTri ?: SH.Text
+            },
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/** Hop thoai chon mot gia tri trong danh sach. */
+@Composable
+private fun HopThoaiChon(
+    tieuDe: String,
+    moTa: String,
+    luaChon: List<Pair<Int, String>>,
+    dangChon: Int?,
+    onChon: (Int) -> Unit,
+    onDong: () -> Unit,
+) {
+    KhungHopThoai(tieuDe, moTa, onDong) {
+        luaChon.forEach { (ma, nhan) ->
+            val chon = ma == dangChon
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (chon) SH.Blue.tint(0.16f) else Color.Transparent)
+                    .clickable {
+                        if (!chon) onChon(ma)
+                        onDong()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    nhan,
+                    style = SHType.BodyMed,
+                    color = if (chon) SH.Blue else SH.Text,
+                    modifier = Modifier.weight(1f),
+                )
+                if (chon) Dot(SH.Blue, 8.dp)
+            }
+        }
+    }
+}
+
+/**
+ * Hop thoai hen gio tat tung cong.
+ *
+ * Khong cho go so tu do (PIID nhan 0-1440) vi day la man treo tuong: keo ban
+ * phim ao len de go "45" la nhoc hon moi thu khac tren man nay.
+ */
+@Composable
+private fun HopThoaiHenGio(
+    cd: CuktechCaiDat?,
+    choCaiDat: Set<Int>,
+    onDat: (Int, Int) -> Unit,
+    onDong: () -> Unit,
+) {
+    KhungHopThoai(
+        "Hẹn giờ tắt cổng",
+        "Sau khoảng thời gian này củ sạc tự ngắt cổng đó.",
+        onDong,
+    ) {
+        CongSacId.entries.forEach { cong ->
+            val piid = CuktechPiid.henGio(cong)
+            val hienTai = cd?.henGioPhut?.get(cong)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    cong.nhan,
+                    style = SHType.CardTitle, color = SH.Text,
+                    modifier = Modifier.width(66.dp),
+                )
+                if (piid in choCaiDat) {
+                    Text("Đang đổi…", style = SHType.Body, color = SH.Amber)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CuktechPiid.HEN_GIO_CHON.forEach { (phut, nhan) ->
+                            val chon = hienTai == phut
+                            Text(
+                                nhan,
+                                style = SHType.Caption,
+                                color = if (chon) SH.Blue else SH.TextDim,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (chon) SH.Blue.tint(0.16f) else SH.Border.tint(0.5f)
+                                    )
+                                    .clickable(enabled = hienTai != null && !chon) {
+                                        onDat(piid, phut)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KhungHopThoai(
+    tieuDe: String,
+    moTa: String,
+    onDong: () -> Unit,
+    noiDung: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(onDismissRequest = onDong) {
+        Surface(
+            modifier = Modifier.width(430.dp),
+            shape = RoundedCornerShape(Dim.CardRadius),
+            color = SH.Card,
+            border = BorderStroke(Dim.BorderWidth, SH.Border),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text(tieuDe, style = SHType.PageTitle, color = SH.Text)
+                Spacer(Modifier.height(4.dp))
+                Text(moTa, style = SHType.Caption, color = SH.TextOff)
+                Spacer(Modifier.height(12.dp))
+                noiDung()
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "Đóng",
+                        style = SHType.Button, color = SH.TextDim,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onDong)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
