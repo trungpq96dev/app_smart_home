@@ -87,6 +87,14 @@ data class HomeState(
  */
 private const val GIAY_CHO_CUKTECH = 25
 
+/**
+ * Doi bao lau cho mot lan "noi lai" BLE.
+ *
+ * Do that ngay 21/11/2026: 42 giay. Tai lieu du an ghi "bat tay nam buoc,
+ * 30-60 giay". Lay 90 cho ru - cat o 60 la bao oan dung luc no sap xong.
+ */
+private const val GIAY_CHO_NOI_LAI = 90
+
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CauHinhStore(app)
@@ -115,6 +123,64 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
      * duong khac (`cuktech/charger/port`), chua dung toi.
      */
     val cuktech: StateFlow<CuktechState> = mqtt.cuktech
+
+    private val _dangNoiLaiCuktech = MutableStateFlow(false)
+
+    /** Dang trong mot lan "noi lai" -> UI khoa nut va ve "Đang nối lại…". */
+    val dangNoiLaiCuktech: StateFlow<Boolean> = _dangNoiLaiCuktech.asStateFlow()
+
+    /**
+     * Bao `cuktech-ble-server` dung bo giu ket noi BLE roi dung lai tu dau.
+     *
+     * Gui `{"enabled": false}` roi `{"enabled": true}` vao `cuktech/charger/ble`.
+     * Do tren thiet bi that ngay 21/11/2026: bat tay xong mat **42 giay**, nen
+     * cho toi [GIAY_CHO_NOI_LAI] giay roi moi ket luan la that bai. Cat som la
+     * bao oan trong khi no sap xong.
+     */
+    fun noiLaiCuktech(baoLoi: (String) -> Unit) {
+        if (_dangNoiLaiCuktech.value) return
+
+        fun gui(bat: Boolean): Boolean = when (val kq = mqtt.guiLenhBleCuktech(bat)) {
+            is KetQuaGui.ChuaNoiBroker -> {
+                baoLoi("Chưa nối được broker nên chưa gửi được lệnh nối lại.")
+                false
+            }
+
+            is KetQuaGui.Loi -> {
+                baoLoi("Không gửi được lệnh nối lại: " + kq.moTa)
+                false
+            }
+
+            is KetQuaGui.DaGui -> true
+        }
+
+        if (!gui(false)) return
+        _dangNoiLaiCuktech.value = true
+
+        viewModelScope.launch {
+            // Cho supervisor dung han roi moi bao chay lai; bao lien tay thi
+            // lenh thu hai den luc no con dang go xuong.
+            delay(2000)
+            if (!gui(true)) {
+                _dangNoiLaiCuktech.value = false
+                return@launch
+            }
+
+            val hetHan = System.currentTimeMillis() + GIAY_CHO_NOI_LAI * 1000L
+            while (System.currentTimeMillis() < hetHan) {
+                if (cuktech.value.noiDuoc) {
+                    _dangNoiLaiCuktech.value = false
+                    return@launch
+                }
+                delay(1000)
+            }
+            _dangNoiLaiCuktech.value = false
+            baoLoi(
+                "Đã bảo máy chủ nối lại nhưng sau $GIAY_CHO_NOI_LAI giây củ sạc vẫn chưa " +
+                    "báo nối được. Kiểm tra củ sạc còn cắm điện và còn trong tầm Bluetooth không."
+            )
+        }
+    }
 
     private val _choCuktech = MutableStateFlow<Map<CongSacId, Boolean>>(emptyMap())
 

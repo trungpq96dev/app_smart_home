@@ -29,6 +29,15 @@ object CuktechTopic {
      * [vn.smarthome.data.dien.DieuKhienTopic].
      */
     const val CMD_CONG = "cuktech/charger/port"
+
+    /**
+     * Topic app GHI de bat/tat bo giu ket noi BLE: `{"enabled": false}` roi
+     * `{"enabled": true}` = "noi lai".
+     *
+     * Do tren thiet bi that ngay 21/11/2026: bat tay lai mat **42 giay**, khop
+     * voi tai lieu du an ghi "bat tay nam buoc, 30-60 giay".
+     */
+    const val CMD_BLE = "cuktech/charger/ble"
 }
 
 /**
@@ -202,6 +211,18 @@ data class CuktechState(
     val cong: Map<CongSacId, CongSac> = emptyMap(),
     /** null = chua nhan goi `settings` nao. */
     val caiDat: CuktechCaiDat? = null,
+    /**
+     * Moc nhan goi gan nhat (ms). 0 = chua nhan gi.
+     *
+     * Vi sao can: co `connected` nam trong mot ban tin RETAINED, nen no co the
+     * ket o `false` tu mot phien cu trong khi so cong van ve deu moi 10 giay -
+     * dung canh gap ngay 21/11/2026. So dang chay thi thang mot cai co cu.
+     *
+     * Han che da biet: ban tin retained toi ngay luc subscribe nen moc nay
+     * tuoi ngay ca khi so da cu. Khong co cach nao khac - luong nay khong co
+     * moc thoi gian cua server. Xem [laSoCu].
+     */
+    val mocNhanMs: Long = 0L,
 ) {
     /**
      * Tong cong suat.
@@ -228,29 +249,61 @@ data class CuktechState(
     /** Cong nay co dang bi tat han khong (PIID 16). null = chua biet. */
     fun congBiTat(id: CongSacId): Boolean? = caiDat?.congBat?.get(id)?.let { !it }
 
+    /** Da lau khong nhan goi nao -> so tren man hinh la so cu. */
+    fun laSoCu(bayGioMs: Long = System.currentTimeMillis()): Boolean =
+        mocNhanMs > 0L && bayGioMs - mocNhanMs > GIAY_COI_LA_CU * 1000L
+
+    /**
+     * Co that su mat ket noi khong.
+     *
+     * KHONG chi doc co `connected`: co do nam trong ban tin retained va tung
+     * ket o `false` suot trong khi bon topic cong van doi so. Chi ket luan mat
+     * khi ca hai dau hieu cung chi ve mot huong: co bao mat VA khong con goi
+     * nao moi.
+     */
+    fun matKetNoiThat(bayGioMs: Long = System.currentTimeMillis()): Boolean =
+        !noiDuoc && laSoCu(bayGioMs)
+
+    /** Co bao mat nhung so van ve - ban tin trang thai dang cu, khong phai thiet bi hong. */
+    fun coMauThuan(bayGioMs: Long = System.currentTimeMillis()): Boolean =
+        !noiDuoc && !laSoCu(bayGioMs)
+
     /** Thu tu co dinh C1 -> C2 -> C3 -> USB-A, cong thieu thi tra ve cong rong. */
     fun danhSachCong(): List<CongSac> =
         CongSacId.entries.map { cong[it] ?: CongSac(it) }
 
     companion object {
 
-        fun gop(cur: CuktechState, topic: String, payload: String): CuktechState {
+        /** Bao lau khong nhan goi thi coi so tren man hinh la cu (giay). */
+        const val GIAY_COI_LA_CU = 60
+
+        fun gop(
+            cur: CuktechState,
+            topic: String,
+            payload: String,
+            bayGioMs: Long = System.currentTimeMillis(),
+        ): CuktechState {
             if (payload.isBlank()) return cur
             return try {
                 when {
-                    topic == CuktechTopic.STATUS -> docStatus(cur, JSONObject(payload))
+                    topic == CuktechTopic.STATUS ->
+                        docStatus(cur, JSONObject(payload)).copy(mocNhanMs = bayGioMs)
 
                     topic.startsWith(CuktechTopic.TIEN_TO_CONG) -> {
                         val id = CongSacId.tuTopic(topic.removePrefix(CuktechTopic.TIEN_TO_CONG))
                             ?: return cur
                         cur.copy(
                             coSoThat = true,
+                            mocNhanMs = bayGioMs,
                             cong = cur.cong + (id to docCong(id, JSONObject(payload))),
                         )
                     }
 
-                    topic == CuktechTopic.SETTINGS ->
-                        cur.copy(coSoThat = true, caiDat = CuktechCaiDat.doc(JSONObject(payload)))
+                    topic == CuktechTopic.SETTINGS -> cur.copy(
+                        coSoThat = true,
+                        mocNhanMs = bayGioMs,
+                        caiDat = CuktechCaiDat.doc(JSONObject(payload)),
+                    )
 
                     else -> cur
                 }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UsbOff
@@ -65,6 +66,8 @@ fun CamBienScreen(
     /** Cong dang cho cu sac xac nhan; UI ve "đang gửi" chu khong to mau nhu da xong. */
     dangCho: Map<CongSacId, Boolean> = emptyMap(),
     onDatCong: (CongSacId, Boolean) -> Unit = { _, _ -> },
+    dangNoiLai: Boolean = false,
+    onNoiLai: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -72,7 +75,9 @@ fun CamBienScreen(
         TopBar(title = "", onBack = onBack) {
             val (chu, mau) = when {
                 !cuktech.coSoThat -> "CHƯA CÓ SỐ" to SH.TextOff
-                !cuktech.noiDuoc -> "MẤT KẾT NỐI" to SH.Red
+                dangNoiLai -> "ĐANG NỐI LẠI" to SH.Amber
+                cuktech.matKetNoiThat() -> "MẤT KẾT NỐI" to SH.Red
+                cuktech.coMauThuan() -> "TRẠNG THÁI CŨ" to SH.Amber
                 !cuktech.xacThuc -> "CHƯA XÁC THỰC" to SH.Amber
                 else -> "ĐANG NỐI" to SH.Green
             }
@@ -120,30 +125,7 @@ fun CamBienScreen(
             verticalArrangement = Arrangement.spacedBy(Dim.CardGap),
         ) {
 
-            // Mat ket noi thi van giu so cu tren man hinh nhung phai noi ro la so cu.
-            if (!cuktech.noiDuoc || !cuktech.xacThuc) {
-                SmartCard(
-                    Modifier.fillMaxWidth(),
-                    borderColor = if (!cuktech.noiDuoc) SH.Red else SH.Amber,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconBadge(
-                            Icons.Filled.PowerOff,
-                            if (!cuktech.noiDuoc) SH.Red else SH.Amber,
-                            size = 30.dp, iconSize = 16.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (!cuktech.noiDuoc) {
-                                "Máy chủ mất kết nối Bluetooth tới củ sạc. Số bên dưới là lần đọc cuối."
-                            } else {
-                                "Đã nối Bluetooth nhưng chưa bắt tay xong. Chưa có số cổng."
-                            },
-                            style = SHType.Body, color = SH.TextDim,
-                        )
-                    }
-                }
-            }
+            BangCanhBao(cuktech, dangNoiLai, onNoiLai)
 
             TheTongCongSuat(cuktech)
 
@@ -164,6 +146,80 @@ fun CamBienScreen(
 
             HangCaiDat(cuktech.caiDat)
         }
+    }
+}
+
+/**
+ * Bang canh bao khi co gi do khong on.
+ *
+ * Phan biet hai chuyen rat khac nhau ma truoc day gop lam mot:
+ *
+ *  - MAT THAT: co `connected` bao mat VA khong con goi nao moi.
+ *  - BAN TIN CU: co bao mat nhung bon topic cong van doi so. Gap that ngay
+ *    21/11/2026 - `cuktech/charger/status` la ban tin retained, no ket o
+ *    `connected: false` tu mot phien cu trong khi BLE van song. Luc do keu
+ *    "mat ket noi" la noi sai.
+ */
+@Composable
+private fun BangCanhBao(ct: CuktechState, dangNoiLai: Boolean, onNoiLai: () -> Unit) {
+    val matThat = ct.matKetNoiThat()
+    val mauThuan = ct.coMauThuan()
+    val chuaXacThuc = ct.noiDuoc && !ct.xacThuc
+    if (!matThat && !mauThuan && !chuaXacThuc && !dangNoiLai) return
+
+    val mau = if (matThat) SH.Red else SH.Amber
+
+    SmartCard(Modifier.fillMaxWidth(), borderColor = mau) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(Icons.Filled.PowerOff, mau, size = 30.dp, iconSize = 16.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    dangNoiLai ->
+                        "Đang bảo máy chủ nối lại Bluetooth. Bắt tay lại mất khoảng 40 giây."
+                    matThat ->
+                        "Máy chủ mất kết nối Bluetooth tới củ sạc. Số bên dưới là lần đọc cuối."
+                    mauThuan ->
+                        "Máy chủ báo mất kết nối nhưng số từng cổng vẫn về đều — nhiều khả " +
+                            "năng bản tin trạng thái bị cũ chứ thiết bị không sao."
+                    else ->
+                        "Đã nối Bluetooth nhưng chưa bắt tay xong. Chưa có số cổng."
+                },
+                style = SHType.Body, color = SH.TextDim,
+                modifier = Modifier.weight(1f),
+            )
+
+            if (matThat || mauThuan || dangNoiLai) {
+                Spacer(Modifier.width(10.dp))
+                NutNoiLai(dangNoiLai, onNoiLai)
+            }
+        }
+    }
+}
+
+/** Bam la gui `{"enabled":false}` roi `{"enabled":true}` vao `cuktech/charger/ble`. */
+@Composable
+private fun NutNoiLai(dangNoiLai: Boolean, onBam: () -> Unit) {
+    val mau = if (dangNoiLai) SH.TextOff else SH.Blue
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(mau.tint(0.16f))
+            .then(if (dangNoiLai) Modifier else Modifier.clickable(onClick = onBam))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Refresh,
+            contentDescription = null,
+            tint = mau,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (dangNoiLai) "Đang nối lại…" else "Nối lại",
+            style = SHType.Button, color = mau, maxLines = 1,
+        )
     }
 }
 

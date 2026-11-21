@@ -308,6 +308,25 @@ class MqttDien {
         }
     }
 
+    /**
+     * Bat/tat bo giu ket noi BLE cua `cuktech-ble-server`.
+     *
+     * Gui `false` roi `true` chinh la "noi lai": supervisor dung han roi dung
+     * lai tu dau, bat tay MiOT lai tu buoc mot.
+     */
+    fun guiLenhBleCuktech(bat: Boolean): KetQuaGui {
+        val c = client ?: return KetQuaGui.ChuaNoiBroker
+        if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
+        val json = org.json.JSONObject().put("enabled", bat).toString()
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+            c.publish(CuktechTopic.CMD_BLE, msg)
+            KetQuaGui.DaGui(if (bat) "ble-on" else "ble-off")
+        } catch (e: Exception) {
+            KetQuaGui.Loi(e.message ?: "không gửi được lệnh lên broker")
+        }
+    }
+
     fun ngat() {
         val c = client ?: return
         client = null

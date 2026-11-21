@@ -195,6 +195,37 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * Ban tin `status` ket o connected:false trong khi so cong van ve - canh
+     * gap that ngay 21/11/2026. Man hinh phai noi dung la "trang thai cu" va
+     * dua ra nut Noi lai, chu khong keu mat ket noi.
+     */
+    @Test
+    fun chup_cam_bien_trang_thai_cu() {
+        val t0 = System.currentTimeMillis()
+        val cu = """
+            {"connected": false, "device_model":"njcuk.fitting.ad1204_HS6621C",
+             "firmware_version":"2.1.2_0073"}
+        """.trimIndent()
+        val cong = """
+            {"voltage":20.1,"current":2.3,"power":46.2,"active":true,
+             "protocol":"PD","enabled":true}
+        """.trimIndent()
+        var ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            vn.smarthome.data.cuktech.CuktechState(),
+            vn.smarthome.data.cuktech.CuktechTopic.STATUS, cu, t0,
+        )
+        ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, vn.smarthome.data.cuktech.CuktechTopic.TIEN_TO_CONG + "c1", cong, t0,
+        )
+        ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, vn.smarthome.data.cuktech.CuktechTopic.SETTINGS, """{"16":15,"5":1,"6":2}""", t0,
+        )
+        shoot("9-cam-bien-trang-thai-cu") {
+            Content { vn.smarthome.ui.screens.CamBienScreen(cuktech = ct, onBack = {}) }
+        }
+    }
+
     /** Chua nhan goi nao: phai noi thang la chua co so, khong duoc bia. */
     @Test
     fun chup_cam_bien_chua_co_so() {
