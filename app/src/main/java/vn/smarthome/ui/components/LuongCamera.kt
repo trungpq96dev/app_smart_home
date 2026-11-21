@@ -2,6 +2,8 @@ package vn.smarthome.ui.components
 
 import android.graphics.Color as AColor
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.HttpAuthHandler
@@ -56,10 +58,16 @@ import kotlin.coroutines.resume
  *    duoc huong theo ma khong can build lai.
  *  - Khong them phu thuoc nao: WebView co san trong Android.
  *
- * DIEU QUAN TRONG NHAT o day la CAT LUONG khi roi man hinh. Khong cat thi
+ * DIEU QUAN TRONG NHAT o day la CAT LUONG khi khong con xem. Khong cat thi
  * camera van gui hinh ve may tinh bang suot ngay: ton pin, ton bang thong,
- * va go2rtc van dem may tinh bang la mot client dang xem. Nen khi composable
- * nay bi go ra, WebView duoc nap `about:blank` roi huy han.
+ * va go2rtc van dem may tinh bang la mot client dang xem - con nguoi dung
+ * thi nghe tieng camera vong ra tu mot man hinh da tat.
+ *
+ * Co ba duong roi khoi khung hinh, ca ba deu phai cat:
+ *  - bam sang tab khac: composable bi go ra -> `onRelease` + [catLuong].
+ *  - tat man hinh / sang app khac: ON_STOP -> [catLuong], ON_START nap lai.
+ *  - che ngang mot lat (hop thoai xin quyen): ON_PAUSE chi tat tieng, giu
+ *    ket noi de quay lai co hinh ngay.
  */
 @Composable
 fun LuongCamera(
@@ -73,18 +81,63 @@ fun LuongCamera(
     var dangNoi by remember(url) { mutableStateOf(true) }
     var lanThu by remember(url) { mutableIntStateOf(0) }
 
-    // Man hinh tat / app xuong nen thi tam dung, len lai thi chay tiep.
+    /*
+     * Chi noi camera khi dang THAT SU xem.
+     *
+     * Truoc day cho nay chi goi `WebView.onPause()`. Doc ten thi tuong la
+     * dung het, nhung onPause() chi ngung ve hinh va ngung dong ho JS -
+     * ket noi WebRTC van song va TIENG VAN CHAY. Tat man hinh may tinh bang
+     * di van nghe tieng tu camera, va go2rtc van dem may la mot nguoi dang
+     * xem nen van keo hinh ve suot.
+     *
+     * Nen chia hai muc:
+     *  - ON_PAUSE (hop thoai xin quyen che len, vua vuot ra man gan day):
+     *    tat tieng va dung hinh cho im, GIU ket noi - quay lai la co hinh
+     *    ngay, khong phai cho go2rtc bat tay lai voi Tuya.
+     *  - ON_STOP (tat man hinh, chuyen han sang app khac): cat han luong,
+     *    vi luc do khong biet bao gio nguoi dung moi quay lai.
+     */
     val chuSoHuu = LocalLifecycleOwner.current
+    var hienHinh by remember {
+        mutableStateOf(chuSoHuu.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
     DisposableEffect(chuSoHuu) {
         val theoDoi = LifecycleEventObserver { _, bienCo ->
             when (bienCo) {
-                Lifecycle.Event.ON_PAUSE -> wv?.onPause()
-                Lifecycle.Event.ON_RESUME -> wv?.onResume()
+                Lifecycle.Event.ON_PAUSE -> wv?.evaluateJavascript(JS_IM, null)
+                Lifecycle.Event.ON_RESUME -> wv?.evaluateJavascript(JS_NOI_TIEP, null)
+                Lifecycle.Event.ON_STOP -> hienHinh = false
+                Lifecycle.Event.ON_START -> hienHinh = true
                 else -> Unit
             }
         }
         chuSoHuu.lifecycle.addObserver(theoDoi)
         onDispose { chuSoHuu.lifecycle.removeObserver(theoDoi) }
+    }
+
+    // Bam sang tab khac la man camera bi go ra khoi khung hinh. Cat luong
+    // ngay tai day chu khong cho moi `onRelease` cua AndroidView lo - hai
+    // cho cat deu duoc, va cat hai lan thi khong sao.
+    DisposableEffect(Unit) {
+        onDispose { wv?.catLuong() }
+    }
+
+    /*
+     * Xuong nen thi cat, len lai thi noi lai.
+     *
+     * Bo qua lan chay dau: factory ben duoi da nap trang roi, nap them lan
+     * nua la hai ket noi WebRTC toi go2rtc cung luc.
+     */
+    var lanDau by remember { mutableStateOf(true) }
+    LaunchedEffect(hienHinh) {
+        val v = wv
+        if (lanDau || v == null) {
+            lanDau = false
+            return@LaunchedEffect
+        }
+        // Quay lai thi phai cho bat tay lai tu dau, nen lop che phai co san.
+        dangNoi = true
+        if (hienHinh) v.loadUrl(url) else v.catLuong()
     }
 
     /*
@@ -118,7 +171,10 @@ fun LuongCamera(
      * yen 4 phut roi thu DUNG MOT lan thi len hinh trong 4,3 giay. Nen gian
      * cach tang dan [CHO_THU_LAI], va chi thu 3 lan.
      */
-    LaunchedEffect(url) {
+    LaunchedEffect(url, hienHinh) {
+        // Dang o nen: khong co gi de canh, va nap lai luc nay la noi lai
+        // camera dung luc khong ai xem.
+        if (!hienHinh) return@LaunchedEffect
         dangNoi = true
         lanThu = 0
         var moc = System.currentTimeMillis()
@@ -251,13 +307,15 @@ fun LuongCamera(
                 }
             },
             onRelease = { view ->
-                // Thu tu nay co y: nap trang trong TRUOC de WebRTC dong
-                // ket noi tu te, roi moi huy WebView.
-                view.loadUrl("about:blank")
-                view.stopLoading()
-                view.onPause()
+                // Thu tu nay co y: cat luong TRUOC de WebRTC dong ket noi
+                // tu te, roi moi huy WebView.
+                view.catLuong()
                 (view.parent as? ViewGroup)?.removeView(view)
-                view.destroy()
+                // Huy ngay tai cho thi about:blank chua kip chay - WebView
+                // chet mang theo ca lenh don dep, va tren vai may tieng
+                // camera con keu them mot luc sau khi da sang tab khac.
+                // Cho mot nhip ngan roi moi huy.
+                Handler(Looper.getMainLooper()).postDelayed({ view.destroy() }, CHO_DON_DEP)
                 wv = null
             },
             modifier = Modifier.fillMaxSize(),
@@ -353,3 +411,87 @@ private suspend fun hoiTrangThai(v: WebView): TrangThaiTrang =
             )
         }
     }
+
+/**
+ * Cho bao lau roi moi huy WebView sau khi da nap trang trong, theo ms.
+ *
+ * Nua giay la rong rai cho `about:blank` kip thay trang cu - huy som hon thi
+ * trang cu chet khi chua kip dong RTCPeerConnection, va tieng con keu them
+ * mot luc.
+ */
+private const val CHO_DON_DEP = 500L
+
+/**
+ * Tat tieng va dung hinh, nhung GIU ket noi.
+ *
+ * Dung cho luc che ngang (hop thoai xin quyen micro, vuot ra man gan day):
+ * im ngay lap tuc ma quay lai van co hinh ngay, khong phai cho go2rtc bat
+ * tay lai voi may chu Tuya.
+ */
+private const val JS_IM = """
+(function () {
+  try {
+    document.querySelectorAll('video, audio').forEach(function (m) {
+      try { m.muted = true; m.pause(); } catch (e) {}
+    });
+  } catch (e) {}
+})()
+"""
+
+/** Nguoc lai cua [JS_IM]: mo tieng va cho chay tiep. */
+private const val JS_NOI_TIEP = """
+(function () {
+  try {
+    document.querySelectorAll('video, audio').forEach(function (m) {
+      try {
+        m.muted = false;
+        var p = m.play();
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    });
+  } catch (e) {}
+})()
+"""
+
+/**
+ * Dung han hinh tieng roi don trang.
+ *
+ * Phai GO the <video-stream> ra chu khong chi pause: chinh the do giu
+ * RTCPeerConnection va websocket toi go2rtc. Go ra thi trinh duyet goi
+ * `disconnectedCallback` cua no va ca hai duoc dong tu te - go2rtc thay
+ * nguoi xem roi di nen ngung keo hinh tu camera ve.
+ */
+private const val JS_CAT = """
+(function () {
+  try {
+    document.querySelectorAll('video, audio').forEach(function (m) {
+      try {
+        m.muted = true;
+        m.pause();
+        m.srcObject = null;
+        m.removeAttribute('src');
+        m.load();
+      } catch (e) {}
+    });
+    document.querySelectorAll('video-stream').forEach(function (h) {
+      try { h.remove(); } catch (e) {}
+    });
+  } catch (e) {}
+})()
+"""
+
+/**
+ * Cat luong: tat hinh tieng va dong ket noi WebRTC, nhung GIU WebView lai
+ * de con nap lai duoc.
+ *
+ * Nap `about:blank` moi la cai chac an: trang cu bi huy nen moi
+ * RTCPeerConnection va moi duong tieng trong no di theo. [JS_CAT] chay
+ * truoc chi de im NGAY, khong phai cho trang moi tai xong.
+ *
+ * Goi nhieu lan khong sao - lan thu hai chi la nap lai about:blank.
+ */
+private fun WebView.catLuong() {
+    evaluateJavascript(JS_CAT, null)
+    stopLoading()
+    loadUrl("about:blank")
+}
