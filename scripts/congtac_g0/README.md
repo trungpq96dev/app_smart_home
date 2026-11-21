@@ -104,7 +104,11 @@ Save → rút điện hai công tắc 5 giây cho xin lease mới → đối chi
 
 > TL-WR840N mất hết reservation khi reset về mặc định. Ghi hai dòng này vào `CAU-HINH.txt`.
 
-### G0-c · Kênh nào của CozyLife là quạt
+### G0-c · Kênh nào của CozyLife là quạt — ĐÃ CHỐT: `dpid 1`
+
+> Đo 21/11/2026: gửi `ON` rồi `OFF` qua bridge với `QUAT_DPID=1`, quạt quay thật rồi dừng
+> (người nghe xác nhận). Kênh `2` là thứ khác, không đụng tới. Phần dưới giữ lại cho lần
+> thêm công tắc sau.
 
 ```powershell
 python -I D:\SmartHomeApp\scripts\congtac_g0\thu_cozylife.py --ip 192.168.0.103 theo --giay 120

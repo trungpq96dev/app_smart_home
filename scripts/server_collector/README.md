@@ -23,7 +23,9 @@ scp -r scripts/server_collector serverubuntu@192.168.0.50:~/
 ssh serverubuntu@192.168.0.50
 cd ~/server_collector
 cp cau_hinh.mau.env .env
-nano .env            # điền MQTT_PASS (tài khoản iot, lấy từ ~/homeserver/.env)
+nano .env            # điền MQTT_PASS (tài khoản iot)
+                     # Lấy ở ~/server_collector/.env (dòng MQTT_PASS=).
+                     # ~/homeserver/.env đặt tên biến là MQTT_PASSWORD, khác tên.
 chmod 600 .env
 docker compose up -d --build
 docker compose logs -f

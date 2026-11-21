@@ -179,7 +179,10 @@ File mã nguồn: app/src/main/java/vn/smarthome/data/ota/OtaManager.kt
   ssh serverubuntu@192.168.0.50
   cd ~/server_collector
   cp cau_hinh.mau.env .env
-  nano .env          # điền MQTT_PASS (tài khoản iot, lấy từ ~/homeserver/.env)
+  nano .env          # điền MQTT_PASS (tài khoản iot)
+                     # LẤY Ở ĐÂU: ~/server_collector/.env, dòng MQTT_PASS=
+                     # KHÔNG phải ~/homeserver/.env - file đó đặt tên biến là
+                     # MQTT_PASSWORD, chép nhầm sang là bridge không nối được.
   chmod 600 .env
   docker compose up -d --build
 .env:  MQTT_BROKER=127.0.0.1 (network_mode host)   MQTT_PORT=1883

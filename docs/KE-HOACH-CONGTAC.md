@@ -10,11 +10,27 @@ mọi khẳng định về thiết bị đều kèm gói tin bắt được.
 
 | Giai đoạn | Trạng thái |
 |---|---|
-| G0 — xác minh | **Xong phần máy làm được.** Tìm ra cả hai thiết bị, xác nhận cả hai giao thức, lấy được `device_id` + protocol của đèn. Còn ba việc cần tay người: G0-a, G0-b, G0-c |
+| G0 — xác minh | **Xong, trừ G0-b.** Tìm ra cả hai thiết bị, xác nhận cả hai giao thức, lấy được `device_id` + protocol của đèn. **G0-c đã chốt: `dpid 1` đúng là quạt** (21/11, bật tắt thật, người nghe xác nhận). Còn G0-b: đặt IP tĩnh |
 | G1 — `local_key` | **Chưa bắt đầu.** Cần tài khoản `iot.tuya.com` — việc của người |
-| G2 — bridge | **Code xong, test xong, CHƯA chạy thật.** Thiếu `MQTT_PASS` và `DEN_LOCAL_KEY` để lên server |
-| G3 — app Kotlin | **Chưa động tới** — đúng điểm dừng ở mục 8 |
-| G4 — nghiệm thu | chưa |
+| G2 — bridge | **ĐANG CHẠY THẬT** trên serverubuntu từ 21/11, chỉ với quạt (`DEN_BAT=0`) |
+| G3 — app Kotlin | **Xong**, đã phát hành v0.7.0 và cài lên tablet |
+| G4 — nghiệm thu | **Quạt: xong.** Đèn: chờ G1 |
+
+### Số đo thật — 21/11/2026
+
+Đo bằng cách publish vào `smarthome/control` rồi bấm giờ tới lúc `congtac/cmd/result` về:
+
+| Lệnh | Độ trễ | Kết quả |
+|---|---|---|
+| `ON` | **96 ms** | `ok`, `is_on=true`, `tra_loi_id=bat1` |
+| `OFF` | **458 ms** | `ok`, `is_on=false`, `tra_loi_id=tat1` |
+
+Hạn chờ 6 giây của hàng đợi trong app (`HangChoCongTac.GIAY_CHO_MAC_DINH`) rộng hơn số đo
+xấu nhất **13 lần** — giữ nguyên, không cần siết.
+
+Ba phép thử đường lệnh không chạm thiết bị cũng đã qua: `TANG` → `bo_qua`; thiết bị lạ
+(`kitchen_den`) → **im lặng**, không publish gì; JSON hỏng → `WARNING` rồi chạy tiếp.
+Bridge: RAM 13,2/128 MB, CPU 0,12%, `restarts 0`.
 
 Đã viết:
 
@@ -25,6 +41,10 @@ mọi khẳng định về thiết bị đều kèm gói tin bắt được.
   `test_driver.py`: **25 test xanh**, chạy không cần broker lẫn phần cứng.
 * `scripts/.gitignore` — chặn thêm `devices.json` / `snapshot.json` / `tuya-raw.json`
   (các file `tinytuya wizard` sinh ra, chứa `local_key` của **mọi** thiết bị Tuya trong tài khoản).
+
+> **Mật khẩu MQTT KHÔNG nằm ở `~/homeserver/.env`** như tài liệu cũ ghi — file đó đặt tên biến
+> là `MQTT_PASSWORD`, còn collector và bridge đều đọc `MQTT_PASS`. Chép nhầm là ra biến rỗng và
+> bridge không nối được broker. Chỗ đúng: `~/server_collector/.env`.
 
 Phần bridge đã tự kiểm được những gì không cần broker: đọc thật từ quạt (`online=True, is_on=False`),
 thiết bị chết → `online=False, is_on=None` kèm lý do, `dao()` ném chứ không đoán, dpid sai → báo rõ,

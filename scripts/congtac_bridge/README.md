@@ -126,6 +126,29 @@ rất khó chịu và rất khó tái hiện.
 
 ---
 
+## Số đo thật — 21/11/2026
+
+Chạy trên serverubuntu, quạt CozyLife `192.168.0.103`, `QUAT_DPID=1` (đã xác minh bằng cách
+bật tắt thật — quạt quay rồi dừng):
+
+| Lệnh | Độ trễ tới `congtac/cmd/result` |
+|---|---|
+| `ON` | **96 ms** |
+| `OFF` | **458 ms** |
+
+Tài nguyên: RAM **13,2 / 128 MB**, CPU **0,12 %**, `restarts 0`.
+
+Hạn chờ 6 giây của app rộng hơn số đo xấu nhất 13 lần — không cần siết.
+
+> Lấy `MQTT_PASS` ở **`~/server_collector/.env`**, KHÔNG phải `~/homeserver/.env`: file kia
+> đặt tên biến là `MQTT_PASSWORD`, chép nhầm là ra biến rỗng và bridge không nối được broker.
+
+> Server này **không có `mosquitto_sub`**. Muốn soi topic thì chạy tạm bằng chính image của
+> bridge (nó có sẵn paho), truyền tài khoản qua `--env-file` để mật khẩu không lọt vào danh
+> sách tiến trình.
+
+---
+
 ## Triệu chứng → nguyên nhân
 
 | Thấy gì | Gần như chắc là |
