@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import vn.smarthome.data.cuktech.CongSacId
+import vn.smarthome.data.cuktech.KichBan
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.cuktech.CuktechTopic
 
@@ -101,14 +102,63 @@ class CuktechStateTest {
         assertEquals(2, s.soCongDangChay)
     }
 
+    /**
+     * Goi `settings` THAT bat cung luc voi anh chup app CUKTECH tren dien
+     * thoai. Tam gia tri duoi day deu doi chieu duoc voi anh do.
+     */
+    private val goiCaiDat = """
+        {"21":50532111,"5":1,"6":2,"8":0,"9":0,"10":0,"11":0,"12":0,
+         "13":0,"15":0,"16":15,"17":120391469,"18":522,"19":1,"20":0}
+    """.trimIndent()
+
     @Test
-    fun topic_settings_bi_bo_qua() {
-        val truoc = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)
-        val sau = CuktechState.gop(
-            truoc, CuktechTopic.SETTINGS, """{"5":1,"17":120391469,"21":50532111}""",
-        )
-        // Bang PIID tho chua ai giai nghia - doan y nghia roi hien len la bia.
-        assertEquals(truoc, sau)
+    fun giai_duoc_bang_piid_thanh_cai_dat() {
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.SETTINGS, goiCaiDat)
+        val cd = s.caiDat!!
+
+        assertEquals(KichBan.AI, cd.kichBan)              // PIID 5 = 1  -> app hien "AI"
+        assertEquals("10 phút", cd.thoiGianSangMan)       // PIID 6 = 2  -> app hien "10 phút"
+        assertEquals(true, cd.tuTatManNhanRoi)            // PIID 19 = 1 -> app bat
+        assertEquals(false, cd.khoaXoayMan)               // PIID 20 = 0 -> app tat
+        assertEquals(false, cd.sacNhoGiotUsbA)            // PIID 15 = 0 -> app tat
+    }
+
+    @Test
+    fun mat_na_bit_piid_16_cho_biet_cong_nao_bi_tat() {
+        // 16 = 15 = 0b1111 -> ca bon cong deu bat, dung nhu anh chup.
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.SETTINGS, goiCaiDat)
+        CongSacId.entries.forEach { assertEquals(false, s.congBiTat(it)) }
+
+        // 16 = 13 = 0b1101 -> rieng C2 (bit1) bi tat.
+        val tatC2 = CuktechState.gop(CuktechState(), CuktechTopic.SETTINGS, """{"16":13}""")
+        assertEquals(false, tatC2.congBiTat(CongSacId.C1))
+        assertEquals(true, tatC2.congBiTat(CongSacId.C2))
+        assertEquals(false, tatC2.congBiTat(CongSacId.C3))
+        assertEquals(false, tatC2.congBiTat(CongSacId.USB_A))
+    }
+
+    @Test
+    fun chua_co_goi_settings_thi_khong_doan_trang_thai_cong() {
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)
+        // Khong co `settings` -> khong biet cong bi tat hay khong. Man hinh se
+        // KHONG ve nut bat/tat, vi ve ra la phai doan.
+        assertNull(s.congBiTat(CongSacId.C1))
+    }
+
+    @Test
+    fun ty_le_phan_bo_cong_suat() {
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)
+        val t = s.tyLePhanBo()
+        // 46.2 / 47.7 = 96.8% ; 1.5 / 47.7 = 3.1%
+        assertEquals(96.8f, t[CongSacId.C1]!!, 0.2f)
+        assertEquals(3.1f, t[CongSacId.USB_A]!!, 0.2f)
+        // Cong khong sac thi KHONG co trong map - khac han voi "0%".
+        assertNull(t[CongSacId.C2])
+    }
+
+    @Test
+    fun khong_sac_gi_thi_ty_le_rong_chu_khong_phai_bon_cai_0_phan_tram() {
+        assertTrue(CuktechState().tyLePhanBo().isEmpty())
     }
 
     @Test

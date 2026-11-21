@@ -265,8 +265,22 @@ cuktech/charger/settings
 6. **KHÔNG có nhiệt độ, KHÔNG có quạt, KHÔNG có tổng công suất.** `fan_speed_rpm` và
    `temperature_c` của tài liệu gốc không tồn tại. Tổng phải tự cộng từ 4 cổng và nói rõ
    trên màn hình là số cộng lại.
-7. **`settings` là bảng PIID thô** (`{"5": 1, "17": 120391469, ...}`) — chưa giải nghĩa.
-   Đừng hiển thị, đừng đoán. Cần thì dò sau.
+7. **`settings` là bảng PIID** — ban đầu tưởng chưa giải nghĩa, nhưng
+   `src/cuktech_ble/protocol.py` của dự án có chú thích đầy đủ. Đối chiếu gói thật với ảnh
+   chụp app CUKTECH ngày 21/11/2026, **tám giá trị khớp hết**:
+
+   | PIID | Nghĩa | Gói thật | App điện thoại |
+   |---|---|---|---|
+   | 5 | Kịch bản (1=AI, 2=Kết hợp, 3=Đơn, 4=Cân bằng) | `1` | AI |
+   | 6 | Thời gian sáng màn (1=5′, 2=10′, 3=30′, 4=luôn sáng, 5=1′) | `2` | 10 phút |
+   | 8–12 | Hẹn tắt: bật/tắt + số phút từng cổng | `0` | "Chưa cài đặt" |
+   | 13 | Ngôn ngữ (0=EN, 1=CN) | `0` | English |
+   | 15 | Sạc nhỏ giọt USB-A | `0` | tắt |
+   | 16 | Mặt nạ bit cổng (bit0=C1…bit3=A) | `15` = `0b1111` | cả 4 cổng bật |
+   | 19 | Tự tắt màn khi nhàn rỗi | `1` | bật |
+   | 20 | Khoá xoay màn | `0` | tắt |
+
+   PIID 17, 18, 21 thì chính dự án cũng ghi "未知" (chưa rõ) — ba cái đó mới là chưa giải được.
 
 > Trường có gạch dưới (`_raw_code`, `_proto_num`) là nội bộ của dự án, có thể đổi giữa các
 > bản. **Đừng khai vào `data class`.**

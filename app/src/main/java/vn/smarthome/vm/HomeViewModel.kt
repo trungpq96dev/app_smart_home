@@ -40,6 +40,7 @@ import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.data.thoitiet.CauHinhThoiTietStore
 import vn.smarthome.data.thoitiet.OpenMeteo
 import vn.smarthome.data.thoitiet.ThoiTietUi
+import vn.smarthome.data.cuktech.CongSacId
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.wifi.WifiState
@@ -78,6 +79,14 @@ data class HomeState(
  * Rieng tab Dien nang lay tu EMQX qua [MqttDien] - khong tron hai thu voi
  * nhau, va khong bao gio lay so mau bu vao khi mat ket noi.
  */
+/**
+ * Doi bao lau truoc khi ket luan cu sac khong nghe lenh bat/tat cong.
+ *
+ * `settings_refresh_interval` mac dinh ben `cuktech-ble-server` la 10 giay, nen
+ * 25 giay la hai nhip ru rang. Ngan hon thi bao oan luc mang cham.
+ */
+private const val GIAY_CHO_CUKTECH = 25
+
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CauHinhStore(app)
@@ -106,6 +115,58 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
      * duong khac (`cuktech/charger/port`), chua dung toi.
      */
     val cuktech: StateFlow<CuktechState> = mqtt.cuktech
+
+    private val _choCuktech = MutableStateFlow<Map<CongSacId, Boolean>>(emptyMap())
+
+    /** Cong dang cho cu sac xac nhan -> UI ve trang thai "dang gui". */
+    val choCuktech: StateFlow<Map<CongSacId, Boolean>> = _choCuktech.asStateFlow()
+
+    /**
+     * Bat/tat mot cong cua cu sac, roi DOI SOAT xem no co that su nghe khong.
+     *
+     * Cu sac khong co topic bao ket qua. Bang chung duy nhat la mat na bit
+     * PIID 16 trong `cuktech/charger/settings` doi theo - cham nhat mot nhip
+     * lam moi (mac dinh 10 giay ben server). Nen:
+     *
+     *  - gui xong KHONG to mau nut nhu da xong, ma danh dau "dang cho";
+     *  - thay PIID 16 doi dung nhu mong muon thi go co;
+     *  - qua [GIAY_CHO_CUKTECH] giay van chua doi thi go co va BAO THAT ra
+     *    man hinh. To mau nhu da thanh cong trong khi cu sac khong nghe la
+     *    noi doi voi nguoi dung.
+     */
+    fun datCongSac(cong: CongSacId, bat: Boolean, baoLoi: (String) -> Unit) {
+        when (val kq = mqtt.guiLenhCuktech(cong, bat)) {
+            is KetQuaGui.ChuaNoiBroker -> {
+                baoLoi("Chưa nối được broker nên chưa gửi được lệnh.")
+                return
+            }
+
+            is KetQuaGui.Loi -> {
+                baoLoi("Không gửi được lệnh: " + kq.moTa)
+                return
+            }
+
+            is KetQuaGui.DaGui -> Unit
+        }
+
+        _choCuktech.update { it + (cong to bat) }
+
+        viewModelScope.launch {
+            val hetHan = System.currentTimeMillis() + GIAY_CHO_CUKTECH * 1000L
+            while (System.currentTimeMillis() < hetHan) {
+                if (cuktech.value.caiDat?.congBat?.get(cong) == bat) {
+                    _choCuktech.update { it - cong }
+                    return@launch
+                }
+                delay(500)
+            }
+            _choCuktech.update { it - cong }
+            baoLoi(
+                "Củ sạc chưa xác nhận ${if (bat) "bật" else "tắt"} cổng ${cong.nhan} " +
+                    "sau $GIAY_CHO_CUKTECH giây. Lệnh đã lên broker, nhưng thiết bị chưa đổi."
+            )
+        }
+    }
 
     /** Trang thai duong truyen toi EMQX/Mosquitto. */
     val ketNoi: StateFlow<KetNoi> = mqtt.ketNoi
