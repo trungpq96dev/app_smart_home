@@ -15,6 +15,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.congtac.CongTacTopic
 import vn.smarthome.data.congtac.LenhCongTac
+import vn.smarthome.data.cuktech.CongSacId
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.cuktech.CuktechTopic
 import vn.smarthome.data.server.ServerState
@@ -277,6 +278,34 @@ class MqttDien {
             DienTopic.GOC, WifiTopic.GOC, ServerTopic.GOC, CongTacTopic.GOC,
             CuktechTopic.GOC,
         )
+    }
+
+    /**
+     * Bat/tat mot cong cua cu sac CUKTECH.
+     *
+     * Topic va hinh dang payload KHONG do app dat ra: day la hop dong san co
+     * cua `cuktech-ble-server`. Server tu kiem cong hop le roi moi day xuong
+     * BLE, nen gui bay khong lam hong thiet bi.
+     *
+     * Nhu [guiLenh], ham nay tra ve "da gui len broker hay chua", KHONG phai
+     * "cu sac da tat cong hay chua". Cu sac khong co topic bao ket qua; cach
+     * duy nhat biet no da nghe la doi mat na PIID 16 trong `settings` doi -
+     * cham nhat mot nhip lam moi (mac dinh 10 giay). Doi soat o HomeViewModel.
+     */
+    fun guiLenhCuktech(cong: CongSacId, bat: Boolean): KetQuaGui {
+        val c = client ?: return KetQuaGui.ChuaNoiBroker
+        if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
+        val json = org.json.JSONObject()
+            .put("port", cong.khoaTopic)
+            .put("action", if (bat) "on" else "off")
+            .toString()
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+            c.publish(CuktechTopic.CMD_CONG, msg)
+            KetQuaGui.DaGui(cong.khoaTopic)
+        } catch (e: Exception) {
+            KetQuaGui.Loi(e.message ?: "không gửi được lệnh lên broker")
+        }
     }
 
     fun ngat() {

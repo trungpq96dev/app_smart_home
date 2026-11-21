@@ -163,6 +163,51 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * Man Cam bien dung GOI THAT bat tu broker ngay 21/11/2026 (cong C1 dang
+     * cam tai, USB-A cam mot thu gi do). Dung `gop()` chu khong dung san
+     * `CuktechState` de anh chup di qua dung duong ma so that di.
+     */
+    @Test
+    fun chup_cam_bien_cu_sac() {
+        val goiThat = """
+            {"connected":true,"authenticated":true,
+             "device_model":"njcuk.fitting.ad1204_HS6621C","firmware_version":"2.1.2_0073",
+             "ports":{"1":{"voltage":20.1,"current":2.3,"power":46.2,"active":true,"protocol":"PD","enabled":true},
+                      "2":{"voltage":0.0,"current":0.0,"power":0.0,"active":false,"protocol":"idle","enabled":true},
+                      "3":{"voltage":0.0,"current":0.0,"power":0.0,"active":false,"protocol":"idle","enabled":true},
+                      "4":{"voltage":5.1,"current":0.3,"power":1.5,"active":true,"protocol":"5V","enabled":true}}}
+        """.trimIndent()
+        val ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            vn.smarthome.data.cuktech.CuktechState(),
+            vn.smarthome.data.cuktech.CuktechTopic.STATUS,
+            goiThat,
+        )
+        val goiCaiDat = """
+            {"21":50532111,"5":1,"6":2,"8":0,"9":0,"10":0,"11":0,"12":0,
+             "13":0,"15":0,"16":15,"17":120391469,"18":522,"19":1,"20":0}
+        """.trimIndent()
+        val ct2 = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, vn.smarthome.data.cuktech.CuktechTopic.SETTINGS, goiCaiDat,
+        )
+        shoot("9-cam-bien-cu-sac") {
+            Content { vn.smarthome.ui.screens.CamBienScreen(cuktech = ct2, onBack = {}) }
+        }
+    }
+
+    /** Chua nhan goi nao: phai noi thang la chua co so, khong duoc bia. */
+    @Test
+    fun chup_cam_bien_chua_co_so() {
+        shoot("9-cam-bien-chua-co-so") {
+            Content {
+                vn.smarthome.ui.screens.CamBienScreen(
+                    cuktech = vn.smarthome.data.cuktech.CuktechState(),
+                    onBack = {},
+                )
+            }
+        }
+    }
+
     @Test
     fun chup_thiet_bi() {
         shoot("7-thiet-bi") {

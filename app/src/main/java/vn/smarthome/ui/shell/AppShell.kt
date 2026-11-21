@@ -71,6 +71,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val server by vm.server.collectAsStateWithLifecycle()
     val cuktech by vm.cuktech.collectAsStateWithLifecycle()
+    val choCuktech by vm.choCuktech.collectAsStateWithLifecycle()
     val congTac by vm.congTac.collectAsStateWithLifecycle()
     val choCongTac by vm.choCongTac.collectAsStateWithLifecycle()
     val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
@@ -192,6 +193,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
                     dest == Dest.SENSORS -> CamBienScreen(
                         cuktech = cuktech,
+                        dangCho = choCuktech,
+                        onDatCong = { cong, bat -> vm.datCongSac(cong, bat, toast) },
                         onBack = { current = Dest.HOME.route },
                     )
 
