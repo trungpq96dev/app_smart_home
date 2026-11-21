@@ -1,0 +1,16 @@
+# ESP-IDF sinh ra
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+*.bin
+*.elf
+*.map
+
+# Co MAT KHAU Wi-Fi va MQTT. Repo nay cong khai tren GitHub.
+cau_hinh.h
+!cau_hinh.mau.h
+
+__pycache__/
+*.pyc
