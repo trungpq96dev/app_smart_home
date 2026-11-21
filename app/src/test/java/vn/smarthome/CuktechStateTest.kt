@@ -161,6 +161,57 @@ class CuktechStateTest {
         assertTrue(CuktechState().tyLePhanBo().isEmpty())
     }
 
+    // ---------- co `connected` cu vs so cong dang ve ----------
+
+    /** Ban tin status THAT bi ket o connected:false toi 21/11/2026. */
+    private val goiStatusCu = """
+        {"connected": false, "device_model":"njcuk.fitting.ad1204_HS6621C",
+         "firmware_version":"2.1.2_0073"}
+    """.trimIndent()
+
+    @Test
+    fun co_bao_mat_nhung_so_cong_van_ve_thi_KHONG_keu_mat_ket_noi() {
+        // Dung canh gap that: `cuktech/charger/status` la ban tin retained, no
+        // ket o connected:false tu mot phien cu, trong khi bon topic cong van
+        // doi so moi 10 giay. Keu "mat ket noi" luc do la noi sai.
+        val t0 = 1_000_000L
+        var s = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatusCu, t0)
+        s = CuktechState.gop(s, CuktechTopic.TIEN_TO_CONG + "c1", goiC1Dangsac, t0 + 5_000)
+
+        assertFalse(s.noiDuoc)
+        assertFalse("goi moi ve 5 giay truoc, khong the la mat ket noi",
+            s.matKetNoiThat(t0 + 6_000))
+        assertTrue("day la mau thuan: co bao mat ma so van ve",
+            s.coMauThuan(t0 + 6_000))
+    }
+
+    @Test
+    fun co_bao_mat_va_lau_khong_co_goi_nao_thi_la_mat_that() {
+        val t0 = 1_000_000L
+        var s = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatusCu, t0)
+        s = CuktechState.gop(s, CuktechTopic.TIEN_TO_CONG + "c1", goiC1Dangsac, t0)
+
+        val sau = t0 + (CuktechState.GIAY_COI_LA_CU + 5) * 1000L
+        assertTrue(s.laSoCu(sau))
+        assertTrue(s.matKetNoiThat(sau))
+        assertFalse(s.coMauThuan(sau))
+    }
+
+    @Test
+    fun dang_noi_binh_thuong_thi_khong_canh_bao_gi() {
+        val t0 = 1_000_000L
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus, t0)
+        assertTrue(s.noiDuoc)
+        assertFalse(s.matKetNoiThat(t0 + 1000))
+        assertFalse(s.coMauThuan(t0 + 1000))
+    }
+
+    @Test
+    fun chua_nhan_goi_nao_thi_khong_coi_la_so_cu() {
+        // mocNhanMs = 0: chua co gi de ma "cu". Man hinh hien "Chưa có số".
+        assertFalse(CuktechState().laSoCu(9_999_999L))
+    }
+
     @Test
     fun payload_hong_thi_giu_nguyen_trang_thai_cu() {
         val truoc = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)

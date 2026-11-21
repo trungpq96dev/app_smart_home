@@ -72,6 +72,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val server by vm.server.collectAsStateWithLifecycle()
     val cuktech by vm.cuktech.collectAsStateWithLifecycle()
     val choCuktech by vm.choCuktech.collectAsStateWithLifecycle()
+    val dangNoiLaiCuktech by vm.dangNoiLaiCuktech.collectAsStateWithLifecycle()
     val congTac by vm.congTac.collectAsStateWithLifecycle()
     val choCongTac by vm.choCongTac.collectAsStateWithLifecycle()
     val otaStatus by vm.otaStatus.collectAsStateWithLifecycle()
@@ -195,6 +196,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         cuktech = cuktech,
                         dangCho = choCuktech,
                         onDatCong = { cong, bat -> vm.datCongSac(cong, bat, toast) },
+                        dangNoiLai = dangNoiLaiCuktech,
+                        onNoiLai = { vm.noiLaiCuktech(toast) },
                         onBack = { current = Dest.HOME.route },
                     )
 
