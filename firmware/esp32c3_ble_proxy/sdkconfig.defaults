@@ -1,0 +1,29 @@
+# --- Bluetooth: CHI controller, KHONG host ---
+# Day la diem mau chot cua ca du an nay. May chu Linux moi la host (BlueZ);
+# ESP32-C3 chi lam phan radio. Bat Bluedroid hay NimBLE o day la co hai host
+# cung giut mot controller.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_CONTROLLER_ONLY=y
+CONFIG_BT_CONTROLLER_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=n
+
+# Cong suat phat toi da. Tram nay sinh ra de voi xa hon cai dongle cu.
+CONFIG_BT_CTRL_BLE_ADV_TX_POWER=9
+CONFIG_BT_CTRL_BLE_SCAN_TX_POWER=9
+CONFIG_BT_CTRL_BLE_CONN_TX_POWER=9
+
+# Wi-Fi va BLE dung chung mot anten 2.4 GHz - phai bat trong tai thi ca hai
+# moi song duoc. Tat la mat ket noi Wi-Fi ngay khi BLE ban.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# Wi-Fi: khong ngu. Tram ngu la HCI tre vai tram ms, BlueZ coi do la controller
+# chet va reset ca adapter.
+CONFIG_ESP_WIFI_SLP_IRAM_OPT=n
+CONFIG_PM_ENABLE=n
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_FREERTOS_HZ=1000
+CONFIG_LWIP_TCP_MSS=1436
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

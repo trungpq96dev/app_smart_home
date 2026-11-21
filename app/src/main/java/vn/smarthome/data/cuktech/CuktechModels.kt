@@ -41,6 +41,20 @@ object CuktechTopic {
 
     /** Topic app GHI de doi mot cai dat: `{"piid": 5, "value": 2}`. */
     const val CMD_SET = "cuktech/charger/set"
+
+    /**
+     * Tien to cua suc song BLE: `cuktech/rssi/<nguon>`.
+     *
+     * KHONG nam duoi `cuktech/charger/` co y: do la khong gian cua
+     * `cuktech-ble-server`, va chinh no co ham xoa sach retained duoi tien to
+     * ay. Nguon so nay la `scripts/cuktech_rssi/` cua du an nay, nen de ra
+     * ngoai de khong bi ban kia don mat.
+     *
+     * Nhieu nguon cung luc la CO Y: mot dong cho dongle o server, mot dong cho
+     * tram ESP32 canh cu sac. Nhin hai so canh nhau moi biet doi tram co an
+     * thua khong.
+     */
+    const val TIEN_TO_RSSI = "cuktech/rssi/"
 }
 
 /**
@@ -252,6 +266,85 @@ data class CongSac(
 }
 
 /**
+ * Suc song BLE do duoc tai MOT diem do.
+ *
+ * Vi sao man hinh can con so nay: ngay 21/11/2026 cu sac rot ket noi 37 lan
+ * trong 2 gio, va phai SSH vao server moi biet nguyen nhan la song yeu
+ * (-81 den -96 dBm, trong khi may Windows canh cu sac do duoc -43). Khong co
+ * con so nay thi moi lan "mat ket noi" deu phai di dieu tra lai tu dau.
+ *
+ * [rssi] null = chua do duoc lan nao, KHONG phai 0 dBm (0 la muc rat manh).
+ */
+data class SongBle(
+    /** Doan cuoi cua topic: `server`, `esp`... */
+    val nguonId: String,
+    val rssi: Int? = null,
+    /** Ten de doc cua noi do, lay tu goi tin. */
+    val nguonTen: String? = null,
+    /** Bao lau roi chua thay gia tri moi. null = chua do duoc lan nao. */
+    val tuoiGiay: Int? = null,
+    /** Noi do nay thay thiet bi dang trong mot ket noi khong. */
+    val dangNoi: Boolean? = null,
+) {
+    /**
+     * Xep hang theo nguong do duoc tren chinh he nay, khong phai nguong sach vo.
+     *
+     * -81 den -96 la muc dang rot lien tuc; -43 (may Windows ngay canh) la muc
+     * giu duoc. Nen ranh gioi "yeu" dat o -80.
+     */
+    enum class Muc(val nhan: String) {
+        TOT("Tốt"), KHA("Khá"), YEU("Yếu"), RAT_YEU("Rất yếu"),
+
+        /**
+         * Co goi tin nhung khong co so.
+         *
+         * Nhan la "Không bắt được" chu khong phai "Không rõ": diem do co chay,
+         * no vua quet xong va khong thay quang ba nao. Do la mot ket luan,
+         * khong phai mot cho trong - va la ket luan nang hon ca "Rất yếu".
+         */
+        KHONG_RO("Không bắt được")
+    }
+
+    val muc: Muc get() = when {
+        rssi == null -> Muc.KHONG_RO
+        rssi >= -65 -> Muc.TOT
+        rssi >= -80 -> Muc.KHA
+        rssi >= -90 -> Muc.YEU
+        else -> Muc.RAT_YEU
+    }
+
+    /** So dang `-81 dBm`, hoac `—` khi chua do duoc. */
+    fun nhanDbm(): String = rssi?.let { "$it dBm" } ?: "—"
+
+    /**
+     * So da qua cu de tin chua.
+     *
+     * 5 phut: BlueZ chi cap nhat RSSI khi co quet, va script do tu quet lai
+     * moi 60 giay khi so cu. Qua 5 phut van khong co so moi nghia la ca quet
+     * cung khong thay gi.
+     */
+    fun laSoCu(): Boolean = (tuoiGiay ?: Int.MAX_VALUE) > 300
+
+    companion object {
+        fun doc(nguonId: String, o: JSONObject): SongBle = SongBle(
+            nguonId = nguonId,
+            rssi = if (o.has("rssi") && !o.isNull("rssi")) o.optInt("rssi") else null,
+            nguonTen = o.optString("nguon", "").ifBlank { null },
+            tuoiGiay = if (o.has("tuoi_giay") && !o.isNull("tuoi_giay")) {
+                o.optInt("tuoi_giay")
+            } else {
+                null
+            },
+            dangNoi = if (o.has("dang_noi") && !o.isNull("dang_noi")) {
+                o.optBoolean("dang_noi")
+            } else {
+                null
+            },
+        )
+    }
+}
+
+/**
  * Trang thai ca cu sac.
  *
  * KHONG khoi tao bang DemoData nhu [vn.smarthome.data.server.ServerState] va
@@ -270,6 +363,13 @@ data class CuktechState(
     val cong: Map<CongSacId, CongSac> = emptyMap(),
     /** null = chua nhan goi `settings` nao. */
     val caiDat: CuktechCaiDat? = null,
+    /**
+     * Suc song BLE theo tung diem do, khoa la doan cuoi cua topic.
+     *
+     * Rong = chua chay `scripts/cuktech_rssi/`. Man hinh phai im lang trong
+     * truong hop do chu khong ve mot thanh song bang 0.
+     */
+    val song: Map<String, SongBle> = emptyMap(),
     /**
      * Moc nhan goi gan nhat (ms). 0 = chua nhan gi.
      *
@@ -304,6 +404,16 @@ data class CuktechState(
         if (tong <= 0f) return emptyMap()
         return cong.filterValues { it.oat > 0f }.mapValues { it.value.oat / tong * 100f }
     }
+
+    /**
+     * Diem do co song manh nhat.
+     *
+     * Lay manh nhat chu khong phai trung binh: cau hoi can tra loi la "co cho
+     * nao dat tram ma song du khong", va mot diem do tot la du de tra loi.
+     */
+    fun songTotNhat(): SongBle? = song.values
+        .filter { it.rssi != null }
+        .maxByOrNull { it.rssi ?: Int.MIN_VALUE }
 
     /** Cong nay co dang bi tat han khong (PIID 16). null = chua biet. */
     fun congBiTat(id: CongSacId): Boolean? = caiDat?.congBat?.get(id)?.let { !it }
@@ -342,6 +452,19 @@ data class CuktechState(
             payload: String,
             bayGioMs: Long = System.currentTimeMillis(),
         ): CuktechState {
+            // Topic song xu ly TRUOC phep thu payload rong: voi no, rong la
+            // LWT cua script do - nghia la "diem do nay chet roi", phai BO
+            // dong do khoi man hinh chu khong giu lai so cu.
+            if (topic.startsWith(CuktechTopic.TIEN_TO_RSSI)) {
+                val nguon = topic.removePrefix(CuktechTopic.TIEN_TO_RSSI)
+                if (nguon.isBlank() || nguon.contains('/')) return cur
+                if (payload.isBlank()) return cur.copy(song = cur.song - nguon)
+                return try {
+                    cur.copy(song = cur.song + (nguon to SongBle.doc(nguon, JSONObject(payload))))
+                } catch (_: Exception) {
+                    cur
+                }
+            }
             if (payload.isBlank()) return cur
             return try {
                 when {

@@ -226,6 +226,47 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * Hai diem do song canh nhau - canh thuc ngay 21/11/2026.
+     *
+     * Day la hinh de tra loi dung mot cau hoi: co nen doi radio sang tram
+     * ESP32-C3 khong. Nhin hai dong la biet, khong phai SSH vao server.
+     */
+    @Test
+    fun chup_cam_bien_song_yeu() {
+        val t0 = System.currentTimeMillis()
+        val status = """
+            {"connected":true,"authenticated":true,
+             "device_model":"njcuk.fitting.ad1204_HS6621C","firmware_version":"2.1.2_0073",
+             "ports":{"1":{"voltage":20.1,"current":2.3,"power":46.2,"active":true,"protocol":"PD","enabled":true},
+                      "2":{"voltage":0.0,"current":0.0,"power":0.0,"active":false,"protocol":"idle","enabled":true},
+                      "3":{"voltage":0.0,"current":0.0,"power":0.0,"active":false,"protocol":"idle","enabled":true},
+                      "4":{"voltage":5.1,"current":0.3,"power":1.5,"active":true,"protocol":"5V","enabled":true}}}
+        """.trimIndent()
+        var ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            vn.smarthome.data.cuktech.CuktechState(),
+            vn.smarthome.data.cuktech.CuktechTopic.STATUS, status, t0,
+        )
+        ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, vn.smarthome.data.cuktech.CuktechTopic.SETTINGS,
+            """{"16":15,"5":1,"6":2,"19":1,"20":0}""", t0,
+        )
+        // Canh dang THU CHO DAT tram: server -94 (vo vong), tram dat tam o
+        // mot cho chua tot -86. Ca hai deu yeu nen the canh bao van hien, va
+        // hai dong canh nhau la thu bao nguoi dung phai doi tram di cho khac.
+        ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, "cuktech/rssi/server",
+            """{"rssi":-94,"tuoi_giay":8,"nguon":"serverubuntu (dongle USB)"}""", t0,
+        )
+        ct = vn.smarthome.data.cuktech.CuktechState.gop(
+            ct, "cuktech/rssi/esp",
+            """{"rssi":-86,"tuoi_giay":3,"nguon":"ESP32-C3 (đặt tạm ở kệ)"}""", t0,
+        )
+        shoot("9-cam-bien-song-yeu") {
+            Content { vn.smarthome.ui.screens.CamBienScreen(cuktech = ct, onBack = {}) }
+        }
+    }
+
     /** Chua nhan goi nao: phai noi thang la chua co so, khong duoc bia. */
     @Test
     fun chup_cam_bien_chua_co_so() {

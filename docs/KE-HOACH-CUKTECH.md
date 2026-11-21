@@ -530,3 +530,65 @@ Giai đoạn 0 **đã xong** (mục 1b, 1c): thiết bị xác định rồi, đ
 Điểm dừng còn lại: **thấy JSON thật trên broker mới viết mã Kotlin**, và khai `data class`
 theo gói thật chứ không theo tài liệu. Làm ngược lại thì vẽ xong giao diện mới biết tên trường
 không khớp.
+
+---
+
+## 8. Chẩn đoán "mất kết nối liên tục" — 21/11/2026
+
+Triệu chứng: củ sạc trên màn hình cứ rớt rồi nối lại suốt.
+
+### Đo được gì
+
+Đọc log `cuktech-ble-server` (`/tmp/cuktech_server.log` trong namespace của
+service — unit bật `PrivateTmp=true` nên phải vào qua
+`/proc/<pid>/root/tmp/`), khoảng 23:29 → 01:29:
+
+| Chỉ số | Số lần |
+|---|---|
+| Bắt tay xác thực lại từ đầu | 37 |
+| Kênh BLE chết âm thầm ("zombie") | 37 |
+| Phiên sạc đóng với `reason=link_loss` | 53 |
+| Server tự cắt nguồn adapter để cứu | 40 |
+
+Mẫu lặp y hệt nhau, mỗi phiên sống **25–45 giây**:
+
+```
+01:22:32  Authenticated!
+01:22:56  All 15 PIID reads failed  (streak=1)
+01:23:06  All 15 PIID reads failed  (streak=2)
+01:23:06  BLE channel is a zombie, forcing reconnect
+```
+
+### Không phải lỗi phần mềm
+
+Ba bằng chứng chỉ vào tầng vô tuyến:
+
+1. **RSSI tại server: −81 đến −96 dBm.** Cùng củ sạc đó, đo từ máy Windows đặt
+   cạnh nó: **−43 dBm**. BLE bắt đầu rớt quanh −85.
+2. **Không có một callback `disconnected` nào.** `bleak` không hề được báo
+   ngắt; lỗi hiện ra là `Service Discovery has not been performed yet`, tức
+   BlueZ đã vứt liên kết trong khi phần mềm vẫn tưởng còn sống.
+3. **Dongle là hàng clone.** `lsusb` cho `0a12:0001 Cambridge Silicon Radio`,
+   hãng khai `Barrot Technology (2279)` — loại chip clone nổi tiếng chập chờn
+   với BLE trên Linux.
+
+### Đã làm
+
+- `server.reconnect_max_delay`: **300 → 30 giây** (qua `POST /api/config`, nó
+  tự `os.execv` nên PID giữ nguyên, systemd không coi là chết). Trước đó có
+  lúc server chờ tới **261 giây** mới thử lại — rớt 30 giây mà màn hình báo
+  mất kết nối 4 phút là vì chỗ này. Bản cũ nằm ở `config.yaml.bak-*`.
+- `scripts/cuktech_rssi/` — đẩy RSSI lên `cuktech/rssi/<nguồn>` để con số đó
+  hiện thẳng trên màn Cảm biến, khỏi phải SSH vào server mới biết nên đổ lỗi
+  cho sóng hay cho mã.
+- `firmware/esp32c3_ble_proxy/` — trạm ESP32-C3 cho máy chủ mượn radio qua
+  Wi-Fi (HCI over TCP + `btattach`). **Chưa chạy thử trên phần cứng.**
+
+### Còn lại cho người
+
+Theo thứ tự rẻ trước:
+
+1. Kéo dongle lại gần bằng dây nối USB, hoặc dời máy chủ. Mục tiêu RSSI khá
+   hơn −70.
+2. Thay dongle CSR clone bằng RTL8761B (TP-Link UB500) hoặc Intel AX200.
+3. Nếu vẫn không đủ xa thì mới dựng trạm ESP32-C3.

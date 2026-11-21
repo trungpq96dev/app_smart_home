@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -48,6 +49,7 @@ import vn.smarthome.data.cuktech.CuktechCaiDat
 import vn.smarthome.data.cuktech.CuktechPiid
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.cuktech.KichBan
+import vn.smarthome.data.cuktech.SongBle
 import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.EmptyState
 import vn.smarthome.ui.components.IconBadge
@@ -97,6 +99,7 @@ fun CamBienScreen(
                 else -> "ĐANG NỐI" to SH.Green
             }
             StatusPill(chu, mau)
+            PillSong(cuktech.songTotNhat())
             cuktech.firmware?.let {
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -217,33 +220,106 @@ private fun BangCanhBao(ct: CuktechState, dangNoiLai: Boolean, onNoiLai: () -> U
     val matThat = ct.matKetNoiThat()
     val mauThuan = ct.coMauThuan()
     val chuaXacThuc = ct.noiDuoc && !ct.xacThuc
-    if (!matThat && !mauThuan && !chuaXacThuc && !dangNoiLai) return
+    // Song yeu la canh bao RIENG, hien ca khi dang noi duoc: no la thu giai
+    // thich vi sao lat nua lai mat ket noi. Doi den luc mat moi noi thi nguoi
+    // dung da di kiem tra nham cho roi.
+    val song = ct.songTotNhat()
+    val songYeu = song != null && !song.laSoCu() &&
+        (song.muc == SongBle.Muc.YEU || song.muc == SongBle.Muc.RAT_YEU)
+    if (!matThat && !mauThuan && !chuaXacThuc && !dangNoiLai && !songYeu) return
 
-    val mau = if (matThat) SH.Red else SH.Amber
+    val mau = when {
+        matThat -> SH.Red
+        song != null && song.muc == SongBle.Muc.RAT_YEU && !matThat && !dangNoiLai -> SH.Red
+        else -> SH.Amber
+    }
 
     SmartCard(Modifier.fillMaxWidth(), borderColor = mau) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Filled.PowerOff, mau, size = 30.dp, iconSize = 16.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                when {
-                    dangNoiLai ->
-                        "Đang bảo máy chủ nối lại Bluetooth. Bắt tay lại mất khoảng 40 giây."
-                    matThat ->
-                        "Máy chủ mất kết nối Bluetooth tới củ sạc. Số bên dưới là lần đọc cuối."
-                    mauThuan ->
-                        "Máy chủ báo mất kết nối nhưng số từng cổng vẫn về đều — nhiều khả " +
-                            "năng bản tin trạng thái bị cũ chứ thiết bị không sao."
-                    else ->
-                        "Đã nối Bluetooth nhưng chưa bắt tay xong. Chưa có số cổng."
+            IconBadge(
+                if (songYeu && !matThat && !dangNoiLai) {
+                    Icons.Filled.BluetoothSearching
+                } else {
+                    Icons.Filled.PowerOff
                 },
-                style = SHType.Body, color = SH.TextDim,
-                modifier = Modifier.weight(1f),
+                mau, size = 30.dp, iconSize = 16.dp,
             )
+            Spacer(Modifier.width(8.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when {
+                        dangNoiLai ->
+                            "Đang bảo máy chủ nối lại Bluetooth. Bắt tay lại mất khoảng 40 giây."
+                        matThat ->
+                            "Máy chủ mất kết nối Bluetooth tới củ sạc. Số bên dưới là lần đọc cuối."
+                        mauThuan ->
+                            "Máy chủ báo mất kết nối nhưng số từng cổng vẫn về đều — nhiều khả " +
+                                "năng bản tin trạng thái bị cũ chứ thiết bị không sao."
+                        chuaXacThuc ->
+                            "Đã nối Bluetooth nhưng chưa bắt tay xong. Chưa có số cổng."
+                        else ->
+                            "Sóng Bluetooth tới củ sạc đang yếu — rớt kết nối là do khoảng " +
+                                "cách, không phải do phần mềm."
+                    },
+                    style = SHType.Body, color = SH.TextDim,
+                )
+                // Liet ke TUNG diem do chu khong chi diem manh nhat: muc dich
+                // cua no la so sanh "dongle o server" voi "tram ESP canh cu
+                // sac" de biet doi cho co an thua khong.
+                if (songYeu || matThat) HangDiemDo(ct)
+            }
 
             if (matThat || mauThuan || dangNoiLai) {
                 Spacer(Modifier.width(10.dp))
                 NutNoiLai(dangNoiLai, onNoiLai)
+            }
+        }
+    }
+}
+
+/** Mau theo suc song. Khong ro thi xam - KHONG to xanh khi chua biet gi. */
+private fun mauSong(muc: SongBle.Muc): Color = when (muc) {
+    SongBle.Muc.TOT -> SH.Green
+    SongBle.Muc.KHA -> SH.Amber
+    SongBle.Muc.YEU -> SH.Amber
+    SongBle.Muc.RAT_YEU -> SH.Red
+    SongBle.Muc.KHONG_RO -> SH.TextOff
+}
+
+/**
+ * Pill suc song tren thanh tren cung.
+ *
+ * Chua do duoc lan nao thi KHONG ve gi: mot pill xam "—" chiem cho ma khong
+ * noi them dieu gi so voi viec khong co no. So qua cu cung vay - deo them
+ * chu "cũ" chi lam thanh tren dai ra tren man treo tuong.
+ */
+@Composable
+private fun PillSong(song: SongBle?) {
+    if (song?.rssi == null) return
+    val mau = mauSong(song.muc)
+    Spacer(Modifier.width(6.dp))
+    StatusPill(
+        if (song.laSoCu()) "Sóng ${song.nhanDbm()} (cũ)" else "Sóng ${song.nhanDbm()}",
+        mau,
+    )
+}
+
+/** Mot dong "serverubuntu −81 dBm · Yếu" cho moi diem do. */
+@Composable
+private fun HangDiemDo(ct: CuktechState) {
+    if (ct.song.isEmpty()) return
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        ct.song.values.sortedBy { it.nguonId }.forEach { s ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Dot(mauSong(s.muc), 6.dp)
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    "${s.nguonTen ?: s.nguonId}: ${s.nhanDbm()} · ${s.muc.nhan}" +
+                        if (s.laSoCu()) " (số cũ)" else "",
+                    style = SHType.Caption, color = SH.TextOff, maxLines = 1,
+                )
             }
         }
     }
