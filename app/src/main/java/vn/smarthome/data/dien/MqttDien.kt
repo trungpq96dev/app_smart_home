@@ -327,6 +327,27 @@ class MqttDien {
         }
     }
 
+    /**
+     * Doi mot cai dat cua cu sac: `{"piid": 5, "value": 2}`.
+     *
+     * Server kiem `piid` co trong danh sach cho phep va `value` co nam trong
+     * khoang khong truoc khi day xuong BLE, nen gui bay khong lam hong thiet
+     * bi - nhung no lang le bo qua, khong bao gi. Vi vay app cung phai chi gui
+     * nhung gia tri lay tu [vn.smarthome.data.cuktech.CuktechPiid].
+     */
+    fun guiCaiDatCuktech(piid: Int, giaTri: Int): KetQuaGui {
+        val c = client ?: return KetQuaGui.ChuaNoiBroker
+        if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
+        val json = org.json.JSONObject().put("piid", piid).put("value", giaTri).toString()
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+            c.publish(CuktechTopic.CMD_SET, msg)
+            KetQuaGui.DaGui("piid-$piid")
+        } catch (e: Exception) {
+            KetQuaGui.Loi(e.message ?: "không gửi được lệnh lên broker")
+        }
+    }
+
     fun ngat() {
         val c = client ?: return
         client = null

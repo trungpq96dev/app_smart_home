@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import vn.smarthome.data.cuktech.CongSacId
 import vn.smarthome.data.cuktech.KichBan
+import vn.smarthome.data.cuktech.CuktechPiid
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.cuktech.CuktechTopic
 
@@ -204,6 +205,45 @@ class CuktechStateTest {
         assertTrue(s.noiDuoc)
         assertFalse(s.matKetNoiThat(t0 + 1000))
         assertFalse(s.coMauThuan(t0 + 1000))
+    }
+
+    // ---------- bang PIID tho, dung de doi soat sau khi gui lenh ----------
+
+    @Test
+    fun giu_lai_bang_piid_tho_de_doi_soat() {
+        val s = CuktechState.gop(CuktechState(), CuktechTopic.SETTINGS, goiCaiDat)
+        val tho = s.caiDat!!.tho
+
+        // Gui `{"piid":6,"value":3}` xong thi doc lai dung o nay de biet cu
+        // sac da nghe chua. Khong doc qua truong da dich: "30 phút" co the
+        // den tu nhieu ma khac nhau neu sau nay bang dich doi.
+        assertEquals(2, tho[CuktechPiid.SANG_MAN])
+        assertEquals(1, tho[CuktechPiid.KICH_BAN])
+        assertEquals(0, tho[CuktechPiid.SAC_NHO_GIOT_A])
+        assertEquals(1, tho[CuktechPiid.TU_TAT_MAN])
+        assertEquals(0, tho[CuktechPiid.KHOA_XOAY])
+        assertEquals(15, tho[16])
+    }
+
+    @Test
+    fun moi_lua_chon_tren_man_hinh_deu_nam_trong_khoang_server_cho_phep() {
+        // Khoang lay tu `state.py` cua cuktech-ble-server (PIID_RANGES).
+        // Server lang le bo qua gia tri ngoai khoang, nen de nguoi dung bam ra
+        // mot gia tri chac chan bi chan la bay nguoi ta.
+        CuktechPiid.SANG_MAN_CHON.forEach { (ma, _) ->
+            assertTrue("sang man $ma ngoai khoang 0..5", ma in 0..5)
+        }
+        CuktechPiid.HEN_GIO_CHON.forEach { (phut, _) ->
+            assertTrue("hen gio $phut ngoai khoang 0..1440", phut in 0..1440)
+        }
+        KichBan.entries.forEach {
+            assertTrue("kich ban ${it.ma} ngoai khoang 1..4", it.ma in 1..4)
+        }
+        // Hen gio: PIID 9,10,11,12 theo dung thu tu C1,C2,C3,USB-A.
+        assertEquals(9, CuktechPiid.henGio(CongSacId.C1))
+        assertEquals(10, CuktechPiid.henGio(CongSacId.C2))
+        assertEquals(11, CuktechPiid.henGio(CongSacId.C3))
+        assertEquals(12, CuktechPiid.henGio(CongSacId.USB_A))
     }
 
     @Test
