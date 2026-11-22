@@ -11,6 +11,7 @@ function createNhaGia() {
   let nhietDo = 26;
   let manDangMo: string | null = null;
   let soLanGuiMqtt = 0;
+  let bomThat = false;
 
   const nha: HanhDongNha = {
     maPhong: () => ['living', 'bed1'],
@@ -65,6 +66,11 @@ function createNhaGia() {
       soLanGuiMqtt++;
       return true;
     },
+    bomNuocLaThat: () => bomThat,
+    dieuKhienBom: (tb, hd, gt) => {
+      daGoi.push(`dieuKhienBom(${tb},${hd},${gt})`);
+      return `Đã thực hiện ${tb} (${hd})`;
+    },
   };
 
   return {
@@ -75,6 +81,7 @@ function createNhaGia() {
     thatCua,
     khongRo,
     nemKhiDat,
+    setBomThat: (v: boolean) => { bomThat = v; },
     getNhietDo: () => nhietDo,
     getManDangMo: () => manDangMo,
     getSoLanGuiMqtt: () => soLanGuiMqtt,
@@ -168,8 +175,46 @@ describe('CongCuNha', () => {
 
     const d1 = cc.chay(CongCuNha.DOC_SO_LIEU, { muc: 'cong_tac' });
     expect(d1.ok).toBe(true);
+    const dBom = cc.chay(CongCuNha.DOC_SO_LIEU, { muc: 'bom_nuoc' });
+    expect(dBom.ok).toBe(true);
     const dBad = cc.chay(CongCuNha.DOC_SO_LIEU, { muc: 'gia_vang' });
     expect(dBad.ok).toBe(false);
+  });
+
+  it('dieu khien bom nuoc AquaControl va giu dung 3 functionDeclarations + schema HOA', () => {
+    const ctx = createNhaGia();
+    ctx.setBomThat(true);
+    const cc = new CongCuNha(ctx.nha, true);
+
+    const r1 = cc.chay(CongCuNha.DIEU_KHIEN, {
+      phong: CongCuNha.BOM_NUOC,
+      thiet_bi: CongCuNha.BOM_CHINH,
+      hanh_dong: CongCuNha.DAT,
+      gia_tri: 'auto',
+    });
+    expect(r1.ok).toBe(true);
+    if (r1.ok && 'that' in r1) {
+      expect(r1.that).toBe(true);
+    }
+    expect(ctx.daGoi).toContain('dieuKhienBom(bom_chinh,dat,auto)');
+    expect(ctx.getSoLanGuiMqtt()).toBe(0);
+
+    // Goi thiet_bi bom truc tiep khong can dung phong van dinh tuyen vao dieuKhienBom
+    const r2 = cc.chay(CongCuNha.DIEU_KHIEN, {
+      phong: CongCuNha.NHANH,
+      thiet_bi: CongCuNha.BOM_TANG_AP,
+      hanh_dong: CongCuNha.BAT,
+    });
+    expect(r2.ok).toBe(true);
+    expect(ctx.daGoi).toContain('dieuKhienBom(bom_tang_ap,bat,null)');
+
+    const kb = CongCuNha.khaiBao(['living', 'bed1']);
+    const decls = kb[0].functionDeclarations;
+    expect(decls).toHaveLength(3);
+    expect(decls[0].parameters.type).toBe('OBJECT');
+    expect(decls[0].parameters.properties.phong?.enum).toContain(CongCuNha.BOM_NUOC);
+    expect(decls[0].parameters.properties.thiet_bi?.enum).toContain(CongCuNha.BOM_CHINH);
+    expect(decls[2].parameters.properties.muc?.enum).toContain('bom_nuoc');
   });
 });
 

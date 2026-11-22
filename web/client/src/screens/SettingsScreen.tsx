@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Check,
   CloudSun,
+  Droplets,
   ExternalLink,
   Eye,
   EyeOff,
@@ -21,6 +22,7 @@ import {
   type BanSongCong,
 } from '../data/giongnoi/types.js';
 import { BarChart } from '../components/Charts.js';
+import { TrangThaiKetNoiBomPill } from '../components/BomNuocUi.js';
 import {
   ChoiceChip,
   FlatButton,
@@ -32,13 +34,18 @@ import {
 } from '../components/Common.js';
 import { DeviceSwitchRow } from '../components/Tiles.js';
 import {
+  dinhDangThoiGianChay,
+  nhanKetNoiBom,
+  wifiRssi,
+} from '../data/bomnuoc.js';
+import {
   ANDROID_BASE_VERSION,
   APP_WEB_VERSION,
   useSmartHome,
 } from '../store/SmartHomeContext.js';
 import { SH } from '../theme/colors.js';
 
-type SettingsTab = 'services' | 'voice' | 'system';
+type SettingsTab = 'services' | 'bom_nuoc' | 'voice' | 'system';
 
 const WEATHER_PRESETS = [
   { ten: 'Hà Nội', lat: 21.0278, lon: 105.8342 },
@@ -58,6 +65,10 @@ export function SettingsScreen() {
     luuCameraConfig,
     luuWeatherConfig,
     luuAquaControlUrl,
+    bomNuoc,
+    ketNoiBom,
+    kenhBom,
+    luuBomNuocConfig,
     voiceConfig,
     voiceUsage,
     updateVoiceConfig,
@@ -93,9 +104,20 @@ export function SettingsScreen() {
   const [wLon, setWLon] = useState(String(config.weather.lon));
   const [savingWeather, setSavingWeather] = useState(false);
 
-  // AquaControl form
+  // AquaControl URL form
   const [aquaUrl, setAquaUrl] = useState(config.aquaControlUrl);
   const [savingAqua, setSavingAqua] = useState(false);
+
+  // Bom nuoc form
+  const [bomEspHost, setBomEspHost] = useState(config.bomNuoc.espHost);
+  const [bomUuTienLan, setBomUuTienLan] = useState(config.bomNuoc.uuTienLan);
+  const [bomBrokerHost, setBomBrokerHost] = useState(config.bomNuoc.brokerHost);
+  const [bomBrokerPort, setBomBrokerPort] = useState(String(config.bomNuoc.brokerPort || 8883));
+  const [bomBrokerTls, setBomBrokerTls] = useState(config.bomNuoc.brokerTls);
+  const [bomBrokerUser, setBomBrokerUser] = useState(config.bomNuoc.brokerUser);
+  const [bomBrokerPass, setBomBrokerPass] = useState('');
+  const [bomClearPass, setBomClearPass] = useState(false);
+  const [savingBom, setSavingBom] = useState(false);
 
   // Voice local form
   const [showApiKey, setShowApiKey] = useState(false);
@@ -127,6 +149,13 @@ export function SettingsScreen() {
     setWLon(String(config.weather.lon));
 
     setAquaUrl(config.aquaControlUrl);
+
+    setBomEspHost(config.bomNuoc.espHost);
+    setBomUuTienLan(config.bomNuoc.uuTienLan);
+    setBomBrokerHost(config.bomNuoc.brokerHost);
+    setBomBrokerPort(String(config.bomNuoc.brokerPort || 8883));
+    setBomBrokerTls(config.bomNuoc.brokerTls);
+    setBomBrokerUser(config.bomNuoc.brokerUser);
   }, [config]);
 
   const inputCls =
@@ -139,6 +168,7 @@ export function SettingsScreen() {
     <div className="flex flex-col gap-2.5 lg:h-full lg:overflow-hidden">
       <div className="shrink-0 flex flex-wrap gap-2">
         <ChoiceChip label="Dịch vụ & Kết nối" selected={tab === 'services'} color={SH.Blue} onClick={() => setTab('services')} />
+        <ChoiceChip label="Bơm nước" selected={tab === 'bom_nuoc'} color={SH.Cyan} onClick={() => setTab('bom_nuoc')} />
         <ChoiceChip label="Trợ lý giọng nói" selected={tab === 'voice'} color={SH.Purple} onClick={() => setTab('voice')} />
         <ChoiceChip label="Thông tin & Hệ thống" selected={tab === 'system'} color={SH.Teal} onClick={() => setTab('system')} />
       </div>
@@ -350,6 +380,198 @@ export function SettingsScreen() {
               <Save size={14} />
               <span>{savingWeather ? 'Đang cập nhật…' : 'Lưu địa điểm'}</span>
             </FlatButton>
+          </SmartCard>
+        </div>
+      )}
+
+      {/* TAB 1.5: BOM NUOC AQUACONTROL */}
+      {tab === 'bom_nuoc' && (
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-stretch">
+          <SmartCard className="lg:col-span-7 flex flex-col justify-between gap-3 p-3.5 lg:overflow-y-auto">
+            <SectionHeader
+              title="Bo bơm nước ESP32 — AquaControl (Gateway Node.js)"
+              subtitle="Tách biệt với Mosquitto số điện. Dùng LAN 1s khi ở nhà và EMQX MQTT 30s khi ở xa."
+              action={<TrangThaiKetNoiBomPill ketNoi={ketNoiBom} kenh={kenhBom} />}
+            />
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#8A9BB8] mb-1">Địa chỉ bo trong mạng LAN</label>
+                <input
+                  type="text"
+                  value={bomEspHost}
+                  onChange={(e) => setBomEspHost(e.target.value)}
+                  placeholder="vd: 192.168.0.x hoặc bomnuoc.local"
+                  className={inputCls}
+                />
+              </div>
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 cursor-pointer">
+                <div>
+                  <div className="font-semibold text-[#E6EDF7]">Ưu tiên kênh LAN (HTTP 1 giây/lần)</div>
+                  <div className="text-[11px] text-[#8A9BB8]">Tự chuyển sang MQTT nếu Gateway không gọi được bo qua LAN</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={bomUuTienLan}
+                  onChange={(e) => setBomUuTienLan(e.target.checked)}
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[#8A9BB8] mb-1">Địa chỉ broker MQTT (EMQX / Mosquitto)</label>
+                  <input
+                    type="text"
+                    value={bomBrokerHost}
+                    onChange={(e) => setBomBrokerHost(e.target.value)}
+                    placeholder="vd: abc123.ala.asia-southeast1.emqxsl.com"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#8A9BB8] mb-1">Cổng</label>
+                  <input
+                    type="number"
+                    value={bomBrokerPort}
+                    onChange={(e) => setBomBrokerPort(e.target.value)}
+                    placeholder="8883"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#8A9BB8] mb-1">Tài khoản MQTT bơm</label>
+                  <input
+                    type="text"
+                    value={bomBrokerUser}
+                    onChange={(e) => setBomBrokerUser(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#8A9BB8] mb-1">Mật khẩu MQTT bơm</label>
+                  <input
+                    type="password"
+                    value={bomBrokerPass}
+                    onChange={(e) => setBomBrokerPass(e.target.value)}
+                    placeholder={config.bomNuoc.coMatKhau ? 'Đã lưu — để trống giữ nguyên' : 'Nhập mật khẩu'}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-4 text-[#8A9BB8]">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={bomBrokerTls} onChange={(e) => setBomBrokerTls(e.target.checked)} />
+                  <span>Bật TLS (ssl:// 8883)</span>
+                </label>
+                {config.bomNuoc.coMatKhau && (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[#FCA5A5]">
+                    <input type="checkbox" checked={bomClearPass} onChange={(e) => setBomClearPass(e.target.checked)} />
+                    <span>Xóa mật khẩu cũ</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <FlatButton
+              color={SH.Cyan}
+              variant="solid"
+              disabled={savingBom}
+              onClick={async () => {
+                setSavingBom(true);
+                await luuBomNuocConfig({
+                  espHost: bomEspHost,
+                  uuTienLan: bomUuTienLan,
+                  brokerHost: bomBrokerHost,
+                  brokerPort: Number(bomBrokerPort) || 8883,
+                  brokerTls: bomBrokerTls,
+                  brokerUser: bomBrokerUser,
+                  brokerPass: bomBrokerPass || undefined,
+                  xoaMatKhau: bomClearPass,
+                });
+                setBomBrokerPass('');
+                setBomClearPass(false);
+                setSavingBom(false);
+              }}
+            >
+              <Droplets size={14} />
+              <span>{savingBom ? 'Đang lưu…' : 'Lưu & kết nối lại bo bơm'}</span>
+            </FlatButton>
+          </SmartCard>
+
+          <SmartCard className="lg:col-span-5 flex flex-col justify-between gap-3 p-3.5 lg:overflow-y-auto">
+            <div className="space-y-2.5 text-xs">
+              <SectionHeader title="Trạng thái đường truyền" />
+              <div className="space-y-1.5">
+                <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                  <span className="text-[#8A9BB8]">Trạng thái</span>
+                  <span className="font-semibold text-[#E6EDF7] text-right">{nhanKetNoiBom(ketNoiBom, kenhBom)}</span>
+                </div>
+                <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                  <span className="text-[#8A9BB8]">Kênh đang dùng</span>
+                  <span className="font-mono-num font-bold text-[#E6EDF7]">
+                    {kenhBom === 'LAN'
+                      ? 'LAN trực tiếp (1s)'
+                      : kenhBom === 'MQTT'
+                        ? `MQTT (nhịp ${bomNuoc?.hb ?? 30}s)`
+                        : 'Chưa kết nối'}
+                  </span>
+                </div>
+                <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                  <span className="text-[#8A9BB8]">Địa chỉ LAN</span>
+                  <span className="font-mono-num text-[#E6EDF7]">{config.bomNuoc.espHost || 'Chưa nhập'}</span>
+                </div>
+                <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                  <span className="text-[#8A9BB8]">Broker MQTT</span>
+                  <span className="font-mono-num text-[#E6EDF7]">{config.bomNuoc.brokerHost || 'Chưa nhập'}</span>
+                </div>
+                <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                  <span className="text-[#8A9BB8]">Mật khẩu MQTT</span>
+                  <span className="font-semibold text-[#E6EDF7]">
+                    {config.bomNuoc.coMatKhau ? 'Đã lưu trên Gateway' : 'Chưa nhập'}
+                  </span>
+                </div>
+                {bomNuoc?.fw && (
+                  <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                    <span className="text-[#8A9BB8]">Firmware bo</span>
+                    <span className="font-mono-num text-[#E6EDF7]">{bomNuoc.fw}</span>
+                  </div>
+                )}
+                {bomNuoc?.ip && (
+                  <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                    <span className="text-[#8A9BB8]">IP hiện tại</span>
+                    <span className="font-mono-num text-[#E6EDF7]">{bomNuoc.ip}</span>
+                  </div>
+                )}
+                {bomNuoc && wifiRssi(bomNuoc) !== null && (
+                  <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                    <span className="text-[#8A9BB8]">WiFi RSSI</span>
+                    <span className="font-mono-num text-[#E6EDF7]">{wifiRssi(bomNuoc)} dBm</span>
+                  </div>
+                )}
+                {bomNuoc?.up !== null && bomNuoc?.up !== undefined && (
+                  <div className="flex justify-between rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
+                    <span className="text-[#8A9BB8]">Thời gian hoạt động</span>
+                    <span className="font-mono-num text-[#E6EDF7]">{dinhDangThoiGianChay(bomNuoc.up)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-[#253459] pt-2.5 text-[11px] text-[#8A9BB8]">
+              <div>
+                <span className="font-semibold text-[#E6EDF7]">Bảo mật Gateway: </span>
+                Mật khẩu EMQX chỉ lưu trong <code className="text-[#E6EDF7]">web/data/config.json</code> phía Node.js và không bao giờ gửi xuống trình duyệt.
+              </div>
+              <div>
+                <span className="font-semibold text-[#E6EDF7]">Topic cố định: </span>
+                <code className="text-[#E6EDF7]">bomnuoc/state</code>, <code className="text-[#E6EDF7]">bomnuoc/status</code>, <code className="text-[#E6EDF7]">bomnuoc/usage</code> và <code className="text-[#E6EDF7]">bomnuoc/cmd</code>.
+              </div>
+            </div>
           </SmartCard>
         </div>
       )}

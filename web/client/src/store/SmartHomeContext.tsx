@@ -9,6 +9,31 @@ import React, {
 } from 'react';
 import { AmLich } from '../data/amLich.js';
 import {
+  bomApDangChay,
+  bomApDangKhoa,
+  bomChinhDangChay,
+  bonDay,
+  daCauHinhBom,
+  dangKhoaBom,
+  mucNuocLit,
+  mucNuocPhanTram,
+  nhanCheDoBon,
+  nhanKetNoiBom,
+  nhietDoBomAp,
+  nhietDoBomBon,
+  nhietDoNuoc,
+  phanTichLoiBomNuoc,
+  type BomNuocCmd,
+  type BomNuocConfigForm,
+  type BomNuocState,
+  type KenhBomNuoc,
+  type KetQuaLenhBomRes,
+  type LuongNuocThang,
+  type PublicBomNuocConfig,
+  type SuKienBom,
+  type TrangThaiKetNoiBom,
+} from '../data/bomnuoc.js';
+import {
   buildOThietBiThat,
   createEmptyCongTacState,
   gopCongTac,
@@ -40,7 +65,7 @@ import {
   type DienState,
   type KetNoi,
 } from '../data/dien.js';
-import { type HanhDongNha, LoiLenh } from '../data/giongnoi/congCuNha.js';
+import { CongCuNha, type HanhDongNha, LoiLenh } from '../data/giongnoi/congCuNha.js';
 import { TroLyGiongNoi } from '../data/giongnoi/troLyGiongNoi.js';
 import {
   createEmptyPhienGiongNoi,
@@ -98,6 +123,7 @@ export interface PublicAppConfig {
   camera: PublicCameraConfig;
   weather: WeatherConfig;
   aquaControlUrl: string;
+  bomNuoc: PublicBomNuocConfig;
 }
 
 export interface ToastMessage {
@@ -121,8 +147,8 @@ export type UpdateCheckState =
   | { status: 'available'; release: GithubReleaseInfo }
   | { status: 'error'; message: string };
 
-export const APP_WEB_VERSION = '0.8.9-web';
-export const ANDROID_BASE_VERSION = '0.8.9';
+export const APP_WEB_VERSION = '0.9.0-web';
+export const ANDROID_BASE_VERSION = '0.9.0';
 
 const GIAY_CHO_CUKTECH = 25;
 const GIAY_CHO_NOI_LAI = 90;
@@ -172,6 +198,15 @@ function defaultPublicConfig(): PublicAppConfig {
     camera: { host: '', cong: 1984, tls: false, taiKhoan: '', coMatKhau: false },
     weather: { ten: OpenMeteo.TEN_DIA_DIEM, lat: OpenMeteo.LAT, lon: OpenMeteo.LON },
     aquaControlUrl: '',
+    bomNuoc: {
+      espHost: '',
+      uuTienLan: true,
+      brokerHost: '',
+      brokerPort: 8883,
+      brokerTls: true,
+      brokerUser: '',
+      coMatKhau: false,
+    },
   };
 }
 
@@ -280,6 +315,27 @@ interface SmartHomeContextValue {
   luuWeatherConfig: (form: WeatherConfig) => Promise<boolean>;
   luuAquaControlUrl: (url: string) => Promise<boolean>;
 
+  // AquaControl Pump System (bom_nuoc)
+  bomNuoc: BomNuocState | null;
+  luongNuocThang: LuongNuocThang[];
+  ketNoiBom: TrangThaiKetNoiBom;
+  kenhBom: KenhBomNuoc;
+  choBomNuoc: Record<string, boolean>;
+  nhatKyBom: SuKienBom[];
+  luuBomNuocConfig: (form: BomNuocConfigForm) => Promise<boolean>;
+  datCheDoBon: (mode: 'auto' | 'on' | 'off') => Promise<void>;
+  datBomTangAp: (bat: boolean) => Promise<void>;
+  datDenPhuBom: (bat: boolean) => Promise<void>;
+  xoaLoiBom: () => Promise<void>;
+  tatCoiBom: () => Promise<void>;
+  thuCoiBom: () => Promise<void>;
+  luuBaoVeBom: (dry: number, rest: number, run: number, pulses: number, minFlow: number) => Promise<void>;
+  ghiMocCanBom: () => Promise<void>;
+  ghiMocDayBom: () => Promise<void>;
+  datLaiDemLuuLuong: () => Promise<void>;
+  xoaLichSuNuocTrenBo: () => Promise<void>;
+  xoaNhatKyBomCucBo: () => Promise<void>;
+
   // Voice Assistant
   voiceConfig: CauHinhGiongNoi;
   voiceUsage: MucDungNgay[];
@@ -348,6 +404,19 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   // Update check
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ status: 'idle' });
 
+  // AquaControl Pump System (bom_nuoc)
+  const [bomNuoc, setBomNuoc] = useState<BomNuocState | null>(null);
+  const [luongNuocThang, setLuongNuocThang] = useState<LuongNuocThang[]>([]);
+  const [ketNoiBom, setKetNoiBom] = useState<TrangThaiKetNoiBom>({ state: 'chua_cau_hinh' });
+  const [kenhBom, setKenhBom] = useState<KenhBomNuoc>('KHONG');
+  const [wsPendingBom, setWsPendingBom] = useState<Record<string, boolean>>({});
+  const [localPendingBom, setLocalPendingBom] = useState<Record<string, boolean>>({});
+  const [nhatKyBom, setNhatKyBom] = useState<SuKienBom[]>([]);
+  const choBomNuoc = useMemo(
+    () => ({ ...wsPendingBom, ...localPendingBom }),
+    [wsPendingBom, localPendingBom],
+  );
+
   // Refs synced to latest states (tranh stale closure cho WebSocket, timer & Gemini Live tool calls)
   const roomsRef = useRef(rooms);
   roomsRef.current = rooms;
@@ -371,6 +440,15 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   configRef.current = config;
   const voiceUsageRef = useRef(voiceUsage);
   voiceUsageRef.current = voiceUsage;
+  const bomNuocRef = useRef(bomNuoc);
+  bomNuocRef.current = bomNuoc;
+  const ketNoiBomRef = useRef(ketNoiBom);
+  ketNoiBomRef.current = ketNoiBom;
+  const kenhBomRef = useRef(kenhBom);
+  kenhBomRef.current = kenhBom;
+  const currentDestRef = useRef(currentDest);
+  currentDestRef.current = currentDest;
+  const bomWsRef = useRef<WebSocket | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pendingPublishResolvers = useRef(
@@ -675,6 +753,92 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       wsRef.current?.close();
     };
   }, [handleMqttMessage]);
+
+  // WebSocket /ws/bomnuoc bridge connection with adaptive viewing notification
+  useEffect(() => {
+    let closedByUnmount = false;
+    let reconnectTimer: number | null = null;
+    let delayMs = 1500;
+
+    const connectBomWs = () => {
+      if (closedByUnmount) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${window.location.host}/ws/bomnuoc`);
+      bomWsRef.current = ws;
+
+      ws.onopen = () => {
+        delayMs = 1500;
+        const active = currentDestRef.current === 'automation' || currentDestRef.current === 'stats';
+        ws.send(JSON.stringify({ type: 'viewing', active }));
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(String(ev.data)) as
+            | {
+                type: 'snapshot';
+                state: BomNuocState | null;
+                usage: LuongNuocThang[];
+                link: TrangThaiKetNoiBom;
+                kenh: KenhBomNuoc;
+                pending: string[];
+                log: SuKienBom[];
+              }
+            | { type: 'state'; state: BomNuocState | null }
+            | { type: 'usage'; usage: LuongNuocThang[] }
+            | { type: 'link'; link: TrangThaiKetNoiBom; kenh: KenhBomNuoc }
+            | { type: 'pending'; pending: string[] }
+            | { type: 'log'; log: SuKienBom[] };
+
+          if (msg.type === 'snapshot') {
+            setBomNuoc(msg.state);
+            setLuongNuocThang(msg.usage ?? []);
+            setKetNoiBom(msg.link);
+            setKenhBom(msg.kenh);
+            setWsPendingBom(Object.fromEntries((msg.pending ?? []).map((k) => [k, true])));
+            setNhatKyBom(msg.log ?? []);
+          } else if (msg.type === 'state') {
+            setBomNuoc(msg.state);
+          } else if (msg.type === 'usage') {
+            setLuongNuocThang(msg.usage ?? []);
+          } else if (msg.type === 'link') {
+            setKetNoiBom(msg.link);
+            setKenhBom(msg.kenh);
+          } else if (msg.type === 'pending') {
+            setWsPendingBom(Object.fromEntries((msg.pending ?? []).map((k) => [k, true])));
+          } else if (msg.type === 'log') {
+            setNhatKyBom(msg.log ?? []);
+          }
+        } catch {
+          // ignore malformed WS frame
+        }
+      };
+
+      ws.onclose = () => {
+        if (bomWsRef.current === ws) bomWsRef.current = null;
+        if (!closedByUnmount) {
+          reconnectTimer = window.setTimeout(connectBomWs, delayMs);
+          delayMs = Math.min(delayMs * 1.5, 10_000);
+        }
+      };
+    };
+
+    connectBomWs();
+
+    return () => {
+      closedByUnmount = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      bomWsRef.current?.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const ws = bomWsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const active = currentDest === 'automation' || currentDest === 'stats';
+      ws.send(JSON.stringify({ type: 'viewing', active }));
+    }
+  }, [currentDest]);
 
   // Periodic sweep (1s) for switch timeouts, Cuktech deadlines, clock sync
   useEffect(() => {
@@ -1293,6 +1457,141 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [showToast],
   );
 
+  const luuBomNuocConfig = useCallback(
+    async (form: BomNuocConfigForm) => {
+      try {
+        const resp = await fetch('/api/config/bomnuoc', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        const data = (await resp.json()) as {
+          ok: boolean;
+          config: PublicAppConfig;
+          link: TrangThaiKetNoiBom;
+          kenh: KenhBomNuoc;
+        };
+        if (data.ok) {
+          configRef.current = data.config;
+          setConfig(data.config);
+          setKetNoiBom(data.link);
+          setKenhBom(data.kenh);
+          showToast('Đã lưu cấu hình kết nối bo bơm nước.', 'success');
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+      showToast('Không lưu được cấu hình bo bơm nước.', 'error');
+      return false;
+    },
+    [showToast],
+  );
+
+  const guiLenhBom = useCallback(
+    async (khoa: string, cmd: BomNuocCmd): Promise<void> => {
+      setLocalPendingBom((prev) => ({ ...prev, [khoa]: true }));
+      try {
+        const resp = await fetch('/api/bomnuoc/cmd', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cmd),
+        });
+        const res = (await resp.json()) as KetQuaLenhBomRes;
+        if (res.ok) {
+          showToast(res.message, 'success');
+        } else if (
+          res.status === 'bi_khoa_bao_ve' ||
+          res.status === 'chua_xac_nhan' ||
+          res.status === 'dang_ban'
+        ) {
+          showToast(res.message, 'warning');
+        } else {
+          showToast(res.message || 'Chưa gửi được lệnh bơm.', 'error');
+        }
+      } catch {
+        showToast('Không gọi được gateway để gửi lệnh bơm.', 'error');
+      } finally {
+        setLocalPendingBom((prev) => {
+          const next = { ...prev };
+          delete next[khoa];
+          return next;
+        });
+      }
+    },
+    [showToast],
+  );
+
+  const datCheDoBon = useCallback(
+    (mode: 'auto' | 'on' | 'off') => guiLenhBom('tank', { kind: 'tank', mode }),
+    [guiLenhBom],
+  );
+
+  const datBomTangAp = useCallback(
+    (bat: boolean) => guiLenhBom('booster', { kind: 'booster', on: bat }),
+    [guiLenhBom],
+  );
+
+  const datDenPhuBom = useCallback(
+    (bat: boolean) => guiLenhBom('led', { kind: 'led', on: bat }),
+    [guiLenhBom],
+  );
+
+  const xoaLoiBom = useCallback(
+    () => guiLenhBom('clear', { kind: 'clear' }),
+    [guiLenhBom],
+  );
+
+  const tatCoiBom = useCallback(
+    () => guiLenhBom('coiTat', { kind: 'coiTat' }),
+    [guiLenhBom],
+  );
+
+  const thuCoiBom = useCallback(
+    () => guiLenhBom('coiThu', { kind: 'coiThu' }),
+    [guiLenhBom],
+  );
+
+  const luuBaoVeBom = useCallback(
+    (dryCheck: number, minRest: number, maxRun: number, pulses: number, minFlow: number) =>
+      guiLenhBom('protection', { kind: 'protection', dryCheck, minRest, maxRun, pulses, minFlow }),
+    [guiLenhBom],
+  );
+
+  const ghiMocCanBom = useCallback(
+    () => guiLenhBom('lvlSetEmpty', { kind: 'lvlSetEmpty' }),
+    [guiLenhBom],
+  );
+
+  const ghiMocDayBom = useCallback(
+    () => guiLenhBom('lvlSetFull', { kind: 'lvlSetFull' }),
+    [guiLenhBom],
+  );
+
+  const datLaiDemLuuLuong = useCallback(
+    () => guiLenhBom('calReset', { kind: 'calReset' }),
+    [guiLenhBom],
+  );
+
+  const xoaLichSuNuocTrenBo = useCallback(
+    () => guiLenhBom('usageClear', { kind: 'usageClear' }),
+    [guiLenhBom],
+  );
+
+  const xoaNhatKyBomCucBo = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/bomnuoc/log', { method: 'DELETE' });
+      if (resp.ok) {
+        setNhatKyBom([]);
+        showToast('Đã xoá nhật ký bơm trên gateway.', 'info');
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    showToast('Không xoá được nhật ký bơm.', 'error');
+  }, [showToast]);
+
   // Voice Actions + TroLyGiongNoi
   const hanhDongNha = useMemo<HanhDongNha>(
     () => ({
@@ -1363,7 +1662,79 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         }
       },
       laThat: (phong, thietBi) => Boolean(timCongTac(congtacRef.current, phong, thietBi)),
-      thietBiThat: () => tenThietBiThat(congtacRef.current),
+      thietBiThat: () => {
+        const list = [...tenThietBiThat(congtacRef.current)];
+        if (daCauHinhBom(configRef.current.bomNuoc)) {
+          list.push('Hệ thống bơm nước (bơm lên bồn, bơm tăng áp)');
+        }
+        return list;
+      },
+      bomNuocLaThat: () => daCauHinhBom(configRef.current.bomNuoc),
+      dieuKhienBom: (thietBi, hanhDong, giaTri) => {
+        if (!daCauHinhBom(configRef.current.bomNuoc)) {
+          throw new LoiLenh('Chưa cấu hình kết nối bo bơm nước. Vào Tự động hóa → Cấu hình.');
+        }
+        const s = bomNuocRef.current;
+        if (!s) {
+          throw new LoiLenh('Chưa nhận được dữ liệu từ bo bơm nước.');
+        }
+        switch (thietBi) {
+          case CongCuNha.BOM_CHINH: {
+            let mode: 'auto' | 'on' | 'off';
+            if (hanhDong === CongCuNha.BAT) mode = 'on';
+            else if (hanhDong === CongCuNha.TAT) mode = 'off';
+            else if (hanhDong === CongCuNha.DAO) mode = bomChinhDangChay(s) ? 'off' : 'on';
+            else if (hanhDong === CongCuNha.DAT) {
+              const g = giaTri?.trim().toLowerCase() ?? '';
+              if (g === 'auto' || g === 'tu_dong' || g === 'tự động') mode = 'auto';
+              else if (g === 'on' || g === 'bat' || g === 'bật') mode = 'on';
+              else if (g === 'off' || g === 'tat' || g === 'tắt') mode = 'off';
+              else throw new LoiLenh('Bơm lên bồn chỉ nhận chế độ tự động (auto), bật hoặc tắt.');
+            } else {
+              throw new LoiLenh('Không rõ lệnh cho bơm lên bồn.');
+            }
+            void datCheDoBon(mode);
+            return `Bơm lên bồn: đã gửi lệnh chuyển sang ${nhanCheDoBon(mode)}`;
+          }
+          case CongCuNha.BOM_TANG_AP: {
+            let bat: boolean;
+            if (hanhDong === CongCuNha.BAT) bat = true;
+            else if (hanhDong === CongCuNha.TAT) bat = false;
+            else if (hanhDong === CongCuNha.DAO) bat = s.bstMode !== 'on';
+            else throw new LoiLenh('Bơm tăng áp chỉ bật hoặc tắt được.');
+            if (bat && (bomApDangKhoa(s) || dangKhoaBom(s))) {
+              throw new LoiLenh('Bơm tăng áp đang khoá bảo vệ sau sự cố. Cần xoá lỗi trước khi bật lại.');
+            }
+            void datBomTangAp(bat);
+            return `Bơm tăng áp: đã gửi lệnh ${bat ? 'bật' : 'tắt'}`;
+          }
+          case CongCuNha.DEN_PHU: {
+            if (s.den === null) throw new LoiLenh('Bo bơm này không bật tính năng đèn phụ.');
+            let bat: boolean;
+            if (hanhDong === CongCuNha.BAT) bat = true;
+            else if (hanhDong === CongCuNha.TAT) bat = false;
+            else if (hanhDong === CongCuNha.DAO) bat = s.den !== 1;
+            else throw new LoiLenh('Đèn phụ chỉ bật hoặc tắt được.');
+            void datDenPhuBom(bat);
+            return `Đèn phụ hộp bơm: đã gửi lệnh ${bat ? 'bật' : 'tắt'}`;
+          }
+          case CongCuNha.LOI_BOM:
+            void xoaLoiBom();
+            return 'Hệ thống bơm: đã gửi lệnh xoá lỗi và mở khoá';
+          case CongCuNha.COI_BOM:
+            if (hanhDong === CongCuNha.TAT) {
+              void tatCoiBom();
+              return 'Còi báo động bơm: đã gửi lệnh tắt';
+            }
+            if (hanhDong === CongCuNha.BAT) {
+              void thuCoiBom();
+              return 'Còi báo động bơm: đã gửi lệnh kêu thử';
+            }
+            throw new LoiLenh('Còi bơm chỉ bật thử hoặc tắt được.');
+          default:
+            throw new LoiLenh('Hệ bơm nước chỉ hỗ trợ bơm chính, bơm tăng áp, đèn phụ, xoá lỗi và còi.');
+        }
+      },
       moManHinh: (dich) => {
         const raw = dich.trim();
         if (raw.startsWith('phong:')) {
@@ -1462,14 +1833,64 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
                 return { ten: tb.ten, phong: tb.phong, online: st?.online ?? false, bat: st?.bat ?? null };
               }),
             };
+          case 'bom_nuoc': {
+            if (!daCauHinhBom(configRef.current.bomNuoc)) {
+              return { co_so: false, ly_do: 'Chưa cấu hình kết nối bo bơm nước.' };
+            }
+            const bn = bomNuocRef.current;
+            const linkText = nhanKetNoiBom(ketNoiBomRef.current, kenhBomRef.current);
+            if (!bn) {
+              return { co_so: false, ly_do: `Chưa nhận được gói dữ liệu nào từ bo bơm (${linkText}).` };
+            }
+            const err = phanTichLoiBomNuoc(bn.fault);
+            return {
+              co_so: true,
+              kenh: kenhBomRef.current,
+              trang_thai_ket_noi: linkText,
+              bom_chinh_dang_chay: bomChinhDangChay(bn),
+              che_do_bon: nhanCheDoBon(bn.tankMode),
+              bom_tang_ap_dang_chay: bomApDangChay(bn),
+              phao_bon: bonDay(bn) ? 'báo đầy' : 'chưa đầy',
+              muc_nuoc_phan_tram: mucNuocPhanTram(bn),
+              muc_nuoc_lit: mucNuocLit(bn),
+              luu_luong_bom_l_phut: bn.fTank,
+              luu_luong_nuoc_may_l_phut: bn.fCity,
+              nhiet_do_nuoc_c: nhietDoNuoc(bn),
+              nhiet_do_bom_bon_c: nhietDoBomBon(bn),
+              nhiet_do_bom_ap_c: nhietDoBomAp(bn),
+              nuoc_thang_nay_lit: bn.useT,
+              nuoc_may_thang_nay_lit: bn.useC,
+              dang_khoa: dangKhoaBom(bn) || bomApDangKhoa(bn),
+              loi: err?.noiDung ?? null,
+            };
+          }
           default:
             return { co_so: false, loi: 'Không rõ mục cần đọc' };
         }
       },
-      chupTrangThai: () =>
-        roomsRef.current
-          .map((r) => `${r.name} (${r.id}): đèn=${r.lightOn ? 'bật' : 'tắt'}, quạt=${r.fanOn ? 'bật' : 'tắt'}, điều hòa=${r.acOn ? `${r.acTemp}°C` : 'tắt'}`)
-          .join('\n'),
+      chupTrangThai: () => {
+        const lines = roomsRef.current.map(
+          (r) => `${r.name} (${r.id}): đèn=${r.lightOn ? 'bật' : 'tắt'}, quạt=${r.fanOn ? 'bật' : 'tắt'}, điều hòa=${r.acOn ? `${r.acTemp}°C` : 'tắt'}`,
+        );
+        if (daCauHinhBom(configRef.current.bomNuoc)) {
+          const bn = bomNuocRef.current;
+          const link = ketNoiBomRef.current;
+          if (!bn || link.state !== 'truc_tiep') {
+            lines.push(`- Hệ thống bơm nước: ${nhanKetNoiBom(link, kenhBomRef.current)}`);
+          } else {
+            const pct = mucNuocPhanTram(bn);
+            const muc = pct !== null ? `${Math.trunc(pct)}%` : 'không có cảm biến mức';
+            const phao = bonDay(bn) ? 'báo đầy' : 'chưa đầy';
+            const err = phanTichLoiBomNuoc(bn.fault);
+            lines.push(
+              `- Hệ thống bơm nước: bơm chính ${bomChinhDangChay(bn) ? 'đang chạy' : 'tắt'} (${nhanCheDoBon(bn.tankMode)}), ` +
+                `bơm tăng áp ${bomApDangChay(bn) ? 'đang chạy' : 'tắt'}, phao ${phao}, mức nước ${muc}` +
+                (err ? `, cảnh báo: ${err.noiDung}` : ''),
+            );
+          }
+        }
+        return lines.join('\n');
+      },
       guiMqtt: (phong, thietBi, hanhDong, giaTri) => {
         const mappedAction =
           hanhDong === 'bat' ? 'ON' : hanhDong === 'tat' ? 'OFF' : hanhDong.toUpperCase();
@@ -1493,7 +1914,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         return true;
       },
     }),
-    [updateRoom, setRoomMode, openRoomDetail, navigateDest, openChiTietDien, openWifi, bamCongTac, gatCongTac, publishMqtt],
+    [updateRoom, setRoomMode, openRoomDetail, navigateDest, openChiTietDien, openWifi, bamCongTac, gatCongTac, publishMqtt, datCheDoBon, datBomTangAp, datDenPhuBom, xoaLoiBom, tatCoiBom, thuCoiBom],
   );
 
   const troLyRef = useRef<TroLyGiongNoi | null>(null);
@@ -1665,6 +2086,25 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     luuCameraConfig,
     luuWeatherConfig,
     luuAquaControlUrl,
+    bomNuoc,
+    luongNuocThang,
+    ketNoiBom,
+    kenhBom,
+    choBomNuoc,
+    nhatKyBom,
+    luuBomNuocConfig,
+    datCheDoBon,
+    datBomTangAp,
+    datDenPhuBom,
+    xoaLoiBom,
+    tatCoiBom,
+    thuCoiBom,
+    luuBaoVeBom,
+    ghiMocCanBom,
+    ghiMocDayBom,
+    datLaiDemLuuLuong,
+    xoaLichSuNuocTrenBo,
+    xoaNhatKyBomCucBo,
     voiceConfig,
     voiceUsage,
     phienGiongNoi,

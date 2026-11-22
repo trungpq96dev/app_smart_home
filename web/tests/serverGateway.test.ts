@@ -61,6 +61,37 @@ describe('ConfigStore password handling', () => {
     expect(store.getPublicConfig().mqtt.coMatKhau).toBe(false);
     expect(store.getPublicConfig().camera.coMatKhau).toBe(false);
   });
+
+  it('luu bomNuoc, an brokerPass va chuan hoa espHost', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-bom-cfg-'));
+    tempDirs.push(tmpDir);
+    const cfgPath = path.join(tmpDir, 'config.json');
+
+    const store = new ConfigStore(cfgPath);
+    store.updateBomNuoc({
+      espHost: 'http://192.168.0.120/',
+      uuTienLan: true,
+      brokerHost: 'mqtts://broker.example.test/',
+      brokerPort: 8883,
+      brokerTls: true,
+      brokerUser: 'pump-user',
+      brokerPass: 's3cr3t-pump',
+    });
+
+    const pub = store.getPublicConfig();
+    expect(pub.bomNuoc.espHost).toBe('192.168.0.120');
+    expect(pub.bomNuoc.brokerHost).toBe('broker.example.test');
+    expect(pub.bomNuoc.coMatKhau).toBe(true);
+    expect(JSON.stringify(pub)).not.toContain('s3cr3t-pump');
+
+    store.updateBomNuoc({ uuTienLan: false, brokerPass: '' });
+    expect(store.getConfig().bomNuoc.brokerPass).toBe('s3cr3t-pump');
+    expect(store.getPublicConfig().bomNuoc.coMatKhau).toBe(true);
+
+    store.updateBomNuoc({ xoaMatKhau: true });
+    expect(store.getConfig().bomNuoc.brokerPass).toBe('');
+    expect(store.getPublicConfig().bomNuoc.coMatKhau).toBe(false);
+  });
 });
 
 describe('go2rtcProxy security guarantees', () => {

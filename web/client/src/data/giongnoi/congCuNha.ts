@@ -19,6 +19,8 @@ export interface HanhDongNha {
   docSoLieu(muc: string): Record<string, unknown>;
   chupTrangThai(): string;
   guiMqtt(phong: string, thietBi: string, hanhDong: string, giaTri: string | null): boolean;
+  bomNuocLaThat?: () => boolean;
+  dieuKhienBom?: (thietBi: string, hanhDong: string, giaTri: string | null) => string;
 }
 
 export class LoiLenh extends Error {
@@ -41,6 +43,7 @@ export class CongCuNha {
 
   static readonly NHANH = 'nhanh';
   static readonly TAT_CA = 'tat_ca';
+  static readonly BOM_NUOC = 'bom_nuoc';
 
   static readonly DEN = 'den';
   static readonly QUAT = 'quat';
@@ -51,6 +54,19 @@ export class CongCuNha {
   static readonly NHIET_DO = 'nhiet_do';
   static readonly CHE_DO = 'che_do';
   static readonly LICH_HEN = 'lich_hen';
+  static readonly BOM_CHINH = 'bom_chinh';
+  static readonly BOM_TANG_AP = 'bom_tang_ap';
+  static readonly DEN_PHU = 'den_phu';
+  static readonly LOI_BOM = 'loi_bom';
+  static readonly COI_BOM = 'coi_bom';
+
+  static readonly THIET_BI_BOM_NUOC = new Set([
+    CongCuNha.BOM_CHINH,
+    CongCuNha.BOM_TANG_AP,
+    CongCuNha.DEN_PHU,
+    CongCuNha.LOI_BOM,
+    CongCuNha.COI_BOM,
+  ]);
 
   static readonly BAT = 'bat';
   static readonly TAT = 'tat';
@@ -67,6 +83,7 @@ export class CongCuNha {
     'thoi_tiet',
     'lich_am',
     'cong_tac',
+    'bom_nuoc',
   ];
 
   private readonly nha: HanhDongNha;
@@ -107,6 +124,14 @@ export class CongCuNha {
 
     if (!thietBi) return this.loi('Chưa biết điều khiển thiết bị gì.');
     if (!hanhDong) return this.loi(`Chưa biết làm gì với ${thietBi}.`);
+
+    if (phong === CongCuNha.BOM_NUOC || CongCuNha.THIET_BI_BOM_NUOC.has(thietBi)) {
+      if (!this.nha.dieuKhienBom) {
+        throw new LoiLenh('Hệ thống bơm nước chưa được kết nối.');
+      }
+      const kq = this.nha.dieuKhienBom(thietBi, hanhDong, giaTri);
+      return this.ok(kq, this.nha.bomNuocLaThat?.() ?? false);
+    }
 
     if (phong === CongCuNha.NHANH) {
       return this.oNhanh(thietBi, hanhDong);
@@ -343,15 +368,16 @@ export class CongCuNha {
   }
 
   static khaiBao(maPhong: string[]) {
-    const phongEnum = [...maPhong, CongCuNha.TAT_CA, CongCuNha.NHANH];
+    const phongEnum = [...maPhong, CongCuNha.TAT_CA, CongCuNha.NHANH, CongCuNha.BOM_NUOC];
     return [
       {
         functionDeclarations: [
           {
             name: CongCuNha.DIEU_KHIEN,
             description:
-              'Bật, tắt hoặc chỉnh một thiết bị trong nhà. Dùng cho đèn, quạt, ' +
-              'điều hòa, tivi, rèm, bếp từ, nhiệt độ điều hòa, chế độ phòng và lịch hẹn.',
+              'Bật, tắt hoặc chỉnh một thiết bị trong nhà và hệ thống bơm nước. Dùng cho đèn, quạt, ' +
+              'điều hòa, tivi, rèm, bếp từ, nhiệt độ điều hòa, chế độ phòng, lịch hẹn, và ' +
+              'bơm lên bồn, bơm tăng áp, đèn phụ hộp bơm, xoá lỗi bơm, tắt còi bơm.',
             parameters: {
               type: 'OBJECT',
               properties: {
@@ -359,7 +385,8 @@ export class CongCuNha {
                   type: 'STRING',
                   description:
                     `Mã phòng. '${CongCuNha.TAT_CA}' là mọi phòng. ` +
-                    `'${CongCuNha.NHANH}' là bốn ô thao tác nhanh ở Trang chủ.`,
+                    `'${CongCuNha.NHANH}' là bốn ô thao tác nhanh ở Trang chủ. ` +
+                    `'${CongCuNha.BOM_NUOC}' là hệ thống bơm nước AquaControl.`,
                   enum: phongEnum,
                 },
                 thiet_bi: {
@@ -375,13 +402,18 @@ export class CongCuNha {
                     CongCuNha.NHIET_DO,
                     CongCuNha.CHE_DO,
                     CongCuNha.LICH_HEN,
+                    CongCuNha.BOM_CHINH,
+                    CongCuNha.BOM_TANG_AP,
+                    CongCuNha.DEN_PHU,
+                    CongCuNha.LOI_BOM,
+                    CongCuNha.COI_BOM,
                   ],
                 },
                 hanh_dong: {
                   type: 'STRING',
                   description:
-                    `'${CongCuNha.DAO}' là đảo trạng thái. '${CongCuNha.DAT}' dùng với nhiet_do ` +
-                    'hoặc che_do và cần gia_tri.',
+                    `'${CongCuNha.DAO}' là đảo trạng thái. '${CongCuNha.DAT}' dùng với nhiet_do, che_do ` +
+                    'hoặc bom_chinh (auto/on/off) và cần gia_tri.',
                   enum: [
                     CongCuNha.BAT,
                     CongCuNha.TAT,
@@ -394,7 +426,7 @@ export class CongCuNha {
                 gia_tri: {
                   type: 'STRING',
                   description:
-                    'Nhiệt độ 16-30 viết dạng số, ví dụ "24". Hoặc tên chế độ: ngu, nha, vang_nha, tuy_chinh.',
+                    'Nhiệt độ 16-30 viết dạng số, ví dụ "24". Tên chế độ phòng: ngu, nha, vang_nha, tuy_chinh. Hoặc chế độ bơm: auto, on, off.',
                 },
               },
               required: ['phong', 'thiet_bi', 'hanh_dong'],
@@ -441,6 +473,7 @@ export class CongCuNha {
                   description:
                     'dien: điện EVN. server: máy chủ serverubuntu. ' +
                     'wifi: modem. thoi_tiet: Open-Meteo. lich_am: lịch âm hôm nay. ' +
+                    'bom_nuoc: trạng thái, mức nước, lưu lượng, nhiệt độ và lỗi hệ bơm nước. ' +
                     'trang_thai_nha: đèn/quạt/điều hòa từng phòng (gồm cả thiết bị mẫu). ' +
                     'cong_tac: các công tắc Wi-Fi THẬT — đang nối được không, đang bật hay tắt. ' +
                     'Hỏi thiết bị có bật thật không thì dùng mục này.',

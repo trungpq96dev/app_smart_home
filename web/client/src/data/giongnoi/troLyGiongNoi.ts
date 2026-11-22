@@ -335,6 +335,11 @@ export class TroLyGiongNoi {
           'Muốn biết chắc thì gọi doc_so_lieu với muc = cong_tac.',
       );
     }
+    lines.push(
+      'Khi người dùng hỏi mực nước bồn, lưu lượng, nhiệt độ hay lỗi máy bơm thì gọi ' +
+        'doc_so_lieu với muc = bom_nuoc. Khi muốn bật/tắt bơm lên bồn, bơm tăng áp, ' +
+        'chuyển auto, xoá lỗi hoặc tắt còi thì gọi dieu_khien_thiet_bi với phong = bom_nuoc.',
+    );
     return lines.join('\n');
   }
 }

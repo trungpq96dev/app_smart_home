@@ -24,11 +24,22 @@ export interface WeatherConfig {
   lon: number;
 }
 
+export interface BomNuocConfig {
+  espHost: string;
+  uuTienLan: boolean;
+  brokerHost: string;
+  brokerPort: number;
+  brokerTls: boolean;
+  brokerUser: string;
+  brokerPass: string;
+}
+
 export interface AppServerConfig {
   mqtt: MqttConfig;
   camera: CameraConfig;
   weather: WeatherConfig;
   aquaControlUrl: string;
+  bomNuoc: BomNuocConfig;
 }
 
 export interface PublicAppConfig {
@@ -36,6 +47,15 @@ export interface PublicAppConfig {
   camera: Omit<CameraConfig, 'matKhau'> & { coMatKhau: boolean };
   weather: WeatherConfig;
   aquaControlUrl: string;
+  bomNuoc: Omit<BomNuocConfig, 'brokerPass'> & { coMatKhau: boolean };
+}
+
+export function chuanHoaHostBom(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^(https?|wss?|mqtts?):\/\//i, '')
+    .split('/')[0]
+    .trim();
 }
 
 function parseBool(v: string | undefined, fallback: boolean): boolean {
@@ -81,6 +101,15 @@ function defaultFromEnv(): AppServerConfig {
       lon: parseNum(process.env.WEATHER_LON, 105.8342),
     },
     aquaControlUrl: process.env.AQUACONTROL_URL?.trim() ?? '',
+    bomNuoc: {
+      espHost: chuanHoaHostBom(process.env.BOMNUOC_ESP_HOST ?? ''),
+      uuTienLan: parseBool(process.env.BOMNUOC_PREFER_LAN, true),
+      brokerHost: chuanHoaHostBom(process.env.BOMNUOC_MQTT_HOST ?? ''),
+      brokerPort: parsePort(process.env.BOMNUOC_MQTT_PORT, 8883),
+      brokerTls: parseBool(process.env.BOMNUOC_MQTT_TLS, true),
+      brokerUser: process.env.BOMNUOC_MQTT_USER?.trim() ?? '',
+      brokerPass: process.env.BOMNUOC_MQTT_PASS ?? '',
+    },
   };
 }
 
@@ -134,6 +163,17 @@ export class ConfigStore {
             : base.weather.lon,
         },
         aquaControlUrl: typeof parsed.aquaControlUrl === 'string' ? parsed.aquaControlUrl.trim() : base.aquaControlUrl,
+        bomNuoc: {
+          espHost: typeof parsed.bomNuoc?.espHost === 'string' ? chuanHoaHostBom(parsed.bomNuoc.espHost) : base.bomNuoc.espHost,
+          uuTienLan: typeof parsed.bomNuoc?.uuTienLan === 'boolean' ? parsed.bomNuoc.uuTienLan : base.bomNuoc.uuTienLan,
+          brokerHost: typeof parsed.bomNuoc?.brokerHost === 'string' ? chuanHoaHostBom(parsed.bomNuoc.brokerHost) : base.bomNuoc.brokerHost,
+          brokerPort: typeof parsed.bomNuoc?.brokerPort === 'number' && parsed.bomNuoc.brokerPort >= 1 && parsed.bomNuoc.brokerPort <= 65535
+            ? Math.trunc(parsed.bomNuoc.brokerPort)
+            : base.bomNuoc.brokerPort,
+          brokerTls: typeof parsed.bomNuoc?.brokerTls === 'boolean' ? parsed.bomNuoc.brokerTls : base.bomNuoc.brokerTls,
+          brokerUser: typeof parsed.bomNuoc?.brokerUser === 'string' ? parsed.bomNuoc.brokerUser.trim() : base.bomNuoc.brokerUser,
+          brokerPass: typeof parsed.bomNuoc?.brokerPass === 'string' ? parsed.bomNuoc.brokerPass : base.bomNuoc.brokerPass,
+        },
       };
     } catch {
       return base;
@@ -155,11 +195,13 @@ export class ConfigStore {
   getPublicConfig(): PublicAppConfig {
     const { matKhau: mqttPass, ...mqttRest } = this.config.mqtt;
     const { matKhau: camPass, ...camRest } = this.config.camera;
+    const { brokerPass: bomPass, ...bomRest } = this.config.bomNuoc;
     return {
       mqtt: { ...mqttRest, coMatKhau: mqttPass.length > 0 },
       camera: { ...camRest, coMatKhau: camPass.length > 0 },
       weather: { ...this.config.weather },
       aquaControlUrl: this.config.aquaControlUrl,
+      bomNuoc: { ...bomRest, coMatKhau: bomPass.length > 0 },
     };
   }
 
@@ -233,6 +275,33 @@ export class ConfigStore {
     this.config = {
       ...this.config,
       aquaControlUrl: url.trim(),
+    };
+    this.persist();
+    return this.config;
+  }
+
+  updateBomNuoc(input: Partial<BomNuocConfig> & { xoaMatKhau?: boolean }): AppServerConfig {
+    const prev = this.config.bomNuoc;
+    const nextPass = input.xoaMatKhau
+      ? ''
+      : typeof input.brokerPass === 'string' && input.brokerPass.length > 0
+        ? input.brokerPass
+        : prev.brokerPass;
+    const brokerPort =
+      typeof input.brokerPort === 'number' && Number.isFinite(input.brokerPort)
+        ? Math.min(65535, Math.max(1, Math.trunc(input.brokerPort)))
+        : prev.brokerPort;
+    this.config = {
+      ...this.config,
+      bomNuoc: {
+        espHost: typeof input.espHost === 'string' ? chuanHoaHostBom(input.espHost) : prev.espHost,
+        uuTienLan: typeof input.uuTienLan === 'boolean' ? input.uuTienLan : prev.uuTienLan,
+        brokerHost: typeof input.brokerHost === 'string' ? chuanHoaHostBom(input.brokerHost) : prev.brokerHost,
+        brokerPort,
+        brokerTls: typeof input.brokerTls === 'boolean' ? input.brokerTls : prev.brokerTls,
+        brokerUser: typeof input.brokerUser === 'string' ? input.brokerUser.trim() : prev.brokerUser,
+        brokerPass: nextPass,
+      },
     };
     this.persist();
     return this.config;
