@@ -13,6 +13,7 @@ import vn.smarthome.data.cuktech.KichBan
 import vn.smarthome.data.cuktech.CuktechPiid
 import vn.smarthome.data.cuktech.CuktechState
 import vn.smarthome.data.cuktech.CuktechTopic
+import vn.smarthome.data.cuktech.SongBle
 
 /**
  * Kiem bo giai ma `cuktech/charger/#` bang GOI THAT.
@@ -263,5 +264,72 @@ class CuktechStateTest {
     fun topic_la_khong_lam_gi_ca() {
         val truoc = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)
         assertEquals(truoc, CuktechState.gop(truoc, "cuktech/charger/port/khong_co_that", goiC1Dangsac))
+    }
+
+    // --- Suc song BLE (`cuktech/rssi/<nguon>`) ---
+
+    /** Goi that bat tu broker ngay 21/11/2026, luc cu sac dang rot lien tuc. */
+    private val goiRssiServer = """
+        {"rssi": -96, "xep_hang": "rat-yeu", "tuoi_giay": 24, "dang_noi": null,
+         "luc": "2026-11-21T15:37:04+07:00", "mac": "3C:CD:73:2B:58:8A",
+         "nguon": "serverubuntu (dongle USB)", "adapter": "hci0"}
+    """.trimIndent()
+
+    @Test
+    fun doc_duoc_suc_song_tu_topic_rssi() {
+        val st = CuktechState.gop(CuktechState(), "cuktech/rssi/server", goiRssiServer)
+        val s = st.song["server"]!!
+        assertEquals(-96, s.rssi)
+        assertEquals(SongBle.Muc.RAT_YEU, s.muc)
+        assertEquals("serverubuntu (dongle USB)", s.nguonTen)
+        assertFalse(s.laSoCu())
+        assertNull(s.dangNoi)
+        // Goi song KHONG duoc coi la "da co so cu sac": hai nguon khac nhau.
+        assertFalse(st.coSoThat)
+    }
+
+    @Test
+    fun payload_rong_tren_topic_rssi_la_bo_diem_do() {
+        // LWT cua script do. Giu lai so cu o day la noi doi: khong con ai do nua.
+        val st = CuktechState.gop(CuktechState(), "cuktech/rssi/server", goiRssiServer)
+        assertEquals(1, st.song.size)
+        assertEquals(0, CuktechState.gop(st, "cuktech/rssi/server", "").song.size)
+    }
+
+    @Test
+    fun nhieu_diem_do_thi_lay_diem_manh_nhat() {
+        var st = CuktechState.gop(CuktechState(), "cuktech/rssi/server", goiRssiServer)
+        st = CuktechState.gop(st, "cuktech/rssi/esp", """{"rssi":-52,"nguon":"ESP32-C3"}""")
+        assertEquals(2, st.song.size)
+        assertEquals(-52, st.songTotNhat()?.rssi)
+        assertEquals(SongBle.Muc.TOT, st.songTotNhat()?.muc)
+    }
+
+    @Test
+    fun nguong_xep_hang_dung_theo_so_do_duoc_that() {
+        // -43 do tu may Windows canh cu sac: giu duoc ket noi.
+        assertEquals(SongBle.Muc.TOT, SongBle("x", rssi = -43).muc)
+        assertEquals(SongBle.Muc.KHA, SongBle("x", rssi = -75).muc)
+        // -81 va -96 la hai so do tu serverubuntu luc rot 37 lan trong 2 gio.
+        assertEquals(SongBle.Muc.YEU, SongBle("x", rssi = -81).muc)
+        assertEquals(SongBle.Muc.RAT_YEU, SongBle("x", rssi = -96).muc)
+        // Chua do duoc KHONG duoc hieu la 0 dBm (muc rat manh).
+        assertEquals(SongBle.Muc.KHONG_RO, SongBle("x", rssi = null).muc)
+        assertEquals("—", SongBle("x", rssi = null).nhanDbm())
+    }
+
+    @Test
+    fun thieu_tuoi_thi_coi_la_so_cu() {
+        // Khong biet so do tu bao gio thi khong duoc phep tin no la moi.
+        assertTrue(SongBle("x", rssi = -60, tuoiGiay = null).laSoCu())
+        assertTrue(SongBle("x", rssi = -60, tuoiGiay = 301).laSoCu())
+        assertFalse(SongBle("x", rssi = -60, tuoiGiay = 300).laSoCu())
+    }
+
+    @Test
+    fun topic_rssi_thieu_nguon_thi_bo_qua() {
+        val truoc = CuktechState.gop(CuktechState(), CuktechTopic.STATUS, goiStatus)
+        assertEquals(truoc, CuktechState.gop(truoc, "cuktech/rssi/", goiRssiServer))
+        assertEquals(truoc, CuktechState.gop(truoc, "cuktech/rssi/a/b", goiRssiServer))
     }
 }

@@ -1,0 +1,54 @@
+# --- Bluetooth: NimBLE, chi lam CENTRAL ---
+# Tram la ben DI NOI toi cu sac, khong quang ba gi ca. Tat phan peripheral
+# de bot ca RAM lan dien tich ma khong mat gi.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# MTU 517. Day la cho DE HONG NHAT neu de mac dinh: khung trao doi khoa
+# trong bat tay MiOT dai toi ~240 byte, ma MTU 23 mac dinh chi cho 20 byte
+# moi goi. Khong co dong nay thi bat tay chet o buoc 1 ma khong ro vi sao.
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=517
+CONFIG_BT_NIMBLE_MSYS1_BLOCK_COUNT=24
+
+# Cong suat phat toi da. Tram de canh cu sac nen khong can, nhung khong ton
+# gi - va phong truong hop phai dat xa hon du tinh.
+CONFIG_BT_CTRL_BLE_ADV_TX_POWER=9
+CONFIG_BT_CTRL_BLE_SCAN_TX_POWER=9
+CONFIG_BT_CTRL_BLE_CONN_TX_POWER=9
+
+# Wi-Fi va BLE dung chung mot anten 2.4 GHz - phai bat trong tai thi ca hai
+# moi song duoc.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# Khong ngu. Tram cam dien lien tuc, va ngu thi them mot nguon tre nua vao
+# duong BLE dang phai chay o cho song khong chac chan.
+CONFIG_PM_ENABLE=n
+
+# mbedTLS: can HKDF cho buoc dan khoa phien. CCM va SHA256 mac dinh da bat.
+CONFIG_MBEDTLS_HKDF_C=y
+
+# Console ra USB-Serial/JTAG, KHONG ra UART0.
+#
+# Board C3 mini (SuperMini) noi thang cong USB cua chip vao dau cam - khong co
+# chip UART roi nao ca. Mac dinh cua ESP-IDF la do log ra UART0, ma chan UART0
+# tren board nay khong di toi dau: nap xong se khong thay MOT DONG log nao, va
+# trieu chung giong het "firmware chet luc khoi dong".
+#
+# Doi board khac co chip CH343/CP2102 thi bo hai dong nay.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+
+# Bang phan vung rieng: binary ~1.06 MB khong vua phan vung `factory` 1 MB
+# cua bang mac dinh. Xem `partitions.csv` de biet con so.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
