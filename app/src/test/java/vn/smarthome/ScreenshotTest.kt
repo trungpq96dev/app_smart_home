@@ -129,6 +129,15 @@ class ScreenshotTest {
     }
 
     @Test
+    fun chup_chi_tiet_nha_bep() {
+        shoot("2c-chi-tiet-nha-bep") {
+            Content {
+                RoomDetailScreen(DemoData.rooms().first { it.id == "kitchen" }, {}, {}, {}, {}, {}, {}, {})
+            }
+        }
+    }
+
+    @Test
     fun chup_camera() {
         shoot("3-camera") {
             // CHUA khai bao go2rtc: khung xem van la o giu cho, khong co

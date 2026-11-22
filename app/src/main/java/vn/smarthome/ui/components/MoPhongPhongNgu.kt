@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
@@ -121,12 +122,15 @@ fun MoPhongPhongNgu(
     acTemp: Int,
     mode: RoomMode,
     modifier: Modifier = Modifier,
+    lightBrightness: Int = 100,
+    fanSpeed: Int = 1,
 ) {
-    val targetLightFactor = when {
-        !lightOn -> 0f
-        mode == RoomMode.SLEEP -> 0.25f
-        else -> 1f
+    val effectiveBrightness = if (mode == RoomMode.SLEEP) {
+        minOf(lightBrightness.coerceIn(10, 100), 20)
+    } else {
+        lightBrightness.coerceIn(10, 100)
     }
+    val targetLightFactor = if (lightOn) effectiveBrightness / 100f else 0f
     val lightFactor by animateFloatAsState(
         targetValue = targetLightFactor,
         animationSpec = tween(durationMillis = 600),
@@ -147,16 +151,24 @@ fun MoPhongPhongNgu(
     )
 
     // Vat ly quan tinh cho quat tran: dung delay(16L) de khong treo Robolectric waitForIdle().
+    val targetVel = if (fanOn) {
+        when (fanSpeed.coerceIn(1, 3)) {
+            1 -> 4.5f
+            2 -> 8.5f
+            else -> 14.0f
+        }
+    } else {
+        0f
+    }
     var fanAngle by remember { mutableFloatStateOf(0f) }
-    var fanVelocity by remember { mutableFloatStateOf(if (fanOn) 7.5f else 0f) }
-    LaunchedEffect(fanOn) {
+    var fanVelocity by remember { mutableFloatStateOf(targetVel) }
+    LaunchedEffect(fanOn, fanSpeed) {
         var lastNs = System.nanoTime()
         while (isActive && (fanOn || fanVelocity > 0.05f)) {
             delay(16L)
             val nowNs = System.nanoTime()
             val dt = ((nowNs - lastNs) / 16_670_000f).coerceIn(0.2f, 3f)
             lastNs = nowNs
-            val targetVel = if (fanOn) 7.5f else 0f
             val accel = if (fanOn) 0.045f else 0.022f
             fanVelocity += (targetVel - fanVelocity) * accel * dt
             if (!fanOn && fanVelocity <= 0.05f) {
@@ -216,7 +228,7 @@ fun MoPhongPhongNgu(
             drawFloorRug(path, sx, sy)
 
             // 7. GIUONG NGU, VACH DAU GIUONG & 2 DEN NGU
-            drawBedAndLamps(path, sx, sy, lightFactor)
+            drawBedAndLamps(path, sx, sy, lightOn, lightFactor)
 
             // 8. CAMERA AN NINH & MAY LANH TREO TUONG PHAI
             drawSecurityCamera(sx, sy)
@@ -224,9 +236,9 @@ fun MoPhongPhongNgu(
 
             // 9. LOP PHU BONG TOI MOI TRUONG
             val rawDarkness = if (isNightSky) {
-                (1f - lightFactor) * 0.78f + 0.10f
+                (1f - lightFactor) * 0.85f + 0.12f
             } else {
-                (1f - lightFactor) * 0.72f
+                (1f - lightFactor) * 0.75f
             }
             val darknessOpacity = rawDarkness.coerceIn(0f, 0.88f)
             if (darknessOpacity > 0.01f) {
@@ -385,23 +397,31 @@ private fun DrawScope.drawCeilingRecessAndLights(
 
     if (lightFactor <= 0.005f) return
 
-    // Quang sang LED hat tran
+    // Quang sang LED hat tran (elip khop ti le tran giat cap nhu SVG objectBoundingBox)
     path.setPoly(sx, sy, RECESS_POLY)
-    drawPath(
-        path,
-        Brush.radialGradient(
-            0.0f to Color(0xFFFDE68A).copy(alpha = 0.72f * lightFactor),
-            0.60f to Color(0xFFF59E0B).copy(alpha = 0.22f * lightFactor),
-            1.0f to Color.Transparent,
-            center = Offset(400f * sx, 91f * sy),
-            radius = 270f * sx,
-        ),
-    )
+    clipPath(path) {
+        withTransform({
+            translate(left = 400f * sx, top = 91f * sy)
+            scale(scaleX = 1f, scaleY = 0.28f, pivot = Offset.Zero)
+        }) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    0.0f to Color(0xFFFDE68A).copy(alpha = 0.75f * lightFactor),
+                    0.60f to Color(0xFFF59E0B).copy(alpha = 0.25f * lightFactor),
+                    1.0f to Color.Transparent,
+                    center = Offset.Zero,
+                    radius = 270f * sx,
+                ),
+                radius = 270f * sx,
+                center = Offset.Zero,
+            )
+        }
+    }
 
     // Vien LED hat tran phat sang (ve nhieu lop mem tranh phu thuoc BlurMaskFilter)
     path.setPoly(sx, sy, RECESS_LED_POLY)
-    drawPath(path, Color(0xFFFDE047).copy(alpha = 0.22f * lightFactor), style = Stroke(width = 12f * sx))
-    drawPath(path, Color(0xFFFDE047).copy(alpha = 0.45f * lightFactor), style = Stroke(width = 6.5f * sx))
+    drawPath(path, Color(0xFFFDE047).copy(alpha = 0.24f * lightFactor), style = Stroke(width = 12f * sx))
+    drawPath(path, Color(0xFFFDE047).copy(alpha = 0.48f * lightFactor), style = Stroke(width = 6.5f * sx))
     drawPath(path, Color(0xFFFEF08A).copy(alpha = 0.90f * lightFactor), style = Stroke(width = 3f * sx))
 
     // Cac bong den am tran (Downlights)
@@ -432,11 +452,23 @@ private fun DrawScope.drawDownlight(
     sy: Float,
     lightFactor: Float,
 ) {
-    drawOval(
-        color = Color(0xFFFEF9C3).copy(alpha = 0.55f * lightFactor),
-        topLeft = Offset((cx - haloRx * 1.4f) * sx, (cy - haloRy * 1.4f) * sy),
-        size = Size(haloRx * 2.8f * sx, haloRy * 2.8f * sy),
-    )
+    withTransform({
+        translate(left = cx * sx, top = cy * sy)
+        scale(scaleX = 1f, scaleY = (haloRy / haloRx).coerceAtLeast(0.35f), pivot = Offset.Zero)
+    }) {
+        val r = haloRx * 2.2f * sx
+        drawCircle(
+            brush = Brush.radialGradient(
+                0.0f to Color(0xFFFEF9C3).copy(alpha = 0.85f * lightFactor),
+                0.5f to Color(0xFFFEF08A).copy(alpha = 0.32f * lightFactor),
+                1.0f to Color.Transparent,
+                center = Offset.Zero,
+                radius = r,
+            ),
+            radius = r,
+            center = Offset.Zero,
+        )
+    }
     drawOval(
         color = Color.White.copy(alpha = lightFactor),
         topLeft = Offset((cx - coreRx) * sx, (cy - coreRy) * sy),
@@ -597,26 +629,27 @@ private fun DrawScope.drawBedAndLamps(
     path: Path,
     sx: Float,
     sy: Float,
+    lightOn: Boolean,
     lightFactor: Float,
 ) {
-    // Dai LED hat sau vach dau giuong
+    // Dai LED hat sau vach dau giuong (vuong goc mep nghieng vach go)
     if (lightFactor > 0.005f) {
         path.setPoly(sx, sy, HEADBOARD_HALO)
         drawPath(
             path,
-            Brush.verticalGradient(
-                listOf(Color.Transparent, Color(0xFFFBBF24).copy(alpha = 0.28f * lightFactor)),
-                startY = 300f * sy,
-                endY = 415f * sy,
+            Brush.linearGradient(
+                listOf(Color(0xFFFBBF24).copy(alpha = 0.30f * lightFactor), Color.Transparent),
+                start = Offset(196f * sx, 382f * sy),
+                end = Offset(180f * sx, 305f * sy),
             ),
         )
         path.setPoly(sx, sy, HEADBOARD_GLOW)
         drawPath(
             path,
-            Brush.verticalGradient(
-                listOf(Color.Transparent, Color(0xFFFBBF24).copy(alpha = 0.65f * lightFactor)),
-                startY = 315f * sy,
-                endY = 412f * sy,
+            Brush.linearGradient(
+                listOf(Color(0xFFFBBF24).copy(alpha = 0.65f * lightFactor), Color.Transparent),
+                start = Offset(196f * sx, 382f * sy),
+                end = Offset(184f * sx, 312f * sy),
             ),
         )
     }
@@ -644,7 +677,11 @@ private fun DrawScope.drawBedAndLamps(
         ),
     )
 
-    val shadeColor = lerp(Color(0xFF8C857B), Color(0xFFFEF3C7), lightFactor)
+    val shadeColor = if (lightOn) {
+        lerp(Color(0xFFD6C7AE), Color(0xFFFEF3C7), lightFactor)
+    } else {
+        Color(0xFF8C857B)
+    }
     if (lightFactor > 0.005f) {
         drawCircle(
             brush = Brush.radialGradient(

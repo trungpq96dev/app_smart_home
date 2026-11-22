@@ -446,7 +446,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     // man hinh ve "—" chu khong ve gia tri cu. Hai thu tach
                     // nhau co chu dinh: `rooms` la "lan cuoi biet duoc",
                     // OThietBi la "co duoc phep noi ra khong".
-                    ct.trangThaiCua(p.id, CongCuNha.DEN)?.bat?.let { r = r.copy(lightOn = it) }
+                    ct.trangThaiCua(p.id, CongCuNha.DEN)?.bat?.let { bat ->
+                        val doiSangBat = !r.lightOn && bat
+                        r = r.copy(
+                            lightOn = bat,
+                            lightBrightness = if (doiSangBat && (r.lightBrightness <= 25 || r.mode == RoomMode.SLEEP)) 100 else r.lightBrightness,
+                            mode = if (doiSangBat && (r.mode == RoomMode.SLEEP || r.mode == RoomMode.AWAY)) RoomMode.CUSTOM else r.mode,
+                        )
+                    }
                     ct.trangThaiCua(p.id, CongCuNha.QUAT)?.bat?.let { r = r.copy(fanOn = it) }
                     r
                 },
@@ -575,14 +582,29 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             nguon = LenhCongTac.NGUON_MAN_HINH)
     }
 
-    fun setLightBrightness(roomId: String, brightness: Int) = editRoom(roomId) {
+    fun setLightBrightness(roomId: String, brightness: Int) {
         val b = brightness.coerceIn(10, 100)
-        it.copy(lightOn = true, lightBrightness = b)
+        editRoom(roomId) {
+            it.copy(lightOn = true, lightBrightness = b, mode = RoomMode.CUSTOM)
+        }
     }
 
     fun toggleFan(roomId: String) {
         gatCongTac(roomId, CongCuNha.QUAT, dao = true, bat = false,
             nguon = LenhCongTac.NGUON_MAN_HINH)
+    }
+
+    fun setFanSpeed(roomId: String, speed: Int) {
+        val sp = speed.coerceIn(1, 3)
+        editRoom(roomId) {
+            it.copy(fanOn = true, fanSpeed = sp, mode = RoomMode.CUSTOM)
+        }
+        val ct = congTac.value
+        val tb = ct.tim(roomId, CongCuNha.QUAT)
+        val tt = tb?.let { ct.trangThai[it.ma] }
+        if (tb != null && ct.bridgeSong && tt?.online == true && tt.bat != true) {
+            gatCongTac(roomId, CongCuNha.QUAT, dao = false, bat = true, nguon = LenhCongTac.NGUON_MAN_HINH)
+        }
     }
 
     fun toggleTv(roomId: String) = editRoom(roomId) { it.copy(tvOn = !it.tvOn) }
@@ -604,10 +626,32 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         it.copy(curtainOpen = openPercent.coerceIn(0, 100))
     }
 
+    fun setHoodSpeed(roomId: String, speed: Int) = editRoom(roomId) {
+        it.copy(fanOn = true, hoodSpeed = speed.coerceIn(1, 3))
+    }
+
+    fun toggleStove(roomId: String) = editRoom(roomId) { it.copy(stoveOn = !it.stoveOn) }
+
+    fun datBepTu(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(stoveOn = bat) }
+
+    fun changeStoveLevel(roomId: String, delta: Int) = editRoom(roomId) {
+        it.copy(stoveOn = true, stoveLevel = (it.stoveLevel + delta).coerceIn(1, 9))
+    }
+
+    fun setGasAlert(roomId: String, alert: Boolean) = editRoom(roomId) { r ->
+        if (alert) {
+            r.copy(gasAlert = true, gasPpm = 485, fanOn = true, hoodSpeed = 3)
+        } else {
+            r.copy(gasAlert = false, gasPpm = 18)
+        }
+    }
+
     fun setMode(roomId: String, mode: RoomMode) {
         val ct = congTac.value
-        val denThat = ct.laThat(roomId, CongCuNha.DEN)
-        val quatThat = ct.laThat(roomId, CongCuNha.QUAT)
+        val denThat = ct.laThat(roomId, CongCuNha.DEN) &&
+            ct.bridgeSong && (ct.trangThaiCua(roomId, CongCuNha.DEN)?.online == true)
+        val quatThat = ct.laThat(roomId, CongCuNha.QUAT) &&
+            ct.bridgeSong && (ct.trangThaiCua(roomId, CongCuNha.QUAT)?.online == true)
         editRoom(roomId) { r ->
             if (roomId == "living") {
                 when (mode) {
@@ -647,18 +691,58 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                         curtainOpen = 0,
                     )
                 }
+            } else if (roomId == "kitchen") {
+                when (mode) {
+                    // Nau an: den 100%, hut mui muc 2, bep tu muc 5
+                    RoomMode.HOME -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
+                        fanOn = if (quatThat) r.fanOn else true,
+                        hoodSpeed = 2,
+                        stoveOn = true,
+                        stoveLevel = 5,
+                    )
+                    // An toi: den am ap 55%, tat hut mui & bep tu
+                    RoomMode.CUSTOM -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 55,
+                        fanOn = if (quatThat) r.fanOn else false,
+                        stoveOn = false,
+                    )
+                    // Don dep: den 100%, hut mui muc 1, tat bep tu
+                    RoomMode.SLEEP -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
+                        fanOn = if (quatThat) r.fanOn else true,
+                        hoodSpeed = 1,
+                        stoveOn = false,
+                    )
+                    // Vang nha: tat toan bo thiet bi, giu giam sat Gas 24/7
+                    RoomMode.AWAY -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else false,
+                        fanOn = if (quatThat) r.fanOn else false,
+                        stoveOn = false,
+                    )
+                }
             } else {
                 when (mode) {
                     RoomMode.SLEEP -> r.copy(
                         mode = mode,
                         lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 20,
                         fanOn = if (quatThat) r.fanOn else true,
+                        fanSpeed = 1,
                         acOn = true,
                         acTemp = 26,
                     )
                     RoomMode.HOME -> r.copy(
                         mode = mode,
                         lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
                         fanOn = if (quatThat) r.fanOn else false,
                         acOn = true,
                         acTemp = 25,
@@ -713,30 +797,43 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         bat: Boolean,
         nguon: String,
     ): String? {
+        val tuManHinh = nguon == LenhCongTac.NGUON_MAN_HINH
+        fun capNhatCucBo() {
+            editRoom(roomId) { r ->
+                val hienTai = if (thietBi == CongCuNha.DEN) r.lightOn else r.fanOn
+                val moi = if (dao) !hienTai else bat
+                if (thietBi == CongCuNha.DEN) {
+                    r.copy(
+                        lightOn = moi,
+                        lightBrightness = if (moi && r.lightBrightness <= 25) 100 else r.lightBrightness,
+                        mode = if (tuManHinh) RoomMode.CUSTOM else r.mode,
+                    )
+                } else {
+                    r.copy(
+                        fanOn = moi,
+                        mode = if (tuManHinh) RoomMode.CUSTOM else r.mode,
+                    )
+                }
+            }
+        }
+
         val ct = congTac.value
         val tb = ct.tim(roomId, thietBi)
         if (tb == null) {
             // Thiet bi mau: y nguyen hanh vi cu.
-            if (dao) {
-                editRoom(roomId) {
-                    if (thietBi == CongCuNha.DEN) it.copy(lightOn = !it.lightOn)
-                    else it.copy(fanOn = !it.fanOn)
-                }
-            } else {
-                editRoom(roomId) {
-                    if (thietBi == CongCuNha.DEN) it.copy(lightOn = bat) else it.copy(fanOn = bat)
-                }
-            }
+            capNhatCucBo()
             return null
         }
 
         val tt = ct.trangThai[tb.ma]
         if (!ct.bridgeSong) {
+            if (tuManHinh) capNhatCucBo()
             val loi = "Bộ nối công tắc chưa chạy trên máy chủ nên chưa gửi được lệnh."
             _thongBao.tryEmit(loi)
             return loi
         }
         if (tt == null || !tt.online) {
+            if (tuManHinh) capNhatCucBo()
             val loi = "${tb.ten} đang mất kết nối" + (tt?.lyDoLoi?.let { " ($it)" } ?: "") + "."
             _thongBao.tryEmit(loi)
             return loi
@@ -744,6 +841,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // Dao ma khong biet dang o the nao thi KHONG duoc doan. Doan o day la
         // "bam bat thi no tat" - rat kho chiu va rat kho tai hien.
         if (dao && tt.bat == null) {
+            if (tuManHinh) capNhatCucBo()
             val loi = "Chưa biết ${tb.ten} đang bật hay tắt nên không đảo được. " +
                 "Hãy nói rõ bật hoặc tắt."
             _thongBao.tryEmit(loi)
@@ -755,14 +853,28 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             is KetQuaGui.DaGui -> {
                 hangCho.ganh(tb.ma, mong, kq.id, System.currentTimeMillis())
                 dongBoCho()
+                if (tuManHinh) {
+                    editRoom(roomId) { r ->
+                        if (thietBi == CongCuNha.DEN) {
+                            r.copy(
+                                lightBrightness = if (mong && r.lightBrightness <= 25) 100 else r.lightBrightness,
+                                mode = RoomMode.CUSTOM,
+                            )
+                        } else {
+                            r.copy(mode = RoomMode.CUSTOM)
+                        }
+                    }
+                }
                 null
             }
             KetQuaGui.ChuaNoiBroker -> {
+                if (tuManHinh) capNhatCucBo()
                 val loi = "Chưa nối broker MQTT nên chưa gửi được lệnh. Kiểm tra Cài đặt."
                 _thongBao.tryEmit(loi)
                 loi
             }
             is KetQuaGui.Loi -> {
+                if (tuManHinh) capNhatCucBo()
                 val loi = "Không gửi được lệnh: ${kq.moTa}"
                 _thongBao.tryEmit(loi)
                 loi
@@ -901,6 +1013,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             this@HomeViewModel.setCurtain(phong, if (mo) 100 else 0)
         }
 
+        override fun datBepTu(phong: String, bat: Boolean) =
+            this@HomeViewModel.datBepTu(phong, bat)
+
         override fun datNhietDo(phong: String, doC: Int): Int =
             this@HomeViewModel.datNhietDo(phong, doC)
 
@@ -946,6 +1061,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 "dieu_hoa" -> p.acOn
                 "tivi" -> p.tvOn
                 "rem" -> p.curtainOpen > 0
+                "bep_tu" -> p.stoveOn
                 "lich_hen" -> p.scheduleOn
                 else -> null
             }
@@ -977,14 +1093,28 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
          * phai in "khong ro", khong duoc in "tat".
          */
         override fun chupTrangThai(): String = _state.value.rooms.joinToString("\n") { p ->
-            val extra = if (p.id == "living") {
-                ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"
+            if (p.id == "kitchen") {
+                val cheDoBep = when (p.mode) {
+                    RoomMode.HOME -> "Nấu ăn"
+                    RoomMode.CUSTOM -> "Ăn tối"
+                    RoomMode.SLEEP -> "Dọn dẹp"
+                    RoomMode.AWAY -> "Vắng nhà"
+                }
+                val gasNote = if (p.gasAlert) "cảnh báo rò rỉ ${p.gasPpm} ppm" else "an toàn ${p.gasPpm} ppm"
+                "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
+                    "máy hút mùi ${theNao(p.id, CongCuNha.QUAT, p.fanOn)} (cấp ${p.hoodSpeed}), " +
+                    "bếp từ ${batTat(p.stoveOn)} (mức ${p.stoveLevel}), " +
+                    "cảm biến Gas $gasNote, chế độ $cheDoBep"
             } else {
-                ""
+                val extra = if (p.id == "living") {
+                    ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"
+                } else {
+                    ""
+                }
+                "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
+                    "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
+                    "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ$extra, chế độ ${p.mode.label}"
             }
-            "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
-                "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
-                "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ$extra, chế độ ${p.mode.label}"
         }
 
         override fun guiMqtt(
@@ -1094,6 +1224,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                             put("do_sang_den", p.lightBrightness)
                             put("tivi", p.tvOn)
                             put("rem_mo", p.curtainOpen)
+                        } else if (p.id == "kitchen") {
+                            put("do_sang_den", p.lightBrightness)
+                            put("cap_hut_mui", p.hoodSpeed)
+                            put("bep_tu", p.stoveOn)
+                            put("muc_bep_tu", p.stoveLevel)
+                            put("canh_bao_gas", p.gasAlert)
+                            put("gas_ppm", p.gasPpm)
                         }
                     },
             )

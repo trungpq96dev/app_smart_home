@@ -179,9 +179,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         oQuat = vm.oThietBi(room.id, "quat", congTac, choCongTac),
                         onToggleAc = { vm.toggleAc(room.id) },
                         onLightBrightness = { b -> vm.setLightBrightness(room.id, b) },
+                        onFanSpeed = { s -> vm.setFanSpeed(room.id, s) },
                         onToggleTv = { vm.toggleTv(room.id) },
                         onToggleCurtain = { vm.toggleCurtain(room.id) },
                         onCurtainOpen = { p -> vm.setCurtain(room.id, p) },
+                        onHoodSpeed = { s -> vm.setHoodSpeed(room.id, s) },
+                        onToggleStove = { vm.toggleStove(room.id) },
+                        onStoveLevel = { d -> vm.changeStoveLevel(room.id, d) },
+                        onGasAlert = { a -> vm.setGasAlert(room.id, a) },
                     )
 
                     showChiTietDien -> ChiTietDienScreen(

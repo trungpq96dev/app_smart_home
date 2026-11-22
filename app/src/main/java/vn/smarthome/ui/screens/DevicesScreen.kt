@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import vn.smarthome.data.RoomMode
 import vn.smarthome.data.RoomUi
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.ui.components.Dot
@@ -128,6 +130,25 @@ private data class TomTatPhongUi(
 }
 
 private fun tomTatPhong(room: RoomUi, ct: CongTacState): TomTatPhongUi {
+    if (room.id == "kitchen") {
+        val den = mucCongTac(room.id, "den", "Đèn", Icons.Filled.Lightbulb, SH.Amber, room.lightOn, ct)
+        val hutMuiGoc = mucCongTac(room.id, "quat", "Hút mùi", Icons.Filled.Air, SH.Blue, room.fanOn, ct)
+        val hutMui = if (hutMuiGoc.roRang && hutMuiGoc.bat) {
+            hutMuiGoc.copy(chuTrangThai = "Cấp ${room.hoodSpeed}")
+        } else {
+            hutMuiGoc
+        }
+        val bepTu = TrangThaiMucThietBi(
+            ten = "Bếp từ",
+            icon = Icons.Filled.LocalFireDepartment,
+            mau = SH.Orange,
+            bat = room.stoveOn,
+            chuTrangThai = if (room.stoveOn) "Mức ${room.stoveLevel}" else "Tắt",
+            that = false,
+            roRang = true,
+        )
+        return TomTatPhongUi(room = room, mucThietBi = listOf(den, hutMui, bepTu))
+    }
     val den = mucCongTac(room.id, "den", "Đèn", Icons.Filled.Lightbulb, SH.Amber, room.lightOn, ct)
     val quat = mucCongTac(room.id, "quat", "Quạt", Icons.Filled.Air, SH.Blue, room.fanOn, ct)
     val dieuHoa = TrangThaiMucThietBi(
@@ -207,9 +228,19 @@ private fun ThePhong(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val tenCheDo = if (room.id == "kitchen") {
+                    when (room.mode) {
+                        RoomMode.HOME -> "Nấu ăn"
+                        RoomMode.CUSTOM -> "Ăn tối"
+                        RoomMode.SLEEP -> "Dọn dẹp"
+                        RoomMode.AWAY -> "Vắng nhà"
+                    }
+                } else {
+                    room.mode.label
+                }
                 val moTa = buildString {
-                    append("Chế độ: ").append(room.mode.label)
-                    if (room.scheduleOn) append(" • ").append(room.scheduleTime)
+                    append("Chế độ: ").append(tenCheDo)
+                    if (room.scheduleOn && room.id != "kitchen") append(" • ").append(room.scheduleTime)
                 }
                 Text(
                     moTa,

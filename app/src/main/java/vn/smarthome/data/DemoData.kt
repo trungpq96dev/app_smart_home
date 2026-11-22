@@ -79,8 +79,9 @@ object DemoData {
         ),
         RoomUi(
             id = "bed1", name = "Phòng ngủ 1", icon = Icons.Filled.Bed, accent = SH.Purple,
-            lightOn = true, fanOn = false, acOn = true, acTemp = 25, mode = RoomMode.SLEEP,
+            lightOn = true, fanOn = false, acOn = true, acTemp = 25, mode = RoomMode.HOME,
             scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "23:00",
+            lightBrightness = 100, fanSpeed = 1,
         ),
         RoomUi(
             id = "bed2", name = "Phòng ngủ 2", icon = Icons.Filled.Bed, accent = SH.Blue,
@@ -94,8 +95,9 @@ object DemoData {
         ),
         RoomUi(
             id = "kitchen", name = "Nhà bếp", icon = Icons.Filled.Kitchen, accent = SH.Green,
-            lightOn = true, fanOn = true, acOn = false, acTemp = 28, mode = RoomMode.HOME,
-            scheduleOn = false, scheduleLabel = "Tắt đèn lúc", scheduleTime = "21:30",
+            lightOn = true, fanOn = false, acOn = false, acTemp = 28, mode = RoomMode.SLEEP,
+            scheduleOn = true, scheduleLabel = "Tự tắt hút mùi sau 15 phút", scheduleTime = "Hẹn giờ thông minh",
+            lightBrightness = 100, hoodSpeed = 1, stoveOn = false, stoveLevel = 5, gasAlert = false, gasPpm = 18,
         ),
         RoomUi(
             id = "hall", name = "Hành lang", icon = Icons.Filled.Stairs, accent = SH.Cyan,

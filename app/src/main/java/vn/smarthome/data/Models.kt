@@ -29,9 +29,28 @@ data class RoomUi(
     val scheduleLabel: String,
     val scheduleTime: String,
     val lightBrightness: Int = 100, // 10..100 (%)
+    val fanSpeed: Int = 1,          // 1..3
     val tvOn: Boolean = false,
     val curtainOpen: Int = 100,     // 0..100 (%)
+    val hoodSpeed: Int = 1,         // 1..3 (cap do may hut mui trong nha bep)
+    val stoveOn: Boolean = false,
+    val stoveLevel: Int = 5,        // 1..9 (muc cong suat bep tu)
+    val gasAlert: Boolean = false,
+    val gasPpm: Int = 18,
 )
+
+/** Cong suat uoc tinh (Watt) cua bep tu theo muc 1..9 trong file design. */
+fun stoveWatts(level: Int): Int = when (level.coerceIn(1, 9)) {
+    1 -> 200
+    2 -> 400
+    3 -> 650
+    4 -> 900
+    5 -> 1200
+    6 -> 1450
+    7 -> 1700
+    8 -> 1950
+    else -> 2200
+}
 
 /** Mot o thao tac nhanh o Trang chu. */
 data class QuickItem(

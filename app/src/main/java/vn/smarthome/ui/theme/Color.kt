@@ -18,6 +18,7 @@ object SH {
     val BlueDeep = Color(0xFF2563EB)
     val Green    = Color(0xFF22C55E)  // dang bat / binh thuong
     val Amber    = Color(0xFFFBBF24)  // canh bao / den
+    val Orange   = Color(0xFFF97316)  // bep tu / nhiet
     val Red      = Color(0xFFEF4444)  // loi / nhiet do
     val Purple   = Color(0xFF8B5CF6)  // dieu hoa
     val Cyan     = Color(0xFF22D3EE)  // do am / nuoc

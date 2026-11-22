@@ -210,6 +210,21 @@ class ShellSmokeTest {
         rule.onNodeWithText("Đèn phòng").assertIsDisplayed()
     }
 
+    @Test
+    fun mo_duoc_nha_bep_va_hien_du_bon_the_thiet_bi() {
+        start()
+        rule.onNodeWithText("Thiết bị").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Nhà bếp").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Điều khiển nhà bếp").assertIsDisplayed()
+        rule.onNodeWithText("Đèn bếp").assertIsDisplayed()
+        rule.onNodeWithText("Máy hút mùi").assertIsDisplayed()
+        rule.onNodeWithText("Bếp từ").assertIsDisplayed()
+        rule.onNodeWithText("Cảm biến Gas & Khói").assertIsDisplayed()
+        rule.onNodeWithText("Lịch hẹn & An toàn").assertIsDisplayed()
+    }
+
     // ---------------------------------------------------------------
     // Tro ly giong noi
     // ---------------------------------------------------------------

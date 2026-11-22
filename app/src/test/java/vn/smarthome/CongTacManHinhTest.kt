@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -114,5 +115,67 @@ class CongTacManHinhTest {
         rule.onNodeWithText("Đang gửi lệnh…").assertIsDisplayed()
         // Van con la mot cong tac (de mat khong nhay), nhung bam khong an.
         rule.onAllNodes(isToggleable())[0].assertIsNotEnabled()
+    }
+
+    @Test
+    fun phong_ngu_1_bat_den_hien_du_giao_dien_va_chon_duoc_toc_do_quat() {
+        val tocDoChon = mutableListOf<Int>()
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            SmartHomeTheme {
+                RoomDetailScreen(
+                    room = phong,
+                    onBack = {}, onHome = {},
+                    onToggleLight = {}, onToggleFan = {},
+                    onAcTemp = {}, onMode = {}, onToggleSchedule = {},
+                    onFanSpeed = { tocDoChon += it },
+                )
+            }
+        }
+        rule.mainClock.advanceTimeByFrame()
+
+        rule.onNodeWithText("Ban ngày").assertIsDisplayed()
+        rule.onNodeWithText("Đang bật • Độ sáng 100%").assertIsDisplayed()
+        rule.onNodeWithText("100%").assertIsDisplayed()
+        rule.onNodeWithText("Tốc độ gió").assertIsDisplayed()
+        rule.onNodeWithText("1").assertIsDisplayed()
+        rule.onNodeWithText("2").assertIsDisplayed()
+        rule.onNodeWithText("3").assertIsDisplayed()
+        rule.onNodeWithText("Nhiệt độ mục tiêu").assertIsDisplayed()
+        rule.onNodeWithText("25°C").assertIsDisplayed()
+
+        rule.onNodeWithText("2").performClick()
+        rule.onNodeWithText("3").performClick()
+        assertEquals(listOf(2, 3), tocDoChon)
+    }
+
+    @Test
+    fun quat_tran_mat_ket_noi_van_bam_bat_tat_va_chon_toc_do_duoc() {
+        var daBamQuat = 0
+        val tocDoChon = mutableListOf<Int>()
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            SmartHomeTheme {
+                RoomDetailScreen(
+                    room = phong,
+                    onBack = {}, onHome = {},
+                    onToggleLight = {},
+                    onToggleFan = { daBamQuat++ },
+                    onAcTemp = {}, onMode = {}, onToggleSchedule = {},
+                    oDen = null,
+                    oQuat = that(online = false, bat = null, lyDoLoi = "timed out"),
+                    onFanSpeed = { tocDoChon += it },
+                )
+            }
+        }
+        rule.mainClock.advanceTimeByFrame()
+
+        rule.onNodeWithText("—").assertIsDisplayed()
+        rule.onNodeWithText("Bật quạt").assertIsDisplayed()
+        rule.onNodeWithText("Bật quạt").performClick()
+        rule.onNodeWithText("2").performClick()
+
+        assertEquals(1, daBamQuat)
+        assertEquals(listOf(2), tocDoChon)
     }
 }
