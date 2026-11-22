@@ -96,6 +96,10 @@ class TroLyGiongNoi(
     @Volatile
     private var banSongCong: Boolean = false
 
+    /** Bo qua phan tieng con lai cua luot tra loi hien tai sau khi nguoi dung bam ngat loi. */
+    @Volatile
+    private var boQuaLuotHienTai: Boolean = false
+
     // ---------------------------------------------------------------
 
     fun bat(c: CauHinhGiongNoi) {
@@ -127,6 +131,7 @@ class TroLyGiongNoi(
         tokenVaoPhien = 0
         tokenRaPhien = 0
         tokenTongPhien = 0
+        boQuaLuotHienTai = false
         cauHinh = c
         congCu = CongCuNha(nha, guiMqtt = c.guiMqtt)
         _phien.value = PhienGiongNoi(trangThai = TrangThaiGiongNoi.DangNoi)
@@ -178,6 +183,7 @@ class TroLyGiongNoi(
         live?.dong(); live = null
         cheDoThoai?.tat(); cheDoThoai = null
         congCu = null
+        boQuaLuotHienTai = false
         _phien.update {
             it.copy(
                 trangThai = if (vi == null) TrangThaiGiongNoi.Tat else TrangThaiGiongNoi.Loi(vi),
@@ -187,6 +193,16 @@ class TroLyGiongNoi(
 
     fun batTat(c: CauHinhGiongNoi) {
         if (_phien.value.dangChay) tat() else bat(c)
+    }
+
+    /** Ngat loi tro ly khi dang phat tieng: xoa hang doi loa va mo mic lai ngay. */
+    fun ngatLoi() {
+        if (_phien.value.trangThai !is TrangThaiGiongNoi.DangTraLoi) return
+        boQuaLuotHienTai = true
+        phat?.xoaHangDoi()
+        if (banSongCong) thu?.khoaMic(false)
+        mocHoatDong = System.currentTimeMillis()
+        dat(TrangThaiGiongNoi.DangNghe)
     }
 
     /** Xoa cau bao loi dang hien tren bang thoai. */
@@ -202,10 +218,12 @@ class TroLyGiongNoi(
 
         override fun sanSang() {
             mocHoatDong = System.currentTimeMillis()
+            boQuaLuotHienTai = false
             dat(TrangThaiGiongNoi.DangNghe)
         }
 
         override fun tiengNoi(pcm: ByteArray) {
+            if (boQuaLuotHienTai) return
             mocHoatDong = System.currentTimeMillis()
             if (_phien.value.trangThai !is TrangThaiGiongNoi.DangTraLoi) {
                 dat(TrangThaiGiongNoi.DangTraLoi)
@@ -214,17 +232,20 @@ class TroLyGiongNoi(
         }
 
         override fun biNgatLoi() {
+            boQuaLuotHienTai = false
             phat?.xoaHangDoi()
             dat(TrangThaiGiongNoi.DangNghe)
         }
 
         override fun hetLuot() {
             mocHoatDong = System.currentTimeMillis()
+            boQuaLuotHienTai = false
             dat(TrangThaiGiongNoi.DangNghe)
         }
 
         override fun loiThoai(cau: String, cuaMinh: Boolean) {
             mocHoatDong = System.currentTimeMillis()
+            if (cuaMinh) boQuaLuotHienTai = false
             themThoai(cau, cuaMinh)
         }
 

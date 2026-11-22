@@ -164,3 +164,51 @@ export function gopDien(cu: DienState, topic: string, payload: string): DienStat
   }
 }
 
+export function trungBinhKwh(slice: NgayKwh[]): number | null {
+  if (slice.length === 0) return null;
+  const sum = slice.reduce((acc, d) => acc + d.kwh, 0);
+  return sum / slice.length;
+}
+
+/**
+ * Ước tính tiền điện của một ngày dựa theo đơn giá bình quân thực tế từ kỳ hiện tại.
+ * Trả null nếu chưa có đủ dữ liệu lũy kế tháng (tuyệt đối không bịa đơn giá).
+ */
+export function uocTinhTienNgay(kwh: number, dien: DienState): number | null {
+  if (dien.thangTien === null || dien.thangSanLuong === null || dien.thangSanLuong <= 0) {
+    return null;
+  }
+  return kwh * (dien.thangTien / dien.thangSanLuong);
+}
+
+function parseIsoDateLocal(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mon = Number(m[2]);
+  const day = Number(m[3]);
+  const dt = new Date(y, mon - 1, day);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mon - 1 || dt.getDate() !== day) return null;
+  return dt;
+}
+
+export function dinhDangDdMm(iso: string): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso.trim());
+  return m ? `${m[2]}/${m[1]}` : iso.slice(-5);
+}
+
+export function nhanThuNgayNgan(iso: string): string {
+  const dt = parseIsoDateLocal(iso);
+  if (!dt) return dinhDangDdMm(iso);
+  const dow = dt.getDay(); // 0 = CN, 1 = T2 .. 6 = T7
+  return dow === 0 ? 'CN' : `T${dow + 1}`;
+}
+
+export function nhanThuNgayDayDu(iso: string): string {
+  const dt = parseIsoDateLocal(iso);
+  if (!dt) return iso;
+  const dow = dt.getDay();
+  return dow === 0 ? 'Chủ nhật' : `Thứ ${dow + 1}`;
+}
+
+

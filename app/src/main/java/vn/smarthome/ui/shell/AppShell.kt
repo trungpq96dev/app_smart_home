@@ -30,7 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import vn.smarthome.ui.components.BangGiongNoi
+import vn.smarthome.data.giongnoi.TrangThaiGiongNoi
+import vn.smarthome.ui.components.BangThoaiGiongNoi
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import vn.smarthome.ui.components.OtaUpdateDialog
@@ -156,6 +157,33 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
     }
 
+    val canhBaoMuc = remember(bomNuoc, ketNoiBom, ketNoi, server) {
+        tinhCanhBaoSidebar(
+            bomNuoc = bomNuoc,
+            ketNoiBom = ketNoiBom,
+            ketNoiMqtt = ketNoi,
+            server = server,
+        )
+    }
+
+    val onBamTroLy: () -> Unit = {
+        when {
+            phienGiongNoi.trangThai is TrangThaiGiongNoi.DangTraLoi -> vm.ngatLoiGiongNoi()
+            phienGiongNoi.dangChay -> vm.dongGiongNoi()
+            !cauHinhGiongNoi.coKhoa() -> {
+                toast("Chưa khai báo khóa Gemini. Vào Cài đặt → Trợ lý giọng nói.")
+                openRoom = null
+                showChiTietDien = false
+                showWifi = false
+                current = Dest.SETTINGS.route
+            }
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED -> vm.batTatGiongNoi()
+
+            else -> xinQuyenMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(SH.Bg)) {
         Row(Modifier.fillMaxSize()) {
             SideNav(
@@ -166,6 +194,9 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     showChiTietDien = false
                     showWifi = false
                 },
+                phienGiongNoi = phienGiongNoi,
+                onBamTroLy = onBamTroLy,
+                canhBaoMuc = canhBaoMuc,
             )
 
             Box(
@@ -358,25 +389,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
 
-        // Nut mic noi tren moi man. Goc duoi ben PHAI: canh trai la cot menu,
-        // canh duoi giua la snackbar.
-        BangGiongNoi(
+        // Bang thoai tro ly AI chi hien khi dang noi chuyen hoac co loi.
+        // Nut bam co dinh da nam o day Sidebar ben trai, khong che noi dung ben phai.
+        BangThoaiGiongNoi(
             phien = phienGiongNoi,
-            onBatTat = {
-                when {
-                    phienGiongNoi.dangChay -> vm.dongGiongNoi()
-                    !cauHinhGiongNoi.coKhoa() -> {
-                        toast("Chưa khai báo khóa Gemini. Vào Cài đặt → Trợ lý giọng nói.")
-                        current = Dest.SETTINGS.route
-                    }
-                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED -> vm.batTatGiongNoi()
-
-                    else -> xinQuyenMic.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            },
             onDong = { vm.dongGiongNoi(); vm.xoaLoiGiongNoi() },
-            modifier = Modifier.align(Alignment.BottomEnd),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = Dim.SidebarWidth + Dim.MainPadding, bottom = Dim.MainPadding),
         )
 
         // Pop-up thong bao co ban cap nhat moi tren Git

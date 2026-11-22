@@ -221,6 +221,25 @@ class ScreenshotTest {
     }
 
     @Test
+    fun chup_thong_ke_dien_chon_cot() {
+        shoot("4e-thong-ke-dien-chon-cot") {
+            Content { StatsScreen(HomeState(), dienMau(), KetNoi.DaNoi, {}, {}, {}) }
+        }
+        rule.onNodeWithText("T3").performClick()
+        rule.mainClock.advanceTimeBy(600)
+        rule.waitForIdle()
+        val view = rule.activity.window.decorView
+        val bmp = Bitmap.createBitmap(
+            maxOf(view.width, 1), maxOf(view.height, 1), Bitmap.Config.ARGB_8888
+        )
+        view.draw(Canvas(bmp))
+        val dir = File("build/screenshots").apply { mkdirs() }
+        FileOutputStream(File(dir, "4e-thong-ke-dien-chon-cot.png")).use {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
+    @Test
     fun chup_chi_tiet_dien() {
         shoot("4c-chi-tiet-dien") {
             Content { ChiTietDienScreen(dienMau(), {}) }

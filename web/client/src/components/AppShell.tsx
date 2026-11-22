@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { dangChayTrangThai } from '../data/giongnoi/types.js';
 import { DEST_ITEMS } from '../data/models.js';
+import { tinhCanhBaoSidebar } from '../data/sidebarStatus.js';
 import { AutomationScreen } from '../screens/AutomationScreen.js';
 import { CamBienScreen } from '../screens/CamBienScreen.js';
 import { CameraScreen } from '../screens/CameraScreen.js';
@@ -31,6 +32,9 @@ export function AppShell() {
     mqttStatus,
     cameraStatus,
     dien,
+    server,
+    bomNuoc,
+    ketNoiBom,
     nowMs,
     toasts,
     dismissToast,
@@ -38,11 +42,30 @@ export function AppShell() {
     voiceSheetOpen,
     setVoiceSheetOpen,
     batTatGiongNoi,
+    tatGiongNoi,
+    ngatLoiGiongNoi,
   } = useSmartHome();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const voiceRunning = dangChayTrangThai(phienGiongNoi.trangThai);
+  const canhBaoMuc = tinhCanhBaoSidebar({
+    bomNuoc,
+    ketNoiBom,
+    mqttStatus,
+    gatewayOnline,
+    server,
+  });
+
+  const handleBamTroLy = () => {
+    if (phienGiongNoi.trangThai.state === 'dang_tra_loi') {
+      ngatLoiGiongNoi();
+    } else if (voiceRunning) {
+      tatGiongNoi();
+    } else {
+      batTatGiongNoi();
+    }
+  };
 
   const activeRoom = selectedRoomDetailId
     ? rooms.find((r) => r.id === selectedRoomDetailId)
@@ -91,7 +114,9 @@ export function AppShell() {
         onSelect={navigateDest}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
-        gatewayOnline={gatewayOnline}
+        canhBaoMuc={canhBaoMuc}
+        phienGiongNoi={phienGiongNoi}
+        onBamTroLy={handleBamTroLy}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

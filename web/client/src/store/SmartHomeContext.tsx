@@ -346,6 +346,7 @@ interface SmartHomeContextValue {
   clearVoiceUsage: () => void;
   batTatGiongNoi: () => void;
   tatGiongNoi: () => void;
+  ngatLoiGiongNoi: () => void;
   xoaLoiGiongNoi: () => void;
 
   // Update Check
@@ -1953,6 +1954,10 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     troLyRef.current?.tat();
   }, []);
 
+  const ngatLoiGiongNoi = useCallback(() => {
+    troLyRef.current?.ngatLoi();
+  }, []);
+
   const xoaLoiGiongNoi = useCallback(() => {
     troLyRef.current?.xoaLoi();
   }, []);
@@ -2114,6 +2119,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     clearVoiceUsage,
     batTatGiongNoi,
     tatGiongNoi,
+    ngatLoiGiongNoi,
     xoaLoiGiongNoi,
     updateCheck,
     checkGithubUpdate,

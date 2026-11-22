@@ -62,6 +62,7 @@ import vn.smarthome.data.dien.DoTuoi
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.ui.components.ArcGauge
 import vn.smarthome.ui.components.BarChart
+import vn.smarthome.ui.components.BarLabelMode
 import vn.smarthome.ui.components.BieuDoNuocThang
 import vn.smarthome.ui.components.DemoBadge
 import vn.smarthome.ui.components.Dot
@@ -187,6 +188,11 @@ private fun ColumnScope.TabDienNang(
     val bars = dien.lichSu.takeLast(range.days)
     val tong = dien.tongKwh(range.days)
     val chenh = dien.chenhPhanTram(range.days)
+    var selectedIdx by remember(range, bars.size) { mutableStateOf<Int?>(null) }
+    val avgKwh = remember(bars) {
+        if (bars.isEmpty()) null else bars.map { it.kwh }.average()
+    }
+    val selectedDay = selectedIdx?.let { bars.getOrNull(it) }
 
     SmartCard(Modifier.fillMaxWidth().weight(1f), padding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -254,6 +260,13 @@ private fun ColumnScope.TabDienNang(
                 values = bars.map { it.kwh.toFloat() },
                 labels = nhanNgay(bars.map { it.ngay }),
                 color = mau,
+                unit = "kWh",
+                labelMode = if (bars.size <= 7) BarLabelMode.ALL else BarLabelMode.KEY_POINTS,
+                averageValue = avgKwh?.toFloat(),
+                averageLabel = avgKwh?.let { "TB: ${soLe1(it)} kWh" },
+                selectedIndex = selectedIdx,
+                onSelectIndex = { selectedIdx = it },
+                startAtZero = true,
                 modifier = Modifier.fillMaxWidth().weight(1f),
             )
         }
@@ -265,30 +278,113 @@ private fun ColumnScope.TabDienNang(
         Modifier.fillMaxWidth().height(116.dp),
         horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
     ) {
-        // KHONG con tile "Cong suat hien tai": EVN chot theo ngay, khong co so
-        // tuc thoi. Thay bang san luong cua ngay EVN da chot gan nhat.
-        TheSo(
-            nhan = "Sản lượng ngày gần nhất",
-            icon = Icons.Filled.Today,
-            mau = mau,
-            giaTri = dien.ngaySanLuong?.let { soLe1(it) + " kWh" } ?: "--",
-            phu = dien.ngay ?: "chưa có ngày",
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
+        if (selectedDay != null) {
+            val diffPct = avgKwh?.takeIf { it > 0.0 }?.let { avg ->
+                Math.round((selectedDay.kwh - avg) / avg * 100.0).toInt()
+            }
+            val diffText = diffPct?.let { p ->
+                (if (p >= 0) "+$p%" else "$p%") + " so với TB kỳ"
+            } ?: ddMm(selectedDay.ngay)
 
-        // Tien phai la LUY KE CA KY (dien/thang/tien), khong phai theo khoang
-        // dang chon. Gia dien bac thang luy tien nen cong tien cua 7 ngay roi
-        // suy ra ca thang la sai rat xa.
-        TheSo(
-            nhan = "Chi phí tháng này đến giờ",
-            icon = Icons.Filled.Payments,
-            mau = SH.Amber,
-            giaTri = dien.thangTien?.let { tienVnd(it) } ?: "--",
-            phu = dien.thangSanLuong?.let { soLe1(it) + " kWh luỹ kế" } ?: "chưa có luỹ kế",
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
+            TheSo(
+                nhan = "Sản lượng ${thuDayDu(selectedDay.ngay)} (${ddMm(selectedDay.ngay)})",
+                icon = Icons.Filled.Today,
+                mau = mau,
+                giaTri = soLe1(selectedDay.kwh) + " kWh",
+                phu = diffText,
+                highlight = true,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
 
-        TheTrangThai(dien, ketNoi, Modifier.weight(1f).fillMaxHeight())
+            // Uoc tinh tien dien cho ngay duoc chon dua theo don gia binh quan THUC TE cua ky hien tai.
+            // Khong co luy ke thang -> hien "--" theo dung nguyen tac khong bia so.
+            val donGiaThucTe = if (dien.thangTien != null && dien.thangSanLuong != null && dien.thangSanLuong > 0.0) {
+                dien.thangTien / dien.thangSanLuong
+            } else null
+
+            TheSo(
+                nhan = "Chi phí ước tính",
+                icon = Icons.Filled.Payments,
+                mau = SH.Amber,
+                giaTri = donGiaThucTe?.let { tienVnd(selectedDay.kwh * it) } ?: "--",
+                phu = if (donGiaThucTe != null) {
+                    "Ước tính cho ${soLe1(selectedDay.kwh)} kWh"
+                } else {
+                    "Chưa có luỹ kế tháng"
+                },
+                highlight = true,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+
+            val tuoi = dien.doTuoi()
+            val coSuCoDuongOng = ketNoi !is KetNoi.DaNoi ||
+                !dien.loi.isNullOrBlank() ||
+                dien.trangThai == "loi" ||
+                tuoi == DoTuoi.QUA_CU ||
+                tuoi == DoTuoi.HOI_CU ||
+                tuoi == DoTuoi.CHUA_CO
+
+            if (coSuCoDuongOng) {
+                TheTrangThai(dien, ketNoi, Modifier.weight(1f).fillMaxHeight())
+            } else {
+                val (mauNgay, chuNgay) = when {
+                    avgKwh != null && avgKwh > 0.0 && selectedDay.kwh > avgKwh * 1.25 -> SH.Amber to "Cao hơn TB"
+                    avgKwh != null && avgKwh > 0.0 && selectedDay.kwh < avgKwh * 0.85 -> SH.Green to "Tiết kiệm"
+                    else -> SH.Green to "Bình thường"
+                }
+                SmartCard(
+                    Modifier.weight(1f).fillMaxHeight(),
+                    borderColor = SH.Blue.copy(alpha = 0.5f),
+                    padding = 10.dp,
+                ) {
+                    Text("Trạng thái", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+                    Spacer(Modifier.weight(1f))
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconBadge(
+                            if (mauNgay == SH.Green) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                            mauNgay,
+                            size = 30.dp,
+                            iconSize = 17.dp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(chuNgay, style = SHType.BodyMed, color = mauNgay, maxLines = 1)
+                        Text(
+                            ddMm(selectedDay.ngay),
+                            style = SHType.Caption,
+                            color = SH.TextOff,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        } else {
+            // KHONG con tile "Cong suat hien tai": EVN chot theo ngay, khong co so
+            // tuc thoi. Thay bang san luong cua ngay EVN da chot gan nhat.
+            TheSo(
+                nhan = "Sản lượng ngày gần nhất",
+                icon = Icons.Filled.Today,
+                mau = mau,
+                giaTri = dien.ngaySanLuong?.let { soLe1(it) + " kWh" } ?: "--",
+                phu = dien.ngay ?: "chưa có ngày",
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+
+            // Tien phai la LUY KE CA KY (dien/thang/tien), khong phai theo khoang
+            // dang chon. Gia dien bac thang luy tien nen cong tien cua 7 ngay roi
+            // suy ra ca thang la sai rat xa.
+            TheSo(
+                nhan = "Chi phí tháng này đến giờ",
+                icon = Icons.Filled.Payments,
+                mau = SH.Amber,
+                giaTri = dien.thangTien?.let { tienVnd(it) } ?: "--",
+                phu = dien.thangSanLuong?.let { soLe1(it) + " kWh luỹ kế" } ?: "chưa có luỹ kế",
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+
+            TheTrangThai(dien, ketNoi, Modifier.weight(1f).fillMaxHeight())
+        }
     }
 }
 
@@ -301,8 +397,13 @@ private fun TheSo(
     giaTri: String,
     phu: String,
     modifier: Modifier = Modifier,
+    highlight: Boolean = false,
 ) {
-    SmartCard(modifier, padding = 10.dp) {
+    SmartCard(
+        modifier = modifier,
+        borderColor = if (highlight) SH.Blue.copy(alpha = 0.5f) else SH.Border,
+        padding = 10.dp,
+    ) {
         Text(nhan, style = SHType.Caption, color = SH.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.weight(1f))
         IconBadge(icon, mau, size = 30.dp, iconSize = 17.dp)
@@ -572,8 +673,17 @@ private fun ColumnScope.TabDuLieuMau(state: HomeState) {
             DeltaChip(s.deltaPercent, Modifier.padding(bottom = 5.dp))
         }
         Spacer(Modifier.height(8.dp))
+        val avgDemo = remember(s.bars) {
+            if (s.bars.isEmpty()) null else s.bars.average().toFloat()
+        }
         BarChart(
-            values = s.bars, labels = s.labels, color = s.kind.color,
+            values = s.bars,
+            labels = s.labels,
+            color = s.kind.color,
+            unit = s.unit,
+            labelMode = if (s.bars.size <= 7) BarLabelMode.ALL else BarLabelMode.KEY_POINTS,
+            averageValue = avgDemo,
+            averageLabel = avgDemo?.let { "TB: ${soLe1(it.toDouble())} ${s.unit}" },
             modifier = Modifier.fillMaxWidth().weight(1f),
         )
     }
@@ -722,6 +832,19 @@ private fun nhanNgay(ngay: List<String>): List<String> {
             d?.let { "%02d/%02d".format(it.dayOfMonth, it.monthValue) } ?: ""
         } else ""
     }
+}
+
+private fun thuDayDu(iso: String): String {
+    val d = runCatching { LocalDate.parse(iso) }.getOrNull() ?: return iso
+    return when (d.dayOfWeek.value) {
+        7 -> "Chủ nhật"
+        else -> "Thứ " + (d.dayOfWeek.value + 1)
+    }
+}
+
+private fun ddMm(iso: String): String {
+    val d = runCatching { LocalDate.parse(iso) }.getOrNull() ?: return iso
+    return "%02d/%02d".format(d.dayOfMonth, d.monthValue)
 }
 
 @Preview(widthDp = 830, heightDp = 601, showBackground = true)

@@ -34,7 +34,7 @@ object Dim {
     val BorderWidth  = 1.dp
 
     val TouchTarget  = 44.dp
-    val NavItemH     = 42.dp
+    val NavItemH     = 38.dp
     val DeviceRowH   = 60.dp
     val ButtonH      = 42.dp
 }

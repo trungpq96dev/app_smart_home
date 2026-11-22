@@ -13,6 +13,7 @@ export function BangGiongNoi() {
     setVoiceSheetOpen,
     batTatGiongNoi,
     tatGiongNoi,
+    ngatLoiGiongNoi,
     xoaLoiGiongNoi,
     navigateDest,
   } = useSmartHome();
@@ -21,6 +22,7 @@ export function BangGiongNoi() {
 
   const { trangThai, thoai, daLam, giayDaChay, banSongCong } = phienGiongNoi;
   const dangChay = dangChayTrangThai(trangThai);
+  const dangTraLoi = trangThai.state === 'dang_tra_loi';
   const coKhoa = coKhoaGiongNoi(voiceConfig);
 
   const phut = String(Math.floor(giayDaChay / 60)).padStart(2, '0');
@@ -182,6 +184,12 @@ export function BangGiongNoi() {
           </div>
 
           <div className="flex items-center gap-2">
+            {dangTraLoi && (
+              <FlatButton onClick={ngatLoiGiongNoi} color={SH.Purple} variant="soft">
+                <Mic size={15} />
+                <span>Ngắt lời</span>
+              </FlatButton>
+            )}
             {dangChay ? (
               <FlatButton onClick={tatGiongNoi} color={SH.Red} variant="solid">
                 <MicOff size={15} />

@@ -10,12 +10,30 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import vn.smarthome.data.bomnuoc.BomNuocState
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
+import vn.smarthome.data.dien.DienState
+import vn.smarthome.data.dien.KetNoi
+import vn.smarthome.data.dien.NgayKwh
+import vn.smarthome.data.server.ServerContainer
+import vn.smarthome.data.server.ServerMetric
+import vn.smarthome.data.server.ServerState
+import vn.smarthome.ui.screens.StatsScreen
 import vn.smarthome.ui.shell.AppShell
+import vn.smarthome.ui.shell.Dest
+import vn.smarthome.ui.shell.tinhCanhBaoSidebar
+import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SmartHomeTheme
+import vn.smarthome.vm.HomeState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Widgets
 
 /**
  * Kiem thu khoi dong, chay tren JVM bang Robolectric - khong can may that.
@@ -404,5 +422,95 @@ class ShellSmokeTest {
         // duoc - day la cho de chia cho 0 nhat (tran ngay chia cho so giay da
         // dung, ma lan dau cai app thi ca hai deu bang 0).
         rule.onNodeWithText("Trần mỗi ngày (phút)").assertExists()
+    }
+
+    @Test
+    fun sidebar_chia_hai_cum_va_hien_nut_tro_ly_ai() {
+        start()
+        rule.onNodeWithText("HẰNG NGÀY").assertIsDisplayed()
+        rule.onNodeWithText("HỆ THỐNG").assertIsDisplayed()
+        rule.onNodeWithText("Trợ lý AI").assertIsDisplayed()
+        // Thu tu nhom HANG NGAY va HE THONG dung theo thiet ke
+        assertEquals(listOf(Dest.HOME, Dest.DEVICES, Dest.CAMERA, Dest.UTILITIES), Dest.daily)
+        assertEquals(
+            listOf(Dest.AUTOMATION, Dest.SENSORS, Dest.STATS, Dest.SERVER, Dest.SETTINGS),
+            Dest.system,
+        )
+    }
+
+    @Test
+    fun tinh_canh_bao_sidebar_tra_dung_cham_do_vang() {
+        val binhThuong = tinhCanhBaoSidebar(
+            bomNuoc = BomNuocState(locked = 0, bstLock = 0, fault = ""),
+            ketNoiBom = TrangThaiKetNoiBom.ChuaCauHinh,
+            ketNoiMqtt = KetNoi.ChuaCauHinh,
+            server = ServerState(),
+        )
+        assertNull(binhThuong[Dest.AUTOMATION])
+        assertNull(binhThuong[Dest.SERVER])
+
+        val bomKhoaVaMqttLoi = tinhCanhBaoSidebar(
+            bomNuoc = BomNuocState(locked = 1, fault = "Dang khoa vi lan truoc bom chay can"),
+            ketNoiBom = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 1),
+            ketNoiMqtt = KetNoi.Loi("timeout"),
+            server = ServerState(),
+        )
+        assertEquals(SH.Red, bomKhoaVaMqttLoi[Dest.AUTOMATION])
+        assertEquals(SH.Red, bomKhoaVaMqttLoi[Dest.SERVER])
+
+        val bomSoCuVaContainerDung = tinhCanhBaoSidebar(
+            bomNuoc = BomNuocState(locked = 0, bstLock = 0, fault = ""),
+            ketNoiBom = TrangThaiKetNoiBom.SoCu(45),
+            ketNoiMqtt = KetNoi.DaNoi,
+            server = ServerState(
+                isRealData = true,
+                metric = ServerMetric(cpuTempC = 50f),
+                containers = listOf(ServerContainer("go2rtc", "alexxit/go2rtc", "exited", "Exited", Icons.Filled.Widgets)),
+            ),
+        )
+        assertEquals(SH.Amber, bomSoCuVaContainerDung[Dest.AUTOMATION])
+        assertEquals(SH.Amber, bomSoCuVaContainerDung[Dest.SERVER])
+    }
+
+    @Test
+    fun cham_cot_bieu_do_dien_cap_nhat_the_chi_tiet_ngay() {
+        val ngay = (1..7).map { "2026-11-%02d".format(it + 7) } // 2026-11-08 (CN) .. 2026-11-14 (T7)
+        val kwh = listOf(8.4, 9.2, 12.8, 13.5, 6.1, 6.1, 7.4)
+        val dien = DienState(
+            trangThai = "ok",
+            ngaySanLuong = 7.4,
+            ngay = "2026-11-14",
+            thangSanLuong = 200.0,
+            thangTien = 500_000.0,
+            lichSu = ngay.zip(kwh) { n, k -> NgayKwh(n, k) },
+        )
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            SmartHomeTheme {
+                StatsScreen(
+                    state = HomeState(),
+                    dien = dien,
+                    ketNoi = KetNoi.DaNoi,
+                    onBack = {},
+                    onKind = {},
+                    onRange = {},
+                )
+            }
+        }
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Sản lượng ngày gần nhất").assertIsDisplayed()
+
+        // Bam nhan cot T3 (ngay 10/11, 12.8 kWh -> don gia 2.500d/kWh = 32.000 d)
+        rule.onNodeWithText("T3").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Sản lượng Thứ 3 (10/11)").assertIsDisplayed()
+        rule.onNodeWithText("12.8 kWh").assertIsDisplayed()
+        rule.onNodeWithText("Chi phí ước tính").assertIsDisplayed()
+        rule.onNodeWithText("32.000 đ").assertIsDisplayed()
+
+        // Bam lai T3 lan nua -> quay ve mac dinh
+        rule.onNodeWithText("T3").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Sản lượng ngày gần nhất").assertIsDisplayed()
     }
 }

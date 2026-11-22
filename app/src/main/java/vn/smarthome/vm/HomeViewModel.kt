@@ -396,6 +396,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dongGiongNoi() = troLy.tat()
 
+    fun ngatLoiGiongNoi() = troLy.ngatLoi()
+
     fun xoaLoiGiongNoi() = troLy.xoaLoi()
 
     fun luuCauHinhGiongNoi(c: CauHinhGiongNoi) {

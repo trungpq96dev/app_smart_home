@@ -1,14 +1,26 @@
 import React from 'react';
 import { SH, tint } from '../theme/colors.js';
 
+export type BarLabelMode = 'none' | 'all' | 'key_points';
+
+function formatBarVal(v: number): string {
+  if (v >= 100) return String(Math.round(v));
+  return v.toFixed(1).replace(/\.0$/, '');
+}
+
 export function BarChart({
   values,
   labels,
   color,
   unit = '',
-  height = 176,
+  height = 200,
   highlightIndex,
+  selectedIndex,
   onSelectIndex,
+  labelMode = 'none',
+  averageValue,
+  averageLabel,
+  startAtZero = false,
 }: {
   values: number[];
   labels: string[];
@@ -16,80 +28,186 @@ export function BarChart({
   unit?: string;
   height?: number;
   highlightIndex?: number | null;
+  selectedIndex?: number | null;
   onSelectIndex?: (idx: number) => void;
+  labelMode?: BarLabelMode;
+  averageValue?: number | null;
+  averageLabel?: string;
+  startAtZero?: boolean;
 }) {
+  const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, '');
   if (values.length === 0) return null;
-  const maxVal = Math.max(...values, 0.001);
-  const w = Math.max(320, values.length * 36);
-  const padX = 12;
-  const padTop = 24;
+
+  const activeIdx =
+    selectedIndex !== undefined
+      ? selectedIndex
+      : highlightIndex !== undefined
+        ? highlightIndex
+        : null;
+  const hasActive = activeIdx !== null && activeIdx >= 0 && activeIdx < values.length;
+
+  const maxVal = Math.max(...values, averageValue ?? 0, 0.001);
+  const minVal = Math.max(0, Math.min(...values));
+  const floor = !startAtZero && minVal / maxVal > 0.6 ? minVal * 0.92 : 0;
+  const span = Math.max(maxVal - floor, 0.001);
+
+  const w = Math.max(360, values.length * (values.length <= 7 ? 72 : 34));
+  const padX = 14;
+  const padTop = labelMode !== 'none' ? 28 : 16;
   const padBottom = 26;
-  const plotH = height - padTop - padBottom;
+  const plotH = Math.max(40, height - padTop - padBottom);
   const barStep = (w - padX * 2) / values.length;
-  const barW = Math.min(26, Math.max(8, barStep * 0.56));
+  const barW = Math.min(values.length <= 7 ? 56 : 26, Math.max(8, barStep * (values.length <= 7 ? 0.56 : 0.64)));
+
+  const peakIdx = values.reduce((best, val, idx) => (val > values[best] ? idx : best), 0);
+  const keyLabelIndices = (() => {
+    if (labelMode === 'none') return new Set<number>();
+    if (labelMode === 'all') return new Set(values.map((_, i) => i));
+    const chosen: number[] = [];
+    const addIfRoom = (idx: number | null) => {
+      if (idx === null || idx < 0 || idx >= values.length || chosen.includes(idx)) return;
+      const cx = padX + idx * barStep + barStep / 2;
+      const minDist = values.length > 20 ? 34 : 26;
+      if (chosen.some((other) => Math.abs(padX + other * barStep + barStep / 2 - cx) < minDist)) {
+        return;
+      }
+      chosen.push(idx);
+    };
+    addIfRoom(activeIdx);
+    addIfRoom(peakIdx);
+    addIfRoom(values.length - 1);
+    return new Set(chosen);
+  })();
+
+  const avgY =
+    averageValue !== null && averageValue !== undefined && averageValue > 0
+      ? padTop + plotH * (1 - Math.min(1, Math.max(0, (averageValue - floor) / span)))
+      : null;
+
+  const gradId = `barGrad-${uid}`;
 
   return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ minWidth: values.length > 14 ? 480 : 280 }}>
-        {/* Grid lines */}
-        {[0.25, 0.5, 0.75, 1].map((f) => {
-          const y = padTop + plotH * (1 - f);
-          return (
-            <line
-              key={f}
-              x1={padX}
-              x2={w - padX}
-              y1={y}
-              y2={y}
-              stroke={SH.Border}
-              strokeDasharray="3 4"
-              strokeWidth={1}
-            />
-          );
-        })}
+    <div className="w-full overflow-x-auto select-none">
+      <svg
+        viewBox={`0 0 ${w} ${height}`}
+        className="w-full"
+        style={{ minWidth: values.length > 14 ? 520 : 300 }}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={1} />
+            <stop offset="100%" stopColor={color} stopOpacity={0.55} />
+          </linearGradient>
+        </defs>
 
         {values.map((val, i) => {
-          const ratio = Math.max(0.03, val / maxVal);
-          const bh = ratio * plotH;
-          const x = padX + i * barStep + (barStep - barW) / 2;
+          const frac = Math.min(1, Math.max(0.04, (val - floor) / span));
+          const bh = Math.max(4, frac * plotH);
+          const slotX = padX + i * barStep;
+          const x = slotX + (barStep - barW) / 2;
           const y = padTop + plotH - bh;
-          const isHi = highlightIndex === i || (highlightIndex == null && i === values.length - 1);
+          const isSelected = activeIdx === i;
+          const dimmed = hasActive && !isSelected;
           const lbl = labels[i] ?? '';
+          const showTopLabel = keyLabelIndices.has(i);
+          const rx = Math.min(barW * 0.28, bh / 2);
+
           return (
             <g
               key={i}
               onClick={() => onSelectIndex?.(i)}
               className={onSelectIndex ? 'cursor-pointer' : undefined}
             >
+              {/* Full slot hit target */}
+              <rect x={slotX} y={0} width={barStep} height={height} fill="transparent" />
+
+              {/* Subtle backdrop around active column */}
+              {isSelected && (
+                <rect
+                  x={x - Math.min(8, (barStep - barW) * 0.35)}
+                  y={4}
+                  width={barW + Math.min(16, (barStep - barW) * 0.7)}
+                  height={height - 6}
+                  rx={12}
+                  fill="rgba(255,255,255,0.05)"
+                />
+              )}
+
+              {/* Bar track */}
+              <rect
+                x={x}
+                y={padTop}
+                width={barW}
+                height={plotH}
+                rx={barW * 0.28}
+                fill={SH.Card2}
+                opacity={dimmed ? 0.5 : 0.9}
+              />
+
+              {/* Data bar */}
               <rect
                 x={x}
                 y={y}
                 width={barW}
                 height={bh}
-                rx={Math.min(5, barW / 2)}
-                fill={isHi ? color : tint(color, 0.45)}
+                rx={rx}
+                fill={`url(#${gradId})`}
+                opacity={dimmed ? 0.45 : 1}
               />
-              {isHi && (
+
+              {/* Active glow outline */}
+              {isSelected && (
+                <>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={bh}
+                    rx={rx}
+                    fill="none"
+                    stroke="#60A5FA"
+                    strokeOpacity={0.38}
+                    strokeWidth={4.5}
+                  />
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={bh}
+                    rx={rx}
+                    fill="none"
+                    stroke="#93C5FD"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
+
+              {/* Top value label */}
+              {showTopLabel && (
                 <text
                   x={x + barW / 2}
-                  y={Math.max(12, y - 6)}
+                  y={Math.max(14, y - 7)}
                   textAnchor="middle"
-                  fill={SH.TextPrimary}
-                  fontSize="10"
-                  fontWeight="700"
+                  fill={isSelected ? '#FFFFFF' : '#CBD5E1'}
+                  opacity={dimmed ? 0.5 : 1}
+                  fontSize={isSelected ? '11.5' : '10.5'}
+                  fontWeight={isSelected ? '700' : '500'}
                 >
-                  {val >= 100 ? Math.round(val) : val.toFixed(1).replace(/\.0$/, '')}
-                  {unit ? ` ${unit}` : ''}
+                  {formatBarVal(val)}
+                  {isSelected && unit ? ` ${unit}` : ''}
                 </text>
               )}
+
+              {/* Bottom axis label */}
               {lbl && (
                 <text
                   x={x + barW / 2}
                   y={height - 7}
                   textAnchor="middle"
-                  fill={isHi ? SH.TextPrimary : SH.TextDim}
-                  fontSize="10"
-                  fontWeight={isHi ? '700' : '500'}
+                  fill={isSelected ? '#FFFFFF' : SH.TextOff}
+                  opacity={dimmed ? 0.55 : 1}
+                  fontSize="10.5"
+                  fontWeight={isSelected ? '700' : '500'}
                 >
                   {lbl}
                 </text>
@@ -97,6 +215,49 @@ export function BarChart({
             </g>
           );
         })}
+
+        {/* Average dashed line + right edge label rendered above bars */}
+        {avgY !== null && (
+          <g pointerEvents="none">
+            <line
+              x1={padX}
+              x2={w - padX}
+              y1={avgY}
+              y2={avgY}
+              stroke="#CBD5E1"
+              strokeOpacity={0.45}
+              strokeDasharray="5 4"
+              strokeWidth={1.1}
+            />
+            {averageLabel && (() => {
+              const pillW = averageLabel.length * 6.1 + 10;
+              const pillX = Math.max(padX, w - padX - pillW - 2);
+              return (
+                <g>
+                  <rect
+                    x={pillX}
+                    y={Math.max(2, avgY - 19)}
+                    width={pillW}
+                    height={16}
+                    rx={4}
+                    fill={SH.Card}
+                    fillOpacity={0.88}
+                  />
+                  <text
+                    x={pillX + pillW - 5}
+                    y={Math.max(13, avgY - 7)}
+                    textAnchor="end"
+                    fill="#CBD5E1"
+                    fontSize="10"
+                    fontWeight="500"
+                  >
+                    {averageLabel}
+                  </text>
+                </g>
+              );
+            })()}
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -256,4 +417,3 @@ export function DualLineAreaChart({
     </svg>
   );
 }
-

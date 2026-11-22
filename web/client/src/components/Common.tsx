@@ -21,6 +21,7 @@ import {
   Footprints,
   Home,
   Laptop,
+  LayoutGrid,
   Lightbulb,
   Menu,
   Mic,
@@ -40,7 +41,6 @@ import {
   Video,
   Wifi,
   Workflow,
-  Wrench,
   X,
 } from 'lucide-react';
 import { type DienState, doTuoiDien, type KetNoi } from '../data/dien.js';
@@ -60,7 +60,7 @@ export function DestIcon({ route, size = 18 }: { route: DestRoute; size?: number
     case 'settings': return <Settings size={size} />;
     case 'server': return <Server size={size} />;
     case 'stats': return <BarChart3 size={size} />;
-    case 'utilities': return <Wrench size={size} />;
+    case 'utilities': return <LayoutGrid size={size} />;
   }
 }
 
@@ -548,7 +548,7 @@ export function TopBar({
           type="button"
           onClick={onVoiceToggle}
           title="Trợ lý giọng nói Gemini"
-          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold transition-all cursor-pointer"
+          className="md:hidden inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold transition-all cursor-pointer"
           style={{
             backgroundColor: voiceActive ? tint(SH.Green, 0.22) : tint(SH.Blue, 0.16),
             border: `1px solid ${voiceActive ? SH.Green : tint(SH.Blue, 0.4)}`,
@@ -556,7 +556,7 @@ export function TopBar({
           }}
         >
           {voiceActive ? <Mic size={15} /> : <MicOff size={15} />}
-          <span className="hidden lg:inline">{voiceActive ? 'Đang nghe' : 'Giọng nói'}</span>
+          <span className="hidden sm:inline">{voiceActive ? 'Đang nghe' : 'Giọng nói'}</span>
         </button>
       </div>
     </header>
