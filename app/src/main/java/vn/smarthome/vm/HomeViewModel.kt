@@ -584,10 +584,39 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Kep trong 16..30 do C - ngoai khoang nay dieu hoa dan dung khong nhan. */
     fun changeAcTemp(roomId: String, delta: Int) = editRoom(roomId) {
-        it.copy(acTemp = (it.acTemp + delta).coerceIn(16, 30))
+        it.copy(acOn = true, acTemp = (it.acTemp + delta).coerceIn(16, 30))
     }
 
-    fun setMode(roomId: String, mode: RoomMode) = editRoom(roomId) { it.copy(mode = mode) }
+    fun setMode(roomId: String, mode: RoomMode) {
+        val ct = congTac.value
+        val denThat = ct.laThat(roomId, CongCuNha.DEN)
+        val quatThat = ct.laThat(roomId, CongCuNha.QUAT)
+        editRoom(roomId) { r ->
+            when (mode) {
+                RoomMode.SLEEP -> r.copy(
+                    mode = mode,
+                    lightOn = if (denThat) r.lightOn else true,
+                    fanOn = if (quatThat) r.fanOn else true,
+                    acOn = true,
+                    acTemp = 26,
+                )
+                RoomMode.HOME -> r.copy(
+                    mode = mode,
+                    lightOn = if (denThat) r.lightOn else true,
+                    fanOn = if (quatThat) r.fanOn else false,
+                    acOn = true,
+                    acTemp = 25,
+                )
+                RoomMode.AWAY -> r.copy(
+                    mode = mode,
+                    lightOn = if (denThat) r.lightOn else false,
+                    fanOn = if (quatThat) r.fanOn else false,
+                    acOn = false,
+                )
+                RoomMode.CUSTOM -> r.copy(mode = mode)
+            }
+        }
+    }
 
     fun toggleSchedule(roomId: String) = editRoom(roomId) { it.copy(scheduleOn = !it.scheduleOn) }
 

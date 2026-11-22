@@ -206,26 +206,58 @@ fun TempStepperRow(
     onMinus: () -> Unit,
     onPlus: () -> Unit,
     modifier: Modifier = Modifier,
+    acOn: Boolean = true,
+    onToggle: (() -> Unit)? = null,
 ) {
     SmartCard(modifier = modifier.defaultMinSize(minHeight = Dim.DeviceRowH), padding = 10.dp) {
         Row(
             Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(icon, color, size = 36.dp, iconSize = 19.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                label,
-                style = SHType.CardTitle,
-                color = SH.Text,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
+            val leftModifier = if (onToggle != null) {
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onToggle)
+                    .padding(vertical = 2.dp)
+            } else {
+                Modifier.weight(1f)
+            }
+            Row(
+                modifier = leftModifier,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBadge(
+                    icon,
+                    if (acOn) color else SH.TextOff,
+                    size = 36.dp,
+                    iconSize = 19.dp,
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        label,
+                        style = SHType.CardTitle,
+                        color = SH.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (onToggle != null) {
+                        Text(
+                            if (acOn) "Đang làm lạnh • Chạm để tắt" else "Đang tắt • Chạm để bật",
+                            style = SHType.Label,
+                            color = if (acOn) color else SH.TextOff,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
             StepButton(Icons.Filled.Remove, onMinus)
             Text(
                 temp.toString() + "°C",
                 style = SHType.BodyMed,
-                color = SH.Text,
+                color = if (acOn) SH.Text else SH.TextOff,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(52.dp),

@@ -177,6 +177,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onToggleSchedule = { vm.toggleSchedule(room.id) },
                         oDen = vm.oThietBi(room.id, "den", congTac, choCongTac),
                         oQuat = vm.oThietBi(room.id, "quat", congTac, choCongTac),
+                        onToggleAc = { vm.toggleAc(room.id) },
                     )
 
                     showChiTietDien -> ChiTietDienScreen(

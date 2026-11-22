@@ -37,6 +37,7 @@ import vn.smarthome.ui.components.ChoiceChip
 import vn.smarthome.ui.components.DeviceSwitchRow
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.ImagePlaceholder
+import vn.smarthome.ui.components.MoPhongPhongNgu
 import vn.smarthome.ui.components.RoundIconButton
 import vn.smarthome.data.congtac.OThietBi
 import vn.smarthome.ui.components.SmartCard
@@ -66,7 +67,18 @@ fun RoomDetailScreen(
     /** Mac dinh null = thiet bi mau, hanh vi y nhu truoc. */
     oDen: OThietBi? = null,
     oQuat: OThietBi? = null,
+    onToggleAc: () -> Unit = {},
 ) {
+    val laPhongNgu = room.id in setOf("bed1", "bed2", "bed3")
+    val denHienThi = (oDen as? OThietBi.That)?.let {
+        val ro = it.dangCho || (it.bridgeSong && it.online && it.bat != null)
+        ro && (it.mong ?: it.bat ?: false)
+    } ?: room.lightOn
+    val quatHienThi = (oQuat as? OThietBi.That)?.let {
+        val ro = it.dangCho || (it.bridgeSong && it.online && it.bat != null)
+        ro && (it.mong ?: it.bat ?: false)
+    } ?: room.fanOn
+
     Column(Modifier.fillMaxSize()) {
 
         TopBar(
@@ -81,14 +93,25 @@ fun RoomDetailScreen(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
         ) {
-            ImagePlaceholder(
-                icon = room.icon,
-                label = room.name,
-                accent = room.accent,
-                cornerRadius = Dim.CardRadius,
-                iconSize = 44.dp,
-                modifier = Modifier.weight(1.05f).fillMaxHeight(),
-            )
+            if (laPhongNgu) {
+                MoPhongPhongNgu(
+                    lightOn = denHienThi,
+                    fanOn = quatHienThi,
+                    acOn = room.acOn,
+                    acTemp = room.acTemp,
+                    mode = room.mode,
+                    modifier = Modifier.weight(1.05f).fillMaxHeight(),
+                )
+            } else {
+                ImagePlaceholder(
+                    icon = room.icon,
+                    label = room.name,
+                    accent = room.accent,
+                    cornerRadius = Dim.CardRadius,
+                    iconSize = 44.dp,
+                    modifier = Modifier.weight(1.05f).fillMaxHeight(),
+                )
+            }
 
             Column(
                 Modifier.weight(1f).fillMaxHeight(),
@@ -120,6 +143,8 @@ fun RoomDetailScreen(
                     onMinus = { onAcTemp(-1) },
                     onPlus = { onAcTemp(1) },
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    acOn = room.acOn,
+                    onToggle = onToggleAc,
                 )
             }
         }
