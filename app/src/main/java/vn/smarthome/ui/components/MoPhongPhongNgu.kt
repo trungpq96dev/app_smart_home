@@ -124,6 +124,7 @@ fun MoPhongPhongNgu(
     modifier: Modifier = Modifier,
     lightBrightness: Int = 100,
     fanSpeed: Int = 1,
+    compact: Boolean = false,
 ) {
     val effectiveBrightness = if (mode == RoomMode.SLEEP) {
         minOf(lightBrightness.coerceIn(10, 100), 20)
@@ -199,12 +200,15 @@ fun MoPhongPhongNgu(
     }
 
     val shape = RoundedCornerShape(Dim.CardRadius)
-    Box(
-        modifier = modifier
+    val boxMod = if (compact) {
+        modifier.background(Color(0xFF0D1322))
+    } else {
+        modifier
             .clip(shape)
             .background(Color(0xFF0D1322))
-            .border(Dim.BorderWidth, SH.Border, shape),
-    ) {
+            .border(Dim.BorderWidth, SH.Border, shape)
+    }
+    Box(modifier = boxMod) {
         Canvas(Modifier.fillMaxSize()) {
             val sx = size.width / REF_W
             val sy = size.height / REF_H
@@ -262,30 +266,32 @@ fun MoPhongPhongNgu(
         }
 
         // Badge trang thai Ngay / Dem gon gang o goc tren phai (phia tren cuc lanh)
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(Color(0xB30F172A))
-                .border(1.dp, Color(0x3394A3B8), RoundedCornerShape(999.dp))
-                .padding(horizontal = 9.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Icon(
-                imageVector = if (isNightSky) Icons.Filled.NightsStay else Icons.Filled.WbSunny,
-                contentDescription = null,
-                tint = if (isNightSky) Color(0xFFFEF08A) else SH.Amber,
-                modifier = Modifier.size(12.dp),
-            )
-            Spacer(Modifier.width(5.dp))
-            Text(
-                text = if (isNightSky) "Ban đêm" else "Ban ngày",
-                style = SHType.Caption,
-                color = SH.Text,
-                maxLines = 1,
-            )
+        if (!compact) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color(0xB30F172A))
+                    .border(1.dp, Color(0x3394A3B8), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = if (isNightSky) Icons.Filled.NightsStay else Icons.Filled.WbSunny,
+                    contentDescription = null,
+                    tint = if (isNightSky) Color(0xFFFEF08A) else SH.Amber,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = if (isNightSky) "Ban đêm" else "Ban ngày",
+                    style = SHType.Caption,
+                    color = SH.Text,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

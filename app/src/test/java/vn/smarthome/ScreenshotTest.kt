@@ -100,6 +100,40 @@ class ScreenshotTest {
     }
 
     @Test
+    fun chup_trang_chu_nha_bep() {
+        shoot("1b-trang-chu-nha-bep") {
+            Content {
+                HomeScreen(
+                    state = HomeState(selectedRoom = 4),
+                    weather = vn.smarthome.data.thoitiet.ThoiTietUi.DangTai,
+                    onSelectRoom = {},
+                    onOpenRoom = {},
+                    onQuick = {},
+                    onOpenStats = {},
+                    onRefreshWeather = {},
+                )
+            }
+        }
+    }
+
+    @Test
+    fun chup_trang_chu_hanh_lang() {
+        shoot("1c-trang-chu-hanh-lang") {
+            Content {
+                HomeScreen(
+                    state = HomeState(selectedRoom = 5),
+                    weather = vn.smarthome.data.thoitiet.ThoiTietUi.DangTai,
+                    onSelectRoom = {},
+                    onOpenRoom = {},
+                    onQuick = {},
+                    onOpenStats = {},
+                    onRefreshWeather = {},
+                )
+            }
+        }
+    }
+
+    @Test
     fun chup_tien_ich_lich_am() {
         // Ngay co dinh chu khong phai LocalDate.now(): anh chup phai giong nhau
         // moi lan chay, neu khong thi khong doi chieu duoc voi lan truoc.

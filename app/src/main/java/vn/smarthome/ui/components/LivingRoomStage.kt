@@ -66,6 +66,7 @@ private const val LV_H = 550f
 fun LivingRoomStage(
     room: RoomUi,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val isEvening = room.mode == RoomMode.SLEEP || (!room.lightOn && room.curtainOpen < 25)
     val lightFactor by animateFloatAsState(
@@ -148,12 +149,15 @@ fun LivingRoomStage(
     }
 
     val shape = RoundedCornerShape(Dim.CardRadius)
-    Box(
-        modifier = modifier
+    val boxMod = if (compact) {
+        modifier.background(Color(0xFF0B101D))
+    } else {
+        modifier
             .clip(shape)
             .background(Color(0xFF0B101D))
-            .border(Dim.BorderWidth, SH.Border, shape),
-    ) {
+            .border(Dim.BorderWidth, SH.Border, shape)
+    }
+    Box(modifier = boxMod) {
         Canvas(Modifier.fillMaxSize()) {
             val sx = size.width / LV_W
             val sy = size.height / LV_H
@@ -200,22 +204,24 @@ fun LivingRoomStage(
         }
 
         // Pill trang thai khong gian o goc tren ben phai
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(10.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFF1E293B).copy(alpha = 0.86f))
-                .border(1.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        ) {
-            Text(
-                text = sceneBadgeText,
-                style = SHType.Caption,
-                color = Color(0xFFE2E8F0),
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
+        if (!compact) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFF1E293B).copy(alpha = 0.86f))
+                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = sceneBadgeText,
+                    style = SHType.Caption,
+                    color = Color(0xFFE2E8F0),
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

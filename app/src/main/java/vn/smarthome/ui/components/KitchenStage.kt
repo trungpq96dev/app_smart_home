@@ -81,6 +81,7 @@ fun KitchenStage(
     room: RoomUi,
     onSilenceGasAlert: () -> Unit = {},
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val hoodOn = room.fanOn
     val hoodSpeed = room.hoodSpeed.coerceIn(1, 3)
@@ -173,13 +174,16 @@ fun KitchenStage(
     } else {
         SH.Border
     }
-
-    Box(
-        modifier = modifier
+    val boxMod = if (compact) {
+        modifier.background(Color(0xFF090E1A))
+    } else {
+        modifier
             .clip(shape)
             .background(Color(0xFF090E1A))
-            .border(if (room.gasAlert) 2.dp else Dim.BorderWidth, borderColor, shape),
-    ) {
+            .border(if (room.gasAlert) 2.dp else Dim.BorderWidth, borderColor, shape)
+    }
+
+    Box(modifier = boxMod) {
         Canvas(Modifier.fillMaxSize()) {
             val sx = size.width / KT_W
             val sy = size.height / KT_H
@@ -266,146 +270,148 @@ fun KitchenStage(
         }
 
         // Lop phu tren cung: Hang pill trang thai + Banner canh bao Gas (khong chong len nhau)
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        if (!compact) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xD90F172A))
-                            .border(1.dp, Color(0x80334155), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = stateBadgeText,
-                            style = SHType.Caption,
-                            color = Color(0xFFE2E8F0),
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                        )
-                    }
-
-                    if (hoodOn) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(Color(0xCC0C2440))
-                                .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(20.dp))
+                                .background(Color(0xD90F172A))
+                                .border(1.dp, Color(0x80334155), RoundedCornerShape(20.dp))
                                 .padding(horizontal = 9.dp, vertical = 4.dp),
                         ) {
                             Text(
-                                text = "\uD83D\uDCA8 Hút mùi mức $hoodSpeed",
+                                text = stateBadgeText,
                                 style = SHType.Caption,
-                                color = Color(0xFF7DD3FC),
+                                color = Color(0xFFE2E8F0),
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                             )
                         }
+
+                        if (hoodOn) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color(0xCC0C2440))
+                                    .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                            ) {
+                                Text(
+                                    text = "\uD83D\uDCA8 Hút mùi mức $hoodSpeed",
+                                    style = SHType.Caption,
+                                    color = Color(0xFF7DD3FC),
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+
+                    // Chip trang thai Gas / Khoi
+                    val gasBg = if (room.gasAlert) Color(0xE67F1D1D) else Color(0xD9062C22)
+                    val gasBorder = if (room.gasAlert) SH.Red else SH.Green.copy(alpha = 0.5f)
+                    val gasFg = if (room.gasAlert) Color(0xFFFCA5A5) else Color(0xFF6EE7B7)
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(gasBg)
+                            .border(1.dp, gasBorder, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (room.gasAlert) SH.Red else SH.Green),
+                        )
+                        Text(
+                            text = if (room.gasAlert) "CẢNH BÁO: ${room.gasPpm} ppm" else "Gas/Khói: ${room.gasPpm} ppm",
+                            style = SHType.Caption,
+                            color = gasFg,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                        )
                     }
                 }
 
-                // Chip trang thai Gas / Khoi
-                val gasBg = if (room.gasAlert) Color(0xE67F1D1D) else Color(0xD9062C22)
-                val gasBorder = if (room.gasAlert) SH.Red else SH.Green.copy(alpha = 0.5f)
-                val gasFg = if (room.gasAlert) Color(0xFFFCA5A5) else Color(0xFF6EE7B7)
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(gasBg)
-                        .border(1.dp, gasBorder, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 9.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                AnimatedVisibility(
+                    visible = room.gasAlert,
+                    enter = fadeIn(tween(250)),
+                    exit = fadeOut(tween(250)),
                 ) {
-                    Box(
-                        Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(if (room.gasAlert) SH.Red else SH.Green),
-                    )
-                    Text(
-                        text = if (room.gasAlert) "CẢNH BÁO: ${room.gasPpm} ppm" else "Gas/Khói: ${room.gasPpm} ppm",
-                        style = SHType.Caption,
-                        color = gasFg,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                }
-            }
-
-            AnimatedVisibility(
-                visible = room.gasAlert,
-                enter = fadeIn(tween(250)),
-                exit = fadeOut(tween(250)),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xF2DC2626))
-                        .border(1.dp, Color(0x99FCA5A5), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xF2DC2626))
+                            .border(1.dp, Color(0x99FCA5A5), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "Cảnh báo rò rỉ khí Gas / Khói cao!",
-                            style = SHType.Label,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = "Đã tự động kích hoạt Máy hút mùi mức 3 (Mạnh) để thông gió.",
-                            style = SHType.Caption,
-                            color = Color(0xFFFEE2E2),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White)
-                            .clickable(onClick = onSilenceGasAlert)
-                            .padding(horizontal = 9.dp, vertical = 5.dp),
-                    ) {
-                        Text(
-                            text = "Tắt cảnh báo",
-                            style = SHType.Caption,
-                            color = Color(0xFFDC2626),
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = "Cảnh báo rò rỉ khí Gas / Khói cao!",
+                                style = SHType.Label,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "Đã tự động kích hoạt Máy hút mùi mức 3 (Mạnh) để thông gió.",
+                                style = SHType.Caption,
+                                color = Color(0xFFFEE2E2),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White)
+                                .clickable(onClick = onSilenceGasAlert)
+                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                text = "Tắt cảnh báo",
+                                style = SHType.Caption,
+                                color = Color(0xFFDC2626),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }

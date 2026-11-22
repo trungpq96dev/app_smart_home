@@ -89,9 +89,12 @@ fun QuickActionTile(
     on: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
 ) {
     val circle by animateColorAsState(if (on) color else SH.Card2, label = "quickCircle")
     val fg by animateColorAsState(if (on) Color.White else SH.TextOff, label = "quickFg")
+    val circleSize = if (subtitle != null) 38.dp else 40.dp
+    val iconSize = if (subtitle != null) 20.dp else 21.dp
 
     Box(
         modifier = modifier
@@ -102,18 +105,35 @@ fun QuickActionTile(
                 if (on) color.tint(0.45f) else SH.Border,
                 RoundedCornerShape(Dim.CardRadius),
             )
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).background(circle),
+                Modifier.size(circleSize).clip(CircleShape).background(circle),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, null, tint = fg, modifier = Modifier.size(21.dp))
+                Icon(icon, null, tint = fg, modifier = Modifier.size(iconSize))
             }
             Spacer(Modifier.height(5.dp))
-            Text(label, style = SHType.Label, color = if (on) SH.Text else SH.TextDim, maxLines = 1)
+            Text(
+                label,
+                style = SHType.Label,
+                color = if (on) SH.Text else SH.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = SHType.Caption,
+                    color = if (on) color else SH.TextOff,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

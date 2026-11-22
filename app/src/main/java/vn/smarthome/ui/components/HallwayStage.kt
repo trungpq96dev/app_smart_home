@@ -104,6 +104,7 @@ fun HallwayStage(
     onSelectView: (HallwayView) -> Unit = {},
     onDismissMotion: () -> Unit = {},
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val fHall by animateFloatAsState(
         targetValue = if (room.lightOn) room.lightBrightness.coerceIn(10, 100) / 100f else 0f,
@@ -164,7 +165,8 @@ fun HallwayStage(
     // Dong ho thoi gian thuc cho HUD camera
     val clockFmt = remember { SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()) }
     var hudTime by remember { mutableStateOf(clockFmt.format(Date())) }
-    LaunchedEffect(room.hallCameraOn) {
+    LaunchedEffect(room.hallCameraOn, compact) {
+        if (compact) return@LaunchedEffect
         while (isActive && room.hallCameraOn) {
             hudTime = clockFmt.format(Date())
             delay(1000L)
@@ -190,220 +192,286 @@ fun HallwayStage(
         SH.Border
     }
 
-    Column(
-        modifier = modifier
-            .clip(cardShape)
-            .background(SH.Card)
-            .border(Dim.BorderWidth, SH.Border, cardShape)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        // Thanh chon 3 goc nhin: Dau he | Xung quanh | Tu xa
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    if (compact) {
+        HallwayViewport(
+            room = room,
+            compact = true,
+            irMix = irMix,
+            irColorMatrix = irColorMatrix,
+            irPaint = irPaint,
+            auxPath = auxPath,
+            welcomePaint = welcomePaint,
+            fHall = fHall,
+            fFront = fFront,
+            fSurr = fSurr,
+            camHudAlpha = camHudAlpha,
+            camSweepDeg = camSweepDeg,
+            recDotAlpha = recDotAlpha,
+            hudTime = hudTime,
+            alertPulse = alertPulse,
+            radarPhase = radarPhase,
+            onDismissMotion = onDismissMotion,
+            modifier = modifier.background(Color(0xFF080D1A)),
+        )
+    } else {
+        Column(
+            modifier = modifier
+                .clip(cardShape)
+                .background(SH.Card)
+                .border(Dim.BorderWidth, SH.Border, cardShape)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Text(
-                text = "Mô phỏng 2.5D",
-                style = SHType.Caption,
-                fontWeight = FontWeight.SemiBold,
-                color = SH.TextDim,
-                maxLines = 1,
-            )
+            // Thanh chon 3 goc nhin: Dau he | Xung quanh | Tu xa
             Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF0B1120))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
-                    .padding(3.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                HallwayView.entries.forEach { view ->
-                    val active = room.hallView == view
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(if (active) SH.Blue else Color.Transparent)
-                            .clickable { onSelectView(view) }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = view.label,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (active) Color.White else SH.TextDim,
-                            maxLines = 1,
+                Text(
+                    text = "Mô phỏng 2.5D",
+                    style = SHType.Caption,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SH.TextDim,
+                    maxLines = 1,
+                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF0B1120))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    HallwayView.entries.forEach { view ->
+                        val active = room.hallView == view
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(if (active) SH.Blue else Color.Transparent)
+                                .clickable { onSelectView(view) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = view.label,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (active) Color.White else SH.TextDim,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+
+            HallwayViewport(
+                room = room,
+                compact = false,
+                irMix = irMix,
+                irColorMatrix = irColorMatrix,
+                irPaint = irPaint,
+                auxPath = auxPath,
+                welcomePaint = welcomePaint,
+                fHall = fHall,
+                fFront = fFront,
+                fSurr = fSurr,
+                camHudAlpha = camHudAlpha,
+                camSweepDeg = camSweepDeg,
+                recDotAlpha = recDotAlpha,
+                hudTime = hudTime,
+                alertPulse = alertPulse,
+                radarPhase = radarPhase,
+                onDismissMotion = onDismissMotion,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(stageShape)
+                    .background(Color(0xFF080D1A))
+                    .border(if (room.hallMotionDetected) 2.dp else 1.dp, stageBorderColor, stageShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HallwayViewport(
+    room: RoomUi,
+    compact: Boolean,
+    irMix: Float,
+    irColorMatrix: ColorMatrix,
+    irPaint: Paint,
+    auxPath: Path,
+    welcomePaint: AndroidPaint,
+    fHall: Float,
+    fFront: Float,
+    fSurr: Float,
+    camHudAlpha: Float,
+    camSweepDeg: Float,
+    recDotAlpha: Float,
+    hudTime: String,
+    alertPulse: Float,
+    radarPhase: Float,
+    onDismissMotion: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Khung mo phong chinh + Bo loc IR + Radar + CCTV HUD + Badge trang thai nhanh
+    Box(modifier = modifier) {
+        // Lop hinh ve 3 goc nhin Crossfade + Bo loc hong ngoai IR
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithContent {
+                    if (irMix > 0.01f) {
+                        val m = irColorMatrix.values
+                        for (i in 0 until 20) {
+                            m[i] = IDENTITY_MATRIX_VALUES[i] + (IR_MATRIX_VALUES[i] - IDENTITY_MATRIX_VALUES[i]) * irMix
+                        }
+                        irPaint.colorFilter = ColorFilter.colorMatrix(irColorMatrix)
+                        val canvas = drawContext.canvas
+                        canvas.saveLayer(Rect(Offset.Zero, size), irPaint)
+                        try {
+                            drawContent()
+                        } finally {
+                            canvas.restore()
+                        }
+                    } else {
+                        drawContent()
+                    }
+                },
+        ) {
+            Crossfade(
+                targetState = room.hallView,
+                animationSpec = tween(durationMillis = 400),
+                label = "hallwayViewCrossfade",
+            ) { activeView ->
+                Canvas(Modifier.fillMaxSize()) {
+                    val sx = size.width / HW_W
+                    val sy = size.height / HW_H
+
+                    when (activeView) {
+                        HallwayView.DAU_HE -> drawViewDauHe(
+                            path = auxPath,
+                            textPaint = welcomePaint,
+                            sx = sx,
+                            sy = sy,
+                            fHall = fHall,
+                            hallOn = room.lightOn,
+                            fFront = fFront,
+                            fSurr = fSurr,
+                            isLocked = room.hallDoorLocked,
+                            motionAuto = room.hallMotionAuto,
+                            motionDetected = room.hallMotionDetected,
+                        )
+                        HallwayView.XUNG_QUANH -> drawViewXungQuanh(
+                            path = auxPath,
+                            sx = sx,
+                            sy = sy,
+                            fHall = fHall,
+                            hallOn = room.lightOn,
+                            fFront = fFront,
+                            fSurr = fSurr,
+                            surrOn = room.hallSurroundingLightOn,
+                            isLocked = room.hallDoorLocked,
+                            camOn = room.hallCameraOn,
+                            camFovAlpha = camHudAlpha,
+                            camSweepDeg = camSweepDeg,
+                        )
+                        HallwayView.TU_XA -> drawViewTuXa(
+                            path = auxPath,
+                            sx = sx,
+                            sy = sy,
+                            fHall = fHall,
+                            fFront = fFront,
+                            frontOn = room.hallFrontLightOn,
+                            fSurr = fSurr,
+                            surrOn = room.hallSurroundingLightOn,
+                            isLocked = room.hallDoorLocked,
+                            camOn = room.hallCameraOn,
+                            camFovAlpha = camHudAlpha,
+                            camSweepDeg = camSweepDeg,
+                        )
+                    }
+
+                    // Lop phu toi moi truong theo trung binh do sang 3 cum den
+                    val avgLight = (fHall + fFront + fSurr) / 3f
+                    val darkness = ((1f - avgLight) * 0.68f).coerceIn(0f, 0.68f)
+                    if (darkness > 0.01f) {
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                colorStops = arrayOf(
+                                    0.0f to Color(0xFF080C18).copy(alpha = 0.20f * darkness),
+                                    0.68f to Color(0xFF050812).copy(alpha = 0.72f * darkness),
+                                    1.0f to Color(0xFF02050E).copy(alpha = 0.90f * darkness),
+                                ),
+                                center = Offset(size.width * 0.50f, size.height * 0.44f),
+                                radius = maxOf(size.width, size.height) * 0.72f,
+                            ),
+                            size = size,
                         )
                     }
                 }
             }
         }
 
-        // Khung mo phong chinh + Bo loc IR + Radar + CCTV HUD + Badge trang thai nhanh
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(stageShape)
-                .background(Color(0xFF080D1A))
-                .border(if (room.hallMotionDetected) 2.dp else 1.dp, stageBorderColor, stageShape),
-        ) {
-            // Lop hinh ve 3 goc nhin Crossfade + Bo loc hong ngoai IR
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .drawWithContent {
-                        if (irMix > 0.01f) {
-                            val m = irColorMatrix.values
-                            for (i in 0 until 20) {
-                                m[i] = IDENTITY_MATRIX_VALUES[i] + (IR_MATRIX_VALUES[i] - IDENTITY_MATRIX_VALUES[i]) * irMix
-                            }
-                            irPaint.colorFilter = ColorFilter.colorMatrix(irColorMatrix)
-                            val canvas = drawContext.canvas
-                            canvas.saveLayer(Rect(Offset.Zero, size), irPaint)
-                            try {
-                                drawContent()
-                            } finally {
-                                canvas.restore()
-                            }
-                        } else {
-                            drawContent()
-                        }
-                    },
-            ) {
-                Crossfade(
-                    targetState = room.hallView,
-                    animationSpec = tween(durationMillis = 400),
-                    label = "hallwayViewCrossfade",
-                ) { activeView ->
-                    Canvas(Modifier.fillMaxSize()) {
-                        val sx = size.width / HW_W
-                        val sy = size.height / HW_H
-
-                        when (activeView) {
-                            HallwayView.DAU_HE -> drawViewDauHe(
-                                path = auxPath,
-                                textPaint = welcomePaint,
-                                sx = sx,
-                                sy = sy,
-                                fHall = fHall,
-                                hallOn = room.lightOn,
-                                fFront = fFront,
-                                fSurr = fSurr,
-                                isLocked = room.hallDoorLocked,
-                                motionAuto = room.hallMotionAuto,
-                                motionDetected = room.hallMotionDetected,
-                            )
-                            HallwayView.XUNG_QUANH -> drawViewXungQuanh(
-                                path = auxPath,
-                                sx = sx,
-                                sy = sy,
-                                fHall = fHall,
-                                hallOn = room.lightOn,
-                                fFront = fFront,
-                                fSurr = fSurr,
-                                surrOn = room.hallSurroundingLightOn,
-                                isLocked = room.hallDoorLocked,
-                                camOn = room.hallCameraOn,
-                                camFovAlpha = camHudAlpha,
-                                camSweepDeg = camSweepDeg,
-                            )
-                            HallwayView.TU_XA -> drawViewTuXa(
-                                path = auxPath,
-                                sx = sx,
-                                sy = sy,
-                                fHall = fHall,
-                                fFront = fFront,
-                                frontOn = room.hallFrontLightOn,
-                                fSurr = fSurr,
-                                surrOn = room.hallSurroundingLightOn,
-                                isLocked = room.hallDoorLocked,
-                                camOn = room.hallCameraOn,
-                                camFovAlpha = camHudAlpha,
-                                camSweepDeg = camSweepDeg,
-                            )
-                        }
-
-                        // Lop phu toi moi truong theo trung binh do sang 3 cum den
-                        val avgLight = (fHall + fFront + fSurr) / 3f
-                        val darkness = ((1f - avgLight) * 0.68f).coerceIn(0f, 0.68f)
-                        if (darkness > 0.01f) {
-                            drawRect(
-                                brush = Brush.radialGradient(
-                                    colorStops = arrayOf(
-                                        0.0f to Color(0xFF080C18).copy(alpha = 0.20f * darkness),
-                                        0.68f to Color(0xFF050812).copy(alpha = 0.72f * darkness),
-                                        1.0f to Color(0xFF02050E).copy(alpha = 0.90f * darkness),
-                                    ),
-                                    center = Offset(size.width * 0.50f, size.height * 0.44f),
-                                    radius = maxOf(size.width, size.height) * 0.72f,
-                                ),
-                                size = size,
-                            )
-                        }
+        // Soc quet IR Night Vision + Song Radar phat hien chuyen dong + Vien do
+        if (irMix > 0.01f || room.hallMotionDetected) {
+            Canvas(Modifier.fillMaxSize()) {
+                if (irMix > 0.01f) {
+                    val stepPx = 3.dp.toPx()
+                    val lineColor = Color(0xFF22C55E).copy(alpha = 0.07f * irMix)
+                    var y = 0f
+                    while (y < size.height) {
+                        drawRect(color = lineColor, topLeft = Offset(0f, y), size = Size(size.width, 1.dp.toPx()))
+                        y += stepPx
                     }
                 }
-            }
-
-            // Soc quet IR Night Vision + Song Radar phat hien chuyen dong + Vien do
-            if (irMix > 0.01f || room.hallMotionDetected) {
-                Canvas(Modifier.fillMaxSize()) {
-                    if (irMix > 0.01f) {
-                        val stepPx = 3.dp.toPx()
-                        val lineColor = Color(0xFF22C55E).copy(alpha = 0.07f * irMix)
-                        var y = 0f
-                        while (y < size.height) {
-                            drawRect(color = lineColor, topLeft = Offset(0f, y), size = Size(size.width, 1.dp.toPx()))
-                            y += stepPx
-                        }
-                    }
-                    if (room.hallMotionDetected) {
-                        val edgeAlpha = 0.22f + 0.30f * alertPulse
-                        drawRect(
-                            brush = Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0.55f to Color.Transparent,
-                                    1.0f to Color(0xFFEF4444).copy(alpha = edgeAlpha),
-                                ),
-                                center = Offset(size.width * 0.5f, size.height * 0.5f),
-                                radius = maxOf(size.width, size.height) * 0.75f,
+                if (room.hallMotionDetected) {
+                    val edgeAlpha = 0.22f + 0.30f * alertPulse
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.55f to Color.Transparent,
+                                1.0f to Color(0xFFEF4444).copy(alpha = edgeAlpha),
                             ),
-                            size = size,
-                        )
+                            center = Offset(size.width * 0.5f, size.height * 0.5f),
+                            radius = maxOf(size.width, size.height) * 0.75f,
+                        ),
+                        size = size,
+                    )
 
-                        // 3 vong song Radar lech pha tai giua hanh lang
-                        val center = Offset(size.width * 0.50f, size.height * 0.56f)
-                        val baseRadius = 56.dp.toPx()
-                        listOf(0f, 0.33f, 0.66f).forEach { offset ->
-                            val p = (radarPhase + offset) % 1f
-                            val scale = 0.18f + (1.75f - 0.18f) * p
-                            val r = baseRadius * scale
-                            val alpha = (1f - p).coerceIn(0f, 1f) * 0.9f
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFFEF4444).copy(alpha = 0.24f * alpha),
-                                        Color(0xFFEF4444).copy(alpha = 0f),
-                                    ),
-                                    center = center,
-                                    radius = r,
+                    // 3 vong song Radar lech pha tai giua hanh lang
+                    val center = Offset(size.width * 0.50f, size.height * 0.56f)
+                    val baseRadius = if (compact) 40.dp.toPx() else 56.dp.toPx()
+                    listOf(0f, 0.33f, 0.66f).forEach { offset ->
+                        val p = (radarPhase + offset) % 1f
+                        val scale = 0.18f + (1.75f - 0.18f) * p
+                        val r = baseRadius * scale
+                        val alpha = (1f - p).coerceIn(0f, 1f) * 0.9f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFFEF4444).copy(alpha = 0.24f * alpha),
+                                    Color(0xFFEF4444).copy(alpha = 0f),
                                 ),
-                                radius = r,
                                 center = center,
-                            )
-                            drawCircle(
-                                color = Color(0xFFEF4444).copy(alpha = alpha),
                                 radius = r,
-                                center = center,
-                                style = Stroke(width = 2.dp.toPx()),
-                            )
-                        }
+                            ),
+                            radius = r,
+                            center = center,
+                        )
+                        drawCircle(
+                            color = Color(0xFFEF4444).copy(alpha = alpha),
+                            radius = r,
+                            center = center,
+                            style = Stroke(width = 2.dp.toPx()),
+                        )
                     }
                 }
             }
+        }
 
-            // Lop HUD Camera + Banner Canh bao + Dai badge trang thai 3 den & khoa
+        // Lop HUD Camera + Banner Canh bao + Dai badge trang thai 3 den & khoa
+        if (!compact) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

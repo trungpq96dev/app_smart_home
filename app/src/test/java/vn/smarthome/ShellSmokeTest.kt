@@ -66,6 +66,44 @@ class ShellSmokeTest {
     }
 
     @Test
+    fun trang_chu_chuyen_phong_va_thao_tac_nhanh_theo_phong() {
+        start()
+        // Phong khach mac dinh + thao tac nhanh theo phong
+        rule.onNodeWithText("Phòng khách").assertIsDisplayed()
+        rule.onNodeWithText("Rèm").assertIsDisplayed()
+        rule.onNodeWithText("Mở 100%").assertIsDisplayed()
+        rule.onNodeWithText("Rèm").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Đóng").assertIsDisplayed()
+
+        // Bam mui ten -> Phong ngu 1 (4 o thao tac nhanh doi sang Chế độ ngủ)
+        rule.onNodeWithContentDescription("Phòng tiếp theo").performClick()
+        rule.mainClock.advanceTimeBy(800)
+        rule.onNodeWithText("Phòng ngủ 1").assertIsDisplayed()
+        rule.onNodeWithText("Chế độ ngủ").assertIsDisplayed()
+
+        // Bam tiep qua Phong ngu 2 -> Phong ngu 3 -> Nha bep
+        repeat(3) {
+            rule.onNodeWithContentDescription("Phòng tiếp theo").performClick()
+            rule.mainClock.advanceTimeBy(800)
+        }
+        rule.onNodeWithText("Nhà bếp").assertIsDisplayed()
+        rule.onNodeWithText("Đèn bếp").assertIsDisplayed()
+        rule.onNodeWithText("Hút mùi").assertIsDisplayed()
+        rule.onNodeWithText("Bếp từ").assertIsDisplayed()
+
+        // Bam tiep -> Hanh lang -> vao man Dieu khien hanh lang
+        rule.onNodeWithContentDescription("Phòng tiếp theo").performClick()
+        rule.mainClock.advanceTimeBy(800)
+        rule.onNodeWithText("Hành lang").assertIsDisplayed()
+        rule.onNodeWithText("Đèn trước").assertIsDisplayed()
+        rule.onNodeWithText("Khóa cửa").assertIsDisplayed()
+        rule.onNodeWithText("Điều khiển").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Điều khiển hành lang").assertIsDisplayed()
+    }
+
+    @Test
     fun bam_dong_ho_lich_o_trang_chu_mo_man_lich_am() {
         start()
         // O dong ho / am lich ben phai tieu de Trang chu la loi tat vao man

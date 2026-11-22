@@ -578,6 +578,26 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(quick = s.quick.map { if (it.id == id) it.copy(on = !it.on) else it })
     }
 
+    /** Diep hop thao tac nhanh ngoai Trang chu theo dung phong dang hien thi. */
+    fun thaoTacNhanhPhong(roomId: String, actionId: String) {
+        when (actionId) {
+            "light" -> toggleLight(roomId)
+            "fan", "hood" -> toggleFan(roomId)
+            "ac" -> toggleAc(roomId)
+            "curtain" -> toggleCurtain(roomId)
+            "sleep" -> {
+                val curMode = _state.value.rooms.firstOrNull { it.id == roomId }?.mode
+                setMode(roomId, if (curMode == RoomMode.SLEEP) RoomMode.HOME else RoomMode.SLEEP)
+            }
+            "stove" -> toggleStove(roomId)
+            "schedule" -> toggleSchedule(roomId)
+            "hall_front" -> toggleHallFrontLight(roomId)
+            "hall_lock" -> toggleHallLock(roomId)
+            "hall_camera" -> toggleHallCamera(roomId)
+            else -> toggleQuick(actionId)
+        }
+    }
+
     // ---- Chi tiet phong ----
 
     fun toggleLight(roomId: String) {

@@ -253,6 +253,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onOpenWifi = { showWifi = true },
                         onOpenLich = { current = Dest.UTILITIES.route },
                         congTac = congTac,
+                        choCongTac = choCongTac,
+                        onRoomQuickAction = vm::thaoTacNhanhPhong,
                     )
 
                     dest == Dest.SETTINGS -> SettingsScreen(

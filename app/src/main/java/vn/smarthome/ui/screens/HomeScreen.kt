@@ -1,10 +1,12 @@
 package vn.smarthome.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -16,27 +18,34 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.Blinds
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SignalCellularAlt
-import androidx.compose.material.icons.filled.Speaker
-import androidx.compose.material.icons.filled.Tablet
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,22 +54,34 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import vn.smarthome.data.DemoData
+import vn.smarthome.data.RoomMode
 import vn.smarthome.data.RoomUi
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.lunar.AmLich
 import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.ui.components.DemoBadge
+import vn.smarthome.ui.components.Dot
+import vn.smarthome.ui.components.HallwayStage
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.ImagePlaceholder
+import vn.smarthome.ui.components.KitchenStage
+import vn.smarthome.ui.components.LivingRoomStage
+import vn.smarthome.ui.components.MoPhongPhongNgu
 import vn.smarthome.ui.components.PagerDots
 import vn.smarthome.ui.components.QuickActionTile
 import vn.smarthome.ui.components.SmartCard
@@ -73,6 +94,7 @@ import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SHType
 import vn.smarthome.ui.theme.SmartHomeTheme
+import vn.smarthome.ui.theme.tint
 import vn.smarthome.vm.HomeState
 import java.time.LocalDate
 
@@ -96,6 +118,8 @@ fun HomeScreen(
     onOpenWifi: () -> Unit = {},
     onOpenLich: () -> Unit = {},
     congTac: CongTacState = CongTacState(),
+    choCongTac: Map<String, Boolean> = emptyMap(),
+    onRoomQuickAction: (roomId: String, actionId: String) -> Unit = { _, actionId -> onQuick(actionId) },
 ) {
     val clock = rememberClock(seconds = true)
 
@@ -159,7 +183,15 @@ fun HomeScreen(
 
         Spacer(Modifier.height(Dim.CardGap))
 
-        // ---------- Hang giua: the phong | o thao tac nhanh | thoi tiet ----------
+        // ---------- Hang giua: the phong 2.5D | o thao tac nhanh | thoi tiet ----------
+        val selectedRoom = state.rooms.getOrNull(state.selectedRoom) ?: state.rooms.firstOrNull()
+        val quickSlots = remember(selectedRoom, congTac, choCongTac, state.quick) {
+            selectedRoom?.let { oThaoTacNhanhCuaPhong(it, congTac, choCongTac) }
+                ?: state.quick.map {
+                    HomeQuickSlot(it.id, it.label, null, it.icon, it.color, it.on)
+                }
+        }
+
         Row(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
@@ -169,15 +201,16 @@ fun HomeScreen(
                 current = state.selectedRoom,
                 onPage = onSelectRoom,
                 onOpen = onOpenRoom,
-                modifier = Modifier.weight(1.25f).fillMaxHeight(),
+                modifier = Modifier.weight(1.45f).fillMaxHeight(),
                 congTac = congTac,
+                choCongTac = choCongTac,
             )
 
             Column(
-                Modifier.weight(1f).fillMaxHeight(),
+                Modifier.weight(0.85f).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(Dim.CardGap),
             ) {
-                state.quick.chunked(2).forEach { pair ->
+                quickSlots.chunked(2).forEach { pair ->
                     Row(
                         Modifier.fillMaxWidth().weight(1f),
                         horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
@@ -188,8 +221,15 @@ fun HomeScreen(
                                 label = q.label,
                                 color = q.color,
                                 on = q.on,
-                                onClick = { onQuick(q.id) },
+                                onClick = {
+                                    if (selectedRoom != null) {
+                                        onRoomQuickAction(selectedRoom.id, q.id)
+                                    } else {
+                                        onQuick(q.id)
+                                    }
+                                },
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
+                                subtitle = q.subtitle,
                             )
                         }
                     }
@@ -199,7 +239,7 @@ fun HomeScreen(
             WeatherCard(
                 ui = weather,
                 onRefresh = onRefreshWeather,
-                modifier = Modifier.weight(1.1f).fillMaxHeight(),
+                modifier = Modifier.weight(1.05f).fillMaxHeight(),
             )
         }
 
@@ -372,7 +412,350 @@ private fun DongHoLich(
     }
 }
 
-/** Bang xoay the phong - vuot ngang de doi phong, bam de mo man chi tiet. */
+private data class TrangThaiCongTacHienThi(
+    val laThat: Boolean,
+    val roRang: Boolean,
+    val dangCho: Boolean,
+    val bat: Boolean,
+    val batChoMoPhong: Boolean,
+)
+
+private fun docCongTacHienThi(
+    roomId: String,
+    loai: String,
+    giaTriRoom: Boolean,
+    ct: CongTacState,
+    cho: Map<String, Boolean>,
+): TrangThaiCongTacHienThi {
+    val tb = ct.tim(roomId, loai)
+        ?: return TrangThaiCongTacHienThi(
+            laThat = false,
+            roRang = true,
+            dangCho = false,
+            bat = giaTriRoom,
+            batChoMoPhong = giaTriRoom,
+        )
+    val tt = ct.trangThai[tb.ma]
+    val mong = cho[tb.ma]
+    val dangCho = mong != null
+    val roRang = dangCho || (ct.bridgeSong && tt?.online == true && tt.bat != null)
+    val batThuc = when {
+        dangCho -> mong ?: giaTriRoom
+        ct.bridgeSong && tt?.online == true && tt.bat != null -> tt.bat
+        else -> false
+    }
+    val batMoPhong = when {
+        dangCho -> mong ?: giaTriRoom
+        ct.bridgeSong && tt?.online == true && tt.bat != null -> tt.bat
+        else -> giaTriRoom
+    }
+    return TrangThaiCongTacHienThi(
+        laThat = true,
+        roRang = roRang,
+        dangCho = dangCho,
+        bat = batThuc,
+        batChoMoPhong = batMoPhong,
+    )
+}
+
+private data class HomeQuickSlot(
+    val id: String,
+    val label: String,
+    val subtitle: String?,
+    val icon: ImageVector,
+    val color: Color,
+    val on: Boolean,
+)
+
+private fun oThaoTacNhanhCuaPhong(
+    room: RoomUi,
+    ct: CongTacState,
+    cho: Map<String, Boolean>,
+): List<HomeQuickSlot> {
+    val den = docCongTacHienThi(room.id, "den", room.lightOn, ct, cho)
+    val quat = docCongTacHienThi(room.id, "quat", room.fanOn, ct, cho)
+
+    val oDen = HomeQuickSlot(
+        id = "light",
+        label = when (room.id) {
+            "kitchen" -> "Đèn bếp"
+            "hall" -> "Đèn sảnh"
+            else -> "Đèn"
+        },
+        subtitle = when {
+            den.dangCho -> "Đang gửi…"
+            !den.roRang -> "—"
+            den.bat -> "${room.lightBrightness}%"
+            else -> "Tắt"
+        },
+        icon = Icons.Filled.Lightbulb,
+        color = SH.Amber,
+        on = den.roRang && den.bat,
+    )
+
+    return when (room.id) {
+        "living" -> listOf(
+            oDen,
+            HomeQuickSlot(
+                id = "fan",
+                label = "Quạt",
+                subtitle = when {
+                    quat.dangCho -> "Đang gửi…"
+                    !quat.roRang -> "—"
+                    quat.bat -> "Đang bật"
+                    else -> "Tắt"
+                },
+                icon = Icons.Filled.Air,
+                color = SH.Blue,
+                on = quat.roRang && quat.bat,
+            ),
+            HomeQuickSlot(
+                id = "ac",
+                label = "Điều hòa",
+                subtitle = if (room.acOn) "${room.acTemp}°C" else "Tắt",
+                icon = Icons.Filled.AcUnit,
+                color = SH.Purple,
+                on = room.acOn,
+            ),
+            HomeQuickSlot(
+                id = "curtain",
+                label = "Rèm",
+                subtitle = if (room.curtainOpen > 0) "Mở ${room.curtainOpen}%" else "Đóng",
+                icon = Icons.Filled.Blinds,
+                color = SH.Teal,
+                on = room.curtainOpen > 0,
+            ),
+        )
+        "kitchen" -> listOf(
+            oDen,
+            HomeQuickSlot(
+                id = "hood",
+                label = "Hút mùi",
+                subtitle = when {
+                    quat.dangCho -> "Đang gửi…"
+                    !quat.roRang -> "—"
+                    quat.bat -> "Cấp ${room.hoodSpeed}"
+                    else -> "Tắt"
+                },
+                icon = Icons.Filled.Air,
+                color = SH.Blue,
+                on = quat.roRang && quat.bat,
+            ),
+            HomeQuickSlot(
+                id = "stove",
+                label = "Bếp từ",
+                subtitle = if (room.stoveOn) "Mức ${room.stoveLevel}" else "Tắt",
+                icon = Icons.Filled.LocalFireDepartment,
+                color = SH.Orange,
+                on = room.stoveOn,
+            ),
+            HomeQuickSlot(
+                id = "schedule",
+                label = "Hẹn giờ",
+                subtitle = if (room.scheduleOn) "15 phút" else "Tắt",
+                icon = Icons.Filled.Schedule,
+                color = SH.Teal,
+                on = room.scheduleOn,
+            ),
+        )
+        "hall" -> listOf(
+            oDen,
+            HomeQuickSlot(
+                id = "hall_front",
+                label = "Đèn trước",
+                subtitle = if (room.hallFrontLightOn) "${room.hallFrontBrightness}%" else "Tắt",
+                icon = Icons.Filled.WbSunny,
+                color = SH.Orange,
+                on = room.hallFrontLightOn,
+            ),
+            HomeQuickSlot(
+                id = "hall_lock",
+                label = "Khóa cửa",
+                subtitle = if (room.hallDoorLocked) "Đã khóa" else "Đang mở",
+                icon = if (room.hallDoorLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                color = if (room.hallDoorLocked) SH.Green else SH.Red,
+                on = room.hallDoorLocked,
+            ),
+            HomeQuickSlot(
+                id = "hall_camera",
+                label = "Camera",
+                subtitle = when {
+                    !room.hallCameraOn -> "Tắt"
+                    room.hallIrMode -> "IR"
+                    else -> "Đang ghi"
+                },
+                icon = Icons.Filled.Videocam,
+                color = SH.Blue,
+                on = room.hallCameraOn,
+            ),
+        )
+        else -> listOf(
+            oDen,
+            HomeQuickSlot(
+                id = "fan",
+                label = "Quạt",
+                subtitle = when {
+                    quat.dangCho -> "Đang gửi…"
+                    !quat.roRang -> "—"
+                    quat.bat -> "Cấp ${room.fanSpeed}"
+                    else -> "Tắt"
+                },
+                icon = Icons.Filled.Air,
+                color = SH.Blue,
+                on = quat.roRang && quat.bat,
+            ),
+            HomeQuickSlot(
+                id = "ac",
+                label = "Điều hòa",
+                subtitle = if (room.acOn) "${room.acTemp}°C" else "Tắt",
+                icon = Icons.Filled.AcUnit,
+                color = SH.Purple,
+                on = room.acOn,
+            ),
+            HomeQuickSlot(
+                id = "sleep",
+                label = "Chế độ ngủ",
+                subtitle = if (room.mode == RoomMode.SLEEP) "Đang bật" else "Chạm bật",
+                icon = Icons.Filled.DarkMode,
+                color = SH.Teal,
+                on = room.mode == RoomMode.SLEEP,
+            ),
+        )
+    }
+}
+
+private data class ChipThongTinPhong(
+    val icon: ImageVector,
+    val label: String,
+    val active: Boolean,
+    val color: Color,
+    val mutedText: Boolean = false,
+)
+
+private fun tenCheDoPhong(room: RoomUi): String = when (room.id) {
+    "kitchen" -> when (room.mode) {
+        RoomMode.HOME -> "Nấu ăn"
+        RoomMode.CUSTOM -> "Ăn tối"
+        RoomMode.SLEEP -> "Dọn dẹp"
+        RoomMode.AWAY -> "Vắng nhà"
+    }
+    "hall" -> when (room.mode) {
+        RoomMode.SLEEP -> "Đêm an ninh"
+        RoomMode.HOME -> "Về nhà"
+        RoomMode.CUSTOM -> "Tiếp khách"
+        RoomMode.AWAY -> "Đi vắng"
+    }
+    else -> room.mode.label
+}
+
+private fun chipsTomTatPhong(
+    room: RoomUi,
+    den: TrangThaiCongTacHienThi,
+    quat: TrangThaiCongTacHienThi,
+): List<ChipThongTinPhong> {
+    val denChip = ChipThongTinPhong(
+        icon = Icons.Filled.Lightbulb,
+        label = when {
+            !den.roRang -> "Đèn: —"
+            den.bat -> "Đèn: Bật"
+            else -> "Đèn: Tắt"
+        },
+        active = den.roRang && den.bat,
+        color = SH.Amber,
+        mutedText = !den.roRang,
+    )
+    return when (room.id) {
+        "living" -> listOf(
+            denChip,
+            ChipThongTinPhong(
+                icon = Icons.Filled.AcUnit,
+                label = if (room.acOn) "${room.acTemp}°C" else "ĐH tắt",
+                active = room.acOn,
+                color = SH.Purple,
+            ),
+            when {
+                room.tvOn -> ChipThongTinPhong(Icons.Filled.Tv, "TV Bật", true, SH.Blue)
+                quat.roRang && quat.bat -> ChipThongTinPhong(Icons.Filled.Air, "Quạt Bật", true, SH.Cyan)
+                else -> ChipThongTinPhong(
+                    Icons.Filled.Blinds,
+                    if (room.curtainOpen > 0) "Rèm ${room.curtainOpen}%" else "Rèm đóng",
+                    room.curtainOpen > 0,
+                    SH.Teal,
+                )
+            },
+        )
+        "kitchen" -> listOf(
+            denChip,
+            ChipThongTinPhong(
+                icon = Icons.Filled.Air,
+                label = when {
+                    !quat.roRang -> "Hút: —"
+                    quat.bat -> "Hút C${room.hoodSpeed}"
+                    else -> "Hút tắt"
+                },
+                active = quat.roRang && quat.bat,
+                color = SH.Blue,
+                mutedText = !quat.roRang,
+            ),
+            ChipThongTinPhong(
+                icon = Icons.Filled.LocalFireDepartment,
+                label = if (room.stoveOn) "Bếp P${room.stoveLevel}" else "Bếp tắt",
+                active = room.stoveOn,
+                color = SH.Orange,
+            ),
+        )
+        "hall" -> {
+            val soDenBat = listOf(den.roRang && den.bat, room.hallFrontLightOn, room.hallSurroundingLightOn).count { it }
+            listOf(
+                ChipThongTinPhong(
+                    icon = Icons.Filled.Lightbulb,
+                    label = if (!den.roRang) "Đèn: —" else "Đèn $soDenBat/3",
+                    active = soDenBat > 0,
+                    color = SH.Amber,
+                    mutedText = !den.roRang,
+                ),
+                ChipThongTinPhong(
+                    icon = if (room.hallDoorLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                    label = if (room.hallDoorLocked) "Đã khóa" else "Đang mở",
+                    active = true,
+                    color = if (room.hallDoorLocked) SH.Green else SH.Red,
+                ),
+                ChipThongTinPhong(
+                    icon = Icons.Filled.Videocam,
+                    label = when {
+                        !room.hallCameraOn -> "Cam tắt"
+                        room.hallIrMode -> "Cam IR"
+                        else -> "Cam"
+                    },
+                    active = room.hallCameraOn,
+                    color = if (room.hallIrMode && room.hallCameraOn) SH.Green else SH.Blue,
+                ),
+            )
+        }
+        else -> listOf(
+            denChip,
+            ChipThongTinPhong(
+                icon = Icons.Filled.Air,
+                label = when {
+                    !quat.roRang -> "Quạt: —"
+                    quat.bat -> "Cấp ${room.fanSpeed}"
+                    else -> "Quạt tắt"
+                },
+                active = quat.roRang && quat.bat,
+                color = SH.Blue,
+                mutedText = !quat.roRang,
+            ),
+            ChipThongTinPhong(
+                icon = Icons.Filled.AcUnit,
+                label = if (room.acOn) "${room.acTemp}°C" else "ĐH tắt",
+                active = room.acOn,
+                color = SH.Purple,
+            ),
+        )
+    }
+}
+
+/** Bang xoay the phong mo phong 2.5D - vuot ngang hoac bam < > de doi phong, bam de dieu khien. */
 @Composable
 private fun RoomPager(
     rooms: List<RoomUi>,
@@ -381,77 +764,325 @@ private fun RoomPager(
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
     congTac: CongTacState = CongTacState(),
+    choCongTac: Map<String, Boolean> = emptyMap(),
 ) {
-    val pager = rememberPagerState(initialPage = current) { rooms.size }
+    val safeInitial = current.coerceIn(0, maxOf(rooms.lastIndex, 0))
+    val pager = rememberPagerState(initialPage = safeInitial) { rooms.size }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(pager.currentPage) { onPage(pager.currentPage) }
 
     Box(modifier) {
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
             val room = rooms[page]
-            ImagePlaceholder(
-                icon = room.icon,
-                label = room.name,
-                accent = room.accent,
-                showLabel = false,
-                iconSize = 58.dp,
-                cornerRadius = Dim.CardRadius,
-                modifier = Modifier.fillMaxSize(),
+            val den = docCongTacHienThi(room.id, "den", room.lightOn, congTac, choCongTac)
+            val quat = docCongTacHienThi(room.id, "quat", room.fanOn, congTac, choCongTac)
+            val coCanhBao = (room.id == "kitchen" && room.gasAlert) ||
+                (room.id == "hall" && room.hallMotionDetected)
+            val coThietBiBat = (den.roRang && den.bat) || (quat.roRang && quat.bat) ||
+                room.acOn || room.tvOn || room.stoveOn ||
+                (room.id == "hall" && (room.hallFrontLightOn || room.hallSurroundingLightOn))
+            val shape = RoundedCornerShape(Dim.CardRadius)
+            val borderColor = when {
+                coCanhBao -> SH.Red
+                coThietBiBat -> room.accent.tint(0.45f)
+                else -> SH.Border
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+                    .background(Color(0xFF0A101E))
+                    .border(if (coCanhBao) 1.5.dp else Dim.BorderWidth, borderColor, shape)
+                    .clickable { onOpen(room.id) },
             ) {
-                // Lop chu de len anh giu cho
-                Column(
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        room.name,
-                        style = SHType.PageTitle,
-                        color = SH.Text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                when (room.id) {
+                    "living" -> LivingRoomStage(
+                        room = room.copy(lightOn = den.batChoMoPhong, fanOn = quat.batChoMoPhong),
+                        modifier = Modifier.fillMaxSize(),
+                        compact = true,
+                    )
+                    "kitchen" -> KitchenStage(
+                        room = room.copy(lightOn = den.batChoMoPhong, fanOn = quat.batChoMoPhong),
+                        modifier = Modifier.fillMaxSize(),
+                        compact = true,
+                    )
+                    "hall" -> HallwayStage(
+                        room = room.copy(lightOn = den.batChoMoPhong),
+                        modifier = Modifier.fillMaxSize(),
+                        compact = true,
+                    )
+                    "bed1", "bed2", "bed3" -> MoPhongPhongNgu(
+                        lightOn = den.batChoMoPhong,
+                        fanOn = quat.batChoMoPhong,
+                        acOn = room.acOn,
+                        acTemp = room.acTemp,
+                        mode = room.mode,
+                        modifier = Modifier.fillMaxSize(),
+                        lightBrightness = room.lightBrightness,
+                        fanSpeed = room.fanSpeed,
+                        compact = true,
+                    )
+                    else -> ImagePlaceholder(
+                        icon = room.icon,
+                        label = room.name,
+                        accent = room.accent,
+                        showLabel = false,
+                        iconSize = 58.dp,
+                        cornerRadius = Dim.CardRadius,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
-                val denThat = congTac.laThat(room.id, "den")
-                val ttDen = congTac.trangThaiCua(room.id, "den")
-                val denRo = !denThat || (congTac.bridgeSong && ttDen?.online == true && ttDen.bat != null)
-                Row(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Lightbulb, null,
-                        tint = if (denRo && room.lightOn) SH.Amber else SH.TextOff,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (!denRo) "Đèn: —" else if (room.lightOn) "Đèn: Bật" else "Đèn: Tắt",
-                        style = SHType.BodyMed,
-                        color = if (!denRo) SH.TextDim else if (room.lightOn) SH.Amber else SH.TextDim,
-                        maxLines = 1,
-                    )
-                }
+
+                // Phu chuyen sac tren & duoi giup chu va chip luon ro du den sang hay tat
                 Box(
                     Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp)
+                        .fillMaxWidth()
+                        .height(74.dp)
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color(0xD9070B14),
+                                    Color(0x66070B14),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        ),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(94.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color(0x88070B14),
+                                    Color(0xEB070B14),
+                                ),
+                            ),
+                        ),
+                )
+
+                // Hang tren: Ten phong + che do / chip THAT + nut chuyen phong < >
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    androidx.compose.material3.TextButton(onClick = { onOpen(room.id) }) {
-                        Text("Điều khiển", style = SHType.Button, color = SH.Blue)
+                    Column(Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = room.name,
+                                style = SHType.PageTitle,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (den.laThat || quat.laThat) {
+                                Text(
+                                    text = "THẬT",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4ADE80),
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(Color(0x3822C55E))
+                                        .border(1.dp, Color(0x7022C55E), RoundedCornerShape(5.dp))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            val sub = buildString {
+                                append("Chế độ: ").append(tenCheDoPhong(room))
+                                if (room.id == "hall") append(" • ").append(room.hallView.label)
+                            }
+                            Dot(if (coCanhBao) SH.Red else room.accent, 6.dp)
+                            Text(
+                                text = sub,
+                                style = SHType.Caption,
+                                color = Color(0xFFCBD5E1),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (coCanhBao) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(Color(0xE6DC2626))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                                ) {
+                                    Icon(Icons.Filled.Warning, null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                    Text(
+                                        text = if (room.id == "kitchen") "RÒ RỈ GAS" else "CHUYỂN ĐỘNG",
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (rooms.size > 1) {
+                        Spacer(Modifier.width(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            PagerNavButton(
+                                icon = Icons.Filled.ChevronLeft,
+                                contentDescription = "Phòng trước",
+                                onClick = {
+                                    scope.launch {
+                                        val target = (pager.currentPage - 1 + rooms.size) % rooms.size
+                                        pager.animateScrollToPage(target)
+                                    }
+                                },
+                            )
+                            PagerNavButton(
+                                icon = Icons.Filled.ChevronRight,
+                                contentDescription = "Phòng tiếp theo",
+                                onClick = {
+                                    scope.launch {
+                                        val target = (pager.currentPage + 1) % rooms.size
+                                        pager.animateScrollToPage(target)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+
+                // Hang duoi: chip trang thai thiet bi + nut Dieu khien + PagerDots
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, end = 10.dp, bottom = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val chips = chipsTomTatPhong(room, den, quat)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            chips.forEach { c ->
+                                RoomStatusChip(chip = c)
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SH.Blue)
+                                .clickable { onOpen(room.id) }
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "Điều khiển",
+                                style = SHType.Label,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PagerDots(
+                            count = rooms.size,
+                            current = pager.currentPage,
+                        )
                     }
                 }
             }
         }
+    }
+}
 
-        PagerDots(
-            count = rooms.size,
-            current = pager.currentPage,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+@Composable
+private fun PagerNavButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xB80F172A))
+            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+private fun RoomStatusChip(chip: ChipThongTinPhong) {
+    val bg = if (chip.active) Color(0xCC0F172A) else Color(0xB8090E1A)
+    val border = if (chip.active) chip.color.tint(0.55f) else Color.White.copy(alpha = 0.14f)
+    val tintColor = if (chip.active) chip.color else SH.TextOff
+    val textColor = when {
+        chip.mutedText -> SH.TextDim
+        chip.active -> if (chip.color == SH.Red) Color(0xFFFCA5A5) else Color(0xFFF1F5F9)
+        else -> SH.TextDim
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(7.dp))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = chip.icon,
+            contentDescription = null,
+            tint = tintColor,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            text = chip.label,
+            style = SHType.Caption,
+            fontWeight = if (chip.active) FontWeight.Medium else FontWeight.Normal,
+            color = textColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
