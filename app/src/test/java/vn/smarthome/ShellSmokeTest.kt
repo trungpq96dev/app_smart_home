@@ -59,7 +59,9 @@ class ShellSmokeTest {
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Đèn phòng").assertIsDisplayed()
         rule.onNodeWithText("Quạt trần").assertIsDisplayed()
+        rule.onNodeWithText("Smart TV").assertIsDisplayed()
         rule.onNodeWithText("Điều hòa").assertIsDisplayed()
+        rule.onNodeWithText("Rèm cửa tự động").assertIsDisplayed()
         rule.onNodeWithText("Chế độ hoạt động").assertIsDisplayed()
     }
 

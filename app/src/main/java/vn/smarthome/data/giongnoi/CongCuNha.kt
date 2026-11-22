@@ -24,6 +24,8 @@ interface HanhDongNha {
     fun datQuat(phong: String, bat: Boolean)
     fun datDieuHoa(phong: String, bat: Boolean)
     fun datLichHen(phong: String, bat: Boolean)
+    fun datTv(phong: String, bat: Boolean) {}
+    fun datRem(phong: String, mo: Boolean) {}
 
     /** Dat nhiet do dieu hoa. Tra ve nhiet do THAT sau khi kep vao 16..30. */
     fun datNhietDo(phong: String, doC: Int): Int
@@ -169,7 +171,7 @@ class CongCuNha(
         hanhDong: String,
         giaTri: String?,
     ): String? = when (thietBi) {
-        DEN, QUAT, DIEU_HOA, LICH_HEN -> {
+        DEN, QUAT, DIEU_HOA, LICH_HEN, TV, REM -> {
             val dangBat = nha.dangBat(ma, thietBi)
             // `dao` tren thiet bi THAT ma khong ro trang thai thi phai tu choi.
             // batHayTat() coi khong-ro la "tat" roi dao thanh bat - doan the
@@ -186,6 +188,8 @@ class CongCuNha(
                 DEN -> nha.datDen(ma, bat)
                 QUAT -> nha.datQuat(ma, bat)
                 LICH_HEN -> nha.datLichHen(ma, bat)
+                TV -> nha.datTv(ma, bat)
+                REM -> nha.datRem(ma, bat)
                 else -> nha.datDieuHoa(ma, bat)
             }
             // Bat dieu hoa ma nguoi dung noi kem nhiet do thi dat luon, khong
@@ -200,6 +204,7 @@ class CongCuNha(
             // tac chua chac da nhan. Noi "da gui lenh bat" chu dung noi "bat".
             val xong = if (nha.laThat(ma, thietBi)) "đã gửi lệnh " else ""
             if (nhiet != null) "$tenTb $ten: ${xong}bật, $nhiet độ"
+            else if (thietBi == REM) "$tenTb $ten: " + xong + (if (bat) "mở" else "đóng")
             else "$tenTb $ten: " + xong + (if (bat) "bật" else "tắt")
         }
 
@@ -306,6 +311,7 @@ class CongCuNha(
         const val QUAT = "quat"
         const val DIEU_HOA = "dieu_hoa"
         const val REM = "rem"
+        const val TV = "tivi"
         const val NHIET_DO = "nhiet_do"
         const val CHE_DO = "che_do"
         const val LICH_HEN = "lich_hen"
@@ -346,6 +352,7 @@ class CongCuNha(
             QUAT -> "Quạt"
             DIEU_HOA -> "Điều hòa"
             REM -> "Rèm"
+            TV -> "Smart TV"
             LICH_HEN -> "Lịch hẹn"
             NHIET_DO -> "Nhiệt độ"
             CHE_DO -> "Chế độ"
@@ -371,7 +378,7 @@ class CongCuNha(
                 .put(
                     "description",
                     "Bật, tắt hoặc chỉnh một thiết bị trong nhà. Dùng cho đèn, quạt, " +
-                        "điều hòa, nhiệt độ điều hòa, chế độ phòng và lịch hẹn.",
+                        "điều hòa, tivi, rèm, nhiệt độ điều hòa, chế độ phòng và lịch hẹn.",
                 )
                 .put(
                     "parameters",
@@ -392,7 +399,7 @@ class CongCuNha(
                                     "thiet_bi",
                                     thamSo(
                                         "Thiết bị cần điều khiển.",
-                                        enum(DEN, QUAT, DIEU_HOA, REM, NHIET_DO, CHE_DO, LICH_HEN),
+                                        enum(DEN, QUAT, DIEU_HOA, TV, REM, NHIET_DO, CHE_DO, LICH_HEN),
                                     ),
                                 )
                                 .put(

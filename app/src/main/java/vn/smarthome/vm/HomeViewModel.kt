@@ -575,10 +575,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             nguon = LenhCongTac.NGUON_MAN_HINH)
     }
 
+    fun setLightBrightness(roomId: String, brightness: Int) = editRoom(roomId) {
+        val b = brightness.coerceIn(10, 100)
+        it.copy(lightOn = true, lightBrightness = b)
+    }
+
     fun toggleFan(roomId: String) {
         gatCongTac(roomId, CongCuNha.QUAT, dao = true, bat = false,
             nguon = LenhCongTac.NGUON_MAN_HINH)
     }
+
+    fun toggleTv(roomId: String) = editRoom(roomId) { it.copy(tvOn = !it.tvOn) }
+
+    fun datTv(roomId: String, bat: Boolean) = editRoom(roomId) { it.copy(tvOn = bat) }
 
     fun toggleAc(roomId: String) = editRoom(roomId) { it.copy(acOn = !it.acOn) }
 
@@ -587,33 +596,81 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         it.copy(acOn = true, acTemp = (it.acTemp + delta).coerceIn(16, 30))
     }
 
+    fun toggleCurtain(roomId: String) = editRoom(roomId) {
+        it.copy(curtainOpen = if (it.curtainOpen > 0) 0 else 100)
+    }
+
+    fun setCurtain(roomId: String, openPercent: Int) = editRoom(roomId) {
+        it.copy(curtainOpen = openPercent.coerceIn(0, 100))
+    }
+
     fun setMode(roomId: String, mode: RoomMode) {
         val ct = congTac.value
         val denThat = ct.laThat(roomId, CongCuNha.DEN)
         val quatThat = ct.laThat(roomId, CongCuNha.QUAT)
         editRoom(roomId) { r ->
-            when (mode) {
-                RoomMode.SLEEP -> r.copy(
-                    mode = mode,
-                    lightOn = if (denThat) r.lightOn else true,
-                    fanOn = if (quatThat) r.fanOn else true,
-                    acOn = true,
-                    acTemp = 26,
-                )
-                RoomMode.HOME -> r.copy(
-                    mode = mode,
-                    lightOn = if (denThat) r.lightOn else true,
-                    fanOn = if (quatThat) r.fanOn else false,
-                    acOn = true,
-                    acTemp = 25,
-                )
-                RoomMode.AWAY -> r.copy(
-                    mode = mode,
-                    lightOn = if (denThat) r.lightOn else false,
-                    fanOn = if (quatThat) r.fanOn else false,
-                    acOn = false,
-                )
-                RoomMode.CUSTOM -> r.copy(mode = mode)
+            if (roomId == "living") {
+                when (mode) {
+                    RoomMode.HOME -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
+                        acOn = true,
+                        acTemp = 24,
+                        curtainOpen = 100,
+                        tvOn = false,
+                    )
+                    RoomMode.SLEEP -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 20,
+                        acOn = true,
+                        acTemp = 23,
+                        curtainOpen = 0,
+                        tvOn = true,
+                    )
+                    RoomMode.CUSTOM -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 55,
+                        acOn = true,
+                        acTemp = 25,
+                        curtainOpen = 50,
+                        tvOn = false,
+                    )
+                    RoomMode.AWAY -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else false,
+                        fanOn = if (quatThat) r.fanOn else false,
+                        acOn = false,
+                        tvOn = false,
+                        curtainOpen = 0,
+                    )
+                }
+            } else {
+                when (mode) {
+                    RoomMode.SLEEP -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        fanOn = if (quatThat) r.fanOn else true,
+                        acOn = true,
+                        acTemp = 26,
+                    )
+                    RoomMode.HOME -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        fanOn = if (quatThat) r.fanOn else false,
+                        acOn = true,
+                        acTemp = 25,
+                    )
+                    RoomMode.AWAY -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else false,
+                        fanOn = if (quatThat) r.fanOn else false,
+                        acOn = false,
+                    )
+                    RoomMode.CUSTOM -> r.copy(mode = mode)
+                }
             }
         }
     }
@@ -837,6 +894,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         override fun datLichHen(phong: String, bat: Boolean) =
             this@HomeViewModel.datLichHen(phong, bat)
 
+        override fun datTv(phong: String, bat: Boolean) =
+            this@HomeViewModel.datTv(phong, bat)
+
+        override fun datRem(phong: String, mo: Boolean) {
+            this@HomeViewModel.setCurtain(phong, if (mo) 100 else 0)
+        }
+
         override fun datNhietDo(phong: String, doC: Int): Int =
             this@HomeViewModel.datNhietDo(phong, doC)
 
@@ -880,6 +944,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 "den" -> p.lightOn
                 "quat" -> p.fanOn
                 "dieu_hoa" -> p.acOn
+                "tivi" -> p.tvOn
+                "rem" -> p.curtainOpen > 0
                 "lich_hen" -> p.scheduleOn
                 else -> null
             }
@@ -911,9 +977,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
          * phai in "khong ro", khong duoc in "tat".
          */
         override fun chupTrangThai(): String = _state.value.rooms.joinToString("\n") { p ->
+            val extra = if (p.id == "living") {
+                ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"
+            } else {
+                ""
+            }
             "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
                 "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
-                "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ, chế độ ${p.mode.label}"
+                "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ$extra, chế độ ${p.mode.label}"
         }
 
         override fun guiMqtt(
@@ -1017,7 +1088,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     // Co theo TUNG thiet bi, khong con mot co toan cuc: tu nay
                     // bed1/den va bed1/quat la that con lai van la mau.
                     .put("den_that", denThat)
-                    .put("quat_that", quatThat),
+                    .put("quat_that", quatThat)
+                    .apply {
+                        if (p.id == "living") {
+                            put("do_sang_den", p.lightBrightness)
+                            put("tivi", p.tvOn)
+                            put("rem_mo", p.curtainOpen)
+                        }
+                    },
             )
         }
         val nhanh = JSONArray()

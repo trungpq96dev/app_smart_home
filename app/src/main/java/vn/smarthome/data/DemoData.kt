@@ -73,8 +73,9 @@ object DemoData {
     fun rooms(): List<RoomUi> = listOf(
         RoomUi(
             id = "living", name = "Phòng khách", icon = Icons.Filled.Weekend, accent = SH.Amber,
-            lightOn = true, fanOn = false, acOn = true, acTemp = 26, mode = RoomMode.HOME,
+            lightOn = true, fanOn = false, acOn = true, acTemp = 25, mode = RoomMode.HOME,
             scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "23:30",
+            lightBrightness = 100, tvOn = false, curtainOpen = 100,
         ),
         RoomUi(
             id = "bed1", name = "Phòng ngủ 1", icon = Icons.Filled.Bed, accent = SH.Purple,

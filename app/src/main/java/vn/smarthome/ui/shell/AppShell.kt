@@ -178,6 +178,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         oDen = vm.oThietBi(room.id, "den", congTac, choCongTac),
                         oQuat = vm.oThietBi(room.id, "quat", congTac, choCongTac),
                         onToggleAc = { vm.toggleAc(room.id) },
+                        onLightBrightness = { b -> vm.setLightBrightness(room.id, b) },
+                        onToggleTv = { vm.toggleTv(room.id) },
+                        onToggleCurtain = { vm.toggleCurtain(room.id) },
+                        onCurtainOpen = { p -> vm.setCurtain(room.id, p) },
                     )
 
                     showChiTietDien -> ChiTietDienScreen(

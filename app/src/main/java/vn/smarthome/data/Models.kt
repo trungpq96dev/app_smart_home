@@ -28,6 +28,9 @@ data class RoomUi(
     val scheduleOn: Boolean,
     val scheduleLabel: String,
     val scheduleTime: String,
+    val lightBrightness: Int = 100, // 10..100 (%)
+    val tvOn: Boolean = false,
+    val curtainOpen: Int = 100,     // 0..100 (%)
 )
 
 /** Mot o thao tac nhanh o Trang chu. */
