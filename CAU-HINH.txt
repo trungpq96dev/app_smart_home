@@ -239,7 +239,7 @@ File mã nguồn: app/src/main/java/vn/smarthome/ui/theme/Dimens.kt
 9. BUILD & KÝ
 -------------------------------------------------------------------------------
 applicationId   vn.smarthome        (debug: vn.smarthome.debug)
-versionName     0.9.0       versionCode 22
+versionName     0.9.1       versionCode 23
 minSdk 26  /  targetSdk 35  /  compileSdk 35  /  Java 17
 Khóa ký         keystore.properties + smarthome-release.jks ở thư mục gốc
                 (CẢ HAI ĐỀU KHÔNG NẰM TRONG GIT)

@@ -8,7 +8,7 @@ import { ConfigStore } from './configStore.js';
 import { MqttBridge } from './mqttBridge.js';
 import { fetchStreamList, Go2rtcWsProxy, proxyGo2rtcHttp } from './go2rtcProxy.js';
 
-const APP_VERSION = '0.9.0-web';
+const APP_VERSION = '0.9.1-web';
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 

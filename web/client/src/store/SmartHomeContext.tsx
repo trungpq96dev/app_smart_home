@@ -147,8 +147,8 @@ export type UpdateCheckState =
   | { status: 'available'; release: GithubReleaseInfo }
   | { status: 'error'; message: string };
 
-export const APP_WEB_VERSION = '0.9.0-web';
-export const ANDROID_BASE_VERSION = '0.9.0';
+export const APP_WEB_VERSION = '0.9.1-web';
+export const ANDROID_BASE_VERSION = '0.9.1';
 
 const GIAY_CHO_CUKTECH = 25;
 const GIAY_CHO_NOI_LAI = 90;
