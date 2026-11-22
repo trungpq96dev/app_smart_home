@@ -69,6 +69,16 @@ interface HanhDongNha {
 
     /** Ban lenh ra MQTT `smarthome/control`. Tra ve false neu chua noi broker. */
     fun guiMqtt(phong: String, thietBi: String, hanhDong: String, giaTri: String?): Boolean
+
+    /** True khi he thong bom nuoc da cau hinh va co du lieu that tu bo. */
+    fun bomNuocLaThat(): Boolean = false
+
+    /**
+     * Dieu khien he thong bom nuoc (`bom_nuoc`).
+     * Tra ve cau xac nhan tieng Viet hoac nem [LoiLenh] neu khong hop le / mat ket noi.
+     */
+    fun dieuKhienBom(thietBi: String, hanhDong: String, giaTri: String?): String =
+        throw LoiLenh("Hệ thống bơm nước chưa được kết nối.")
 }
 
 /**
@@ -121,6 +131,12 @@ class CongCuNha(
 
         if (thietBi.isEmpty()) return loi("Chưa biết điều khiển thiết bị gì.")
         if (hanhDong.isEmpty()) return loi("Chưa biết làm gì với $thietBi.")
+
+        // He thong bom nuoc ESP32 (AquaControl) di theo luong rieng, khong di qua smarthome/control.
+        if (phong == BOM_NUOC || thietBi in THIET_BI_BOM_NUOC) {
+            val kq = nha.dieuKhienBom(thietBi, hanhDong, giaTri)
+            return ok(kq, that = nha.bomNuocLaThat())
+        }
 
         // O thao tac nhanh o Trang chu - khong thuoc phong nao.
         if (phong == NHANH) return oNhanh(thietBi, hanhDong)
@@ -308,6 +324,7 @@ class CongCuNha(
 
         const val NHANH = "nhanh"
         const val TAT_CA = "tat_ca"
+        const val BOM_NUOC = "bom_nuoc"
 
         const val DEN = "den"
         const val QUAT = "quat"
@@ -318,6 +335,13 @@ class CongCuNha(
         const val NHIET_DO = "nhiet_do"
         const val CHE_DO = "che_do"
         const val LICH_HEN = "lich_hen"
+        const val BOM_CHINH = "bom_chinh"
+        const val BOM_TANG_AP = "bom_tang_ap"
+        const val DEN_PHU = "den_phu"
+        const val LOI_BOM = "loi_bom"
+        const val COI_BOM = "coi_bom"
+
+        val THIET_BI_BOM_NUOC = setOf(BOM_CHINH, BOM_TANG_AP, DEN_PHU, LOI_BOM, COI_BOM)
 
         const val BAT = "bat"
         const val TAT = "tat"
@@ -332,7 +356,7 @@ class CongCuNha(
          * khong" se duoc tra loi bang mot so mau.
          */
         val MUC_HOP_LE = listOf(
-            "trang_thai_nha", "dien", "server", "wifi", "thoi_tiet", "lich_am", "cong_tac",
+            "trang_thai_nha", "dien", "server", "wifi", "thoi_tiet", "lich_am", "cong_tac", "bom_nuoc",
         )
 
         fun docCheDo(s: String?): String? = when (s?.trim()?.lowercase()) {
@@ -375,14 +399,16 @@ class CongCuNha(
                 maPhong.forEach { put(it) }
                 put(TAT_CA)
                 put(NHANH)
+                put(BOM_NUOC)
             }
 
             val dieuKhien = JSONObject()
                 .put("name", DIEU_KHIEN)
                 .put(
                     "description",
-                    "Bật, tắt hoặc chỉnh một thiết bị trong nhà. Dùng cho đèn, quạt, " +
-                        "điều hòa, tivi, rèm, bếp từ, nhiệt độ điều hòa, chế độ phòng và lịch hẹn.",
+                    "Bật, tắt hoặc chỉnh một thiết bị trong nhà và hệ thống bơm nước. Dùng cho đèn, quạt, " +
+                        "điều hòa, tivi, rèm, bếp từ, nhiệt độ điều hòa, chế độ phòng, lịch hẹn, và " +
+                        "bơm lên bồn, bơm tăng áp, đèn phụ hộp bơm, xoá lỗi bơm, tắt còi bơm.",
                 )
                 .put(
                     "parameters",
@@ -395,7 +421,8 @@ class CongCuNha(
                                     "phong",
                                     thamSo(
                                         "Mã phòng. '$TAT_CA' là mọi phòng. " +
-                                            "'$NHANH' là bốn ô thao tác nhanh ở Trang chủ.",
+                                            "'$NHANH' là bốn ô thao tác nhanh ở Trang chủ. " +
+                                            "'$BOM_NUOC' là hệ thống bơm nước AquaControl.",
                                         phongEnum,
                                     ),
                                 )
@@ -403,22 +430,25 @@ class CongCuNha(
                                     "thiet_bi",
                                     thamSo(
                                         "Thiết bị cần điều khiển.",
-                                        enum(DEN, QUAT, DIEU_HOA, TV, REM, BEP_TU, NHIET_DO, CHE_DO, LICH_HEN),
+                                        enum(
+                                            DEN, QUAT, DIEU_HOA, TV, REM, BEP_TU, NHIET_DO, CHE_DO, LICH_HEN,
+                                            BOM_CHINH, BOM_TANG_AP, DEN_PHU, LOI_BOM, COI_BOM,
+                                        ),
                                     ),
                                 )
                                 .put(
                                     "hanh_dong",
                                     thamSo(
-                                        "'$DAO' là đảo trạng thái. '$DAT' dùng với nhiet_do " +
-                                            "hoặc che_do và cần gia_tri.",
+                                        "'$DAO' là đảo trạng thái. '$DAT' dùng với nhiet_do, che_do " +
+                                            "hoặc bom_chinh (auto/on/off) và cần gia_tri.",
                                         enum(BAT, TAT, DAO, DAT, TANG, GIAM),
                                     ),
                                 )
                                 .put(
                                     "gia_tri",
                                     thamSo(
-                                        "Nhiệt độ 16-30 viết dạng số, ví dụ \"24\". Hoặc tên " +
-                                            "chế độ: ngu, nha, vang_nha, tuy_chinh.",
+                                        "Nhiệt độ 16-30 viết dạng số, ví dụ \"24\". Tên chế độ phòng: " +
+                                            "ngu, nha, vang_nha, tuy_chinh. Hoặc chế độ bơm: auto, on, off.",
                                         null,
                                     ),
                                 ),
@@ -470,6 +500,7 @@ class CongCuNha(
                                     "dien: điện EVN. server: máy chủ serverubuntu. " +
                                         "wifi: modem. thoi_tiet: Open-Meteo. " +
                                         "lich_am: lịch âm hôm nay. " +
+                                        "bom_nuoc: trạng thái, mức nước, lưu lượng, nhiệt độ và lỗi hệ bơm nước. " +
                                         "trang_thai_nha: đèn/quạt/điều hòa từng phòng " +
                                         "(gồm cả thiết bị mẫu). " +
                                         "cong_tac: các công tắc Wi-Fi THẬT — đang nối " +

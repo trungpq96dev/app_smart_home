@@ -213,12 +213,47 @@ class ShellSmokeTest {
     @Test
     fun man_tu_dong_hoa_hien_the_aquacontrol() {
         start()
-        // Thay cho phan kiem cu: Tu dong hoa khong con la placeholder.
         rule.onNodeWithText("Tự động hóa").performClick()
         rule.mainClock.advanceTimeByFrame()
-        // "AquaControl" co o ca tieu de the lan nut mo app, nen lay cai dau.
+
+        // Mac dinh mo tab Bom nuoc va khong bia so khi chua cau hinh.
+        rule.onNodeWithText("Chưa cấu hình kết nối bo bơm nước").assertIsDisplayed()
+        rule.onNodeWithText("Cấu hình kết nối bo bơm").assertIsDisplayed()
+
+        // Chuyen qua ca 3 tab con lai khong crash.
+        rule.onNodeWithText("Bảo vệ").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Ngưỡng bảo vệ bơm").assertIsDisplayed()
+
+        rule.onNodeWithText("Nhật ký").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Nhật ký hoạt động").assertIsDisplayed()
+        rule.onNodeWithText("Lượng nước theo tháng").assertIsDisplayed()
+
+        rule.onNodeWithText("Kịch bản").performClick()
+        rule.mainClock.advanceTimeByFrame()
         rule.onAllNodesWithText("AquaControl").onFirst().assertIsDisplayed()
         rule.onNodeWithText("Hệ thống Bơm & Cấp Nước Tự Động").assertIsDisplayed()
+    }
+
+    @Test
+    fun tab_nuoc_trong_thong_ke_khong_bia_so_khi_chua_cau_hinh() {
+        start()
+        rule.onNodeWithText("Thống kê").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Nước").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Chưa có số liệu nước").assertIsDisplayed()
+    }
+
+    @Test
+    fun tab_bom_nuoc_trong_cai_dat_mo_duoc() {
+        start()
+        rule.onNodeWithText("Cài đặt").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Bơm nước").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Bo bơm nước ESP32 — AquaControl").assertIsDisplayed()
     }
 
     @Test

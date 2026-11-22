@@ -53,6 +53,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import vn.smarthome.data.bomnuoc.BomNuocState
+import vn.smarthome.data.bomnuoc.CauHinhBomNuoc
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.TrangThaiCam
 import vn.smarthome.data.dien.CauHinhMqtt
@@ -68,6 +72,7 @@ import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatusPill
+import vn.smarthome.ui.components.TrangThaiKetNoiBomPill
 import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -106,6 +111,11 @@ fun SettingsScreen(
     currentVersion: String = "0.1",
     onKiemTraCapNhat: () -> Unit = {},
     onBatDauCapNhat: (ReleaseInfo) -> Unit = {},
+    cauHinhBomNuoc: CauHinhBomNuoc = CauHinhBomNuoc(),
+    ketNoiBom: TrangThaiKetNoiBom = TrangThaiKetNoiBom.ChuaCauHinh,
+    kenhBom: KenhBomNuoc = KenhBomNuoc.KHONG,
+    bomNuoc: BomNuocState? = null,
+    onLuuBomNuoc: (CauHinhBomNuoc) -> Unit = {},
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val coBanMoi = otaStatus is OtaStatus.UpdateAvailable
@@ -131,17 +141,26 @@ fun SettingsScreen(
                     onClick = { selectedTab = 2 },
                 )
                 TabButton(
-                    text = if (coBanMoi) "Cập nhật (Có bản mới!)" else "Cập nhật hệ thống",
+                    text = "Bơm nước",
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                )
+                TabButton(
+                    text = if (coBanMoi) "Cập nhật (Mới!)" else "Cập nhật",
                     selected = selectedTab == 1,
                     highlight = coBanMoi,
                     onClick = { selectedTab = 1 },
                 )
             }
 
-            Spacer(Modifier.width(12.dp))
-            TrangThaiKetNoi(ketNoi)
             Spacer(Modifier.width(8.dp))
-            TrangThaiCameraPill(trangThaiCam)
+            if (selectedTab == 3) {
+                TrangThaiKetNoiBomPill(ketNoiBom, kenhBom)
+            } else {
+                TrangThaiKetNoi(ketNoi)
+                Spacer(Modifier.width(6.dp))
+                TrangThaiCameraPill(trangThaiCam)
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -174,6 +193,18 @@ fun SettingsScreen(
                 }
                 SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 14.dp) {
                     GhiChuGiongNoi()
+                }
+            }
+        } else if (selectedTab == 3) {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+            ) {
+                SmartCard(Modifier.weight(1.3f).fillMaxHeight(), padding = 14.dp) {
+                    FormBomNuoc(cauHinhBomNuoc, onLuuBomNuoc)
+                }
+                SmartCard(Modifier.weight(0.7f).fillMaxHeight(), padding = 14.dp) {
+                    TrangThaiBomNuocCard(cauHinhBomNuoc, ketNoiBom, kenhBom, bomNuoc)
                 }
             }
         } else {
@@ -790,6 +821,121 @@ private fun GhiChuGiongNoi() {
             "Quyền micro",
             "Lần đầu bấm nút mic, Android sẽ hỏi quyền. Từ chối thì nút mic vẫn " +
                 "hiện nhưng không thu được gì.",
+        )
+    }
+}
+
+// ---------------------------------------------------------------- Bom nuoc
+
+@Composable
+private fun FormBomNuoc(
+    cauHinh: CauHinhBomNuoc,
+    onLuu: (CauHinhBomNuoc) -> Unit,
+) {
+    var espHost by remember(cauHinh.espHost) { mutableStateOf(cauHinh.espHost) }
+    var uuTienLan by remember(cauHinh.uuTienLan) { mutableStateOf(cauHinh.uuTienLan) }
+    var brokerHost by remember(cauHinh.brokerHost) { mutableStateOf(cauHinh.brokerHost) }
+    var brokerPort by remember(cauHinh.brokerPort) { mutableStateOf(cauHinh.brokerPort.toString()) }
+    var brokerTls by remember(cauHinh.brokerTls) { mutableStateOf(cauHinh.brokerTls) }
+    var brokerUser by remember(cauHinh.brokerUser) { mutableStateOf(cauHinh.brokerUser) }
+    var brokerPass by remember(cauHinh.brokerPass) { mutableStateOf(cauHinh.brokerPass) }
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Bo bơm nước ESP32 — AquaControl", style = SHType.CardTitle, color = SH.Text)
+        Text(
+            "Tách biệt với Mosquitto số điện. Dùng LAN 1s khi ở nhà và MQTT 30s khi ở xa.",
+            style = SHType.Caption,
+            color = SH.TextDim,
+        )
+        Spacer(Modifier.height(10.dp))
+
+        O("Địa chỉ bo trong mạng LAN", espHost, { espHost = it }, "vd: 192.168.0.120 hoặc bomnuoc.local")
+        Spacer(Modifier.height(4.dp))
+        CongTac(
+            bat = uuTienLan,
+            onDoi = { uuTienLan = it },
+            ten = "Ưu tiên kênh LAN (HTTP 1 giây/lần)",
+            phu = "Tự chuyển sang MQTT nếu ra khỏi mạng nhà",
+        )
+        Spacer(Modifier.height(6.dp))
+
+        O("Địa chỉ broker MQTT", brokerHost, { brokerHost = it }, "vd: abc123.ala.asia-southeast1.emqxsl.com")
+        Spacer(Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.width(110.dp)) {
+                O("Cổng", brokerPort, { brokerPort = it.filter { c -> c.isDigit() }.take(5) }, "8883", soThoi = true)
+            }
+            CongTac(
+                bat = brokerTls,
+                onDoi = { brokerTls = it },
+                ten = "TLS",
+                phu = if (brokerTls) "ssl:// — EMQX Cloud" else "tcp:// — không mã hoá",
+                phuCanhBao = !brokerTls,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+
+        O("Tài khoản MQTT bơm", brokerUser, { brokerUser = it }, "")
+        Spacer(Modifier.height(8.dp))
+        OMatKhau("Mật khẩu MQTT bơm", brokerPass, { brokerPass = it }, "")
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = {
+                onLuu(
+                    CauHinhBomNuoc(
+                        espHost = espHost,
+                        uuTienLan = uuTienLan,
+                        brokerHost = brokerHost,
+                        brokerPort = brokerPort.toIntOrNull() ?: 8883,
+                        brokerTls = brokerTls,
+                        brokerUser = brokerUser,
+                        brokerPass = brokerPass,
+                    )
+                )
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+            modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+        ) {
+            Text("Lưu và kết nối lại", style = SHType.Button, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun TrangThaiBomNuocCard(
+    cauHinh: CauHinhBomNuoc,
+    ketNoi: TrangThaiKetNoiBom,
+    kenh: KenhBomNuoc,
+    bomNuoc: BomNuocState?,
+) {
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Trạng thái đường truyền", style = SHType.CardTitle, color = SH.Text)
+        Spacer(Modifier.height(8.dp))
+
+        MucThongSo("Trạng thái", ketNoi.nhan)
+        MucThongSo("Kênh đang dùng", when (kenh) {
+            KenhBomNuoc.LAN -> "LAN trực tiếp (1s)"
+            KenhBomNuoc.MQTT -> "MQTT (nhịp ${bomNuoc?.hb ?: 30}s)"
+            KenhBomNuoc.KHONG -> "Chưa kết nối"
+        })
+        MucThongSo("Địa chỉ LAN", cauHinh.espHost.ifBlank { "Chưa nhập" })
+        MucThongSo("Broker MQTT", cauHinh.brokerHost.ifBlank { "Chưa nhập" })
+        MucThongSo("Mật khẩu MQTT", if (cauHinh.brokerPass.isNotBlank()) "Đã lưu trên máy" else "Chưa nhập")
+        bomNuoc?.fw?.let { MucThongSo("Firmware bo", it) }
+        bomNuoc?.ip?.takeIf { it.isNotBlank() }?.let { MucThongSo("IP hiện tại", it) }
+
+        Spacer(Modifier.height(12.dp))
+        Ghi(
+            "Lưu ý bảo mật",
+            "Mật khẩu broker chỉ lưu trong DataStore trên máy tính bảng và đã bị loại khỏi sao lưu đám mây, không nhúng trong mã nguồn.",
+        )
+        Spacer(Modifier.height(8.dp))
+        Ghi(
+            "Topic cố định",
+            "App đọc bomnuoc/state, bomnuoc/status, bomnuoc/usage và gửi lệnh qua bomnuoc/cmd hoặc /api/cmd.",
         )
     }
 }

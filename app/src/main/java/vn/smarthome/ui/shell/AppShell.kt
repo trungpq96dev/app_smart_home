@@ -81,6 +81,13 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val phienGiongNoi by vm.phienGiongNoi.collectAsStateWithLifecycle()
     val cauHinhGiongNoi by vm.cauHinhGiongNoi.collectAsStateWithLifecycle()
     val mucDungGiongNoi by vm.mucDungGiongNoi.collectAsStateWithLifecycle()
+    val cauHinhBomNuoc by vm.cauHinhBomNuoc.collectAsStateWithLifecycle()
+    val bomNuoc by vm.bomNuoc.collectAsStateWithLifecycle()
+    val luongNuocThang by vm.luongNuocThang.collectAsStateWithLifecycle()
+    val ketNoiBom by vm.ketNoiBom.collectAsStateWithLifecycle()
+    val kenhBom by vm.kenhBom.collectAsStateWithLifecycle()
+    val choBomNuoc by vm.choBomNuoc.collectAsStateWithLifecycle()
+    val nhatKyBomNuoc by vm.nhatKyBomNuoc.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,6 +98,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+
+    LaunchedEffect(dest) {
+        vm.datDangXemManBom(dest == Dest.AUTOMATION)
+    }
 
     // ---- Tro ly giong noi ----
 
@@ -239,6 +250,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onKind = vm::setStatKind,
                         onRange = vm::setStatRange,
                         onXemChiTiet = { showChiTietDien = true },
+                        bomNuoc = bomNuoc,
+                        luongNuocThang = luongNuocThang,
+                        ketNoiBom = ketNoiBom,
+                        kenhBom = kenhBom,
                     )
 
                     dest == Dest.HOME -> HomeScreen(
@@ -274,6 +289,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
                         onBatDauCapNhat = vm::batDauCapNhat,
                         onBack = { current = Dest.HOME.route },
+                        cauHinhBomNuoc = cauHinhBomNuoc,
+                        ketNoiBom = ketNoiBom,
+                        kenhBom = kenhBom,
+                        bomNuoc = bomNuoc,
+                        onLuuBomNuoc = vm::luuCauHinhBomNuoc,
                     )
 
                     dest == Dest.UTILITIES -> TienIchScreen(
@@ -300,6 +320,26 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     dest == Dest.AUTOMATION -> AutomationScreen(
                         onBack = { current = Dest.HOME.route },
                         onNotice = toast,
+                        bomNuoc = bomNuoc,
+                        luongNuocThang = luongNuocThang,
+                        ketNoiBom = ketNoiBom,
+                        kenhBom = kenhBom,
+                        choBomNuoc = choBomNuoc,
+                        cauHinhBom = cauHinhBomNuoc,
+                        nhatKyBom = nhatKyBomNuoc,
+                        onDatCheDoBon = vm::datCheDoBon,
+                        onDatBomTangAp = vm::datBomTangAp,
+                        onDatDenPhuBom = vm::datDenPhuBom,
+                        onXoaLoiBom = vm::xoaLoiBom,
+                        onTatCoiBom = vm::tatCoiBom,
+                        onThuCoiBom = vm::thuCoiBom,
+                        onLuuBaoVeBom = vm::luuBaoVeBom,
+                        onGhiMocCanBom = vm::ghiMocCanBom,
+                        onGhiMocDayBom = vm::ghiMocDayBom,
+                        onDatLaiDemLuuLuong = vm::datLaiDemLuuLuong,
+                        onXoaLichSuNuocTrenBo = vm::xoaLichSuNuocTrenBo,
+                        onXoaNhatKyBomCucBo = vm::xoaNhatKyBomCucBo,
+                        onLuuCauHinhBom = vm::luuCauHinhBomNuoc,
                     )
 
                     else -> PlaceholderScreen(

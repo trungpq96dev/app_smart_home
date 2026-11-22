@@ -387,7 +387,10 @@ class TroLyGiongNoi(
 
         append("Khi người dùng muốn bật/tắt/chỉnh thiết bị, gọi ngay dieu_khien_thiet_bi ")
         append("rồi xác nhận ngắn gọn. Đừng hỏi lại cho chắc với những việc đảo ngược được dễ dàng.\n")
-        append("Khi người dùng hỏi bất kỳ con số nào, PHẢI gọi doc_so_lieu trước. ")
+        append("Với hệ thống bơm nước (bơm lên bồn, bơm tăng áp, đèn phụ hộp bơm, xoá lỗi bơm, tắt còi), ")
+        append("gọi dieu_khien_thiet_bi với phong = \"bom_nuoc\".\n")
+        append("Khi người dùng hỏi bất kỳ con số nào (gồm cả mức nước, lưu lượng, nhiệt độ, lỗi bơm), PHẢI gọi doc_so_lieu trước ")
+        append("(với bơm nước thì dùng muc = \"bom_nuoc\"). ")
         append("Tuyệt đối không tự nghĩ ra số. Nếu doc_so_lieu trả về co_so bằng false ")
         append("thì nói thẳng là chưa có số và nói lý do.\n")
 

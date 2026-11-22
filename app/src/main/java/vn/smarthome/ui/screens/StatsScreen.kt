@@ -52,14 +52,22 @@ import androidx.compose.ui.unit.dp
 import vn.smarthome.data.DemoData
 import vn.smarthome.data.StatKind
 import vn.smarthome.data.StatRange
+import vn.smarthome.data.bomnuoc.BomNuocState
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
+import vn.smarthome.data.bomnuoc.LoiBomNuoc
+import vn.smarthome.data.bomnuoc.LuongNuocThang
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
 import vn.smarthome.data.dien.DienState
 import vn.smarthome.data.dien.DoTuoi
 import vn.smarthome.data.dien.KetNoi
 import vn.smarthome.ui.components.ArcGauge
 import vn.smarthome.ui.components.BarChart
+import vn.smarthome.ui.components.BieuDoNuocThang
 import vn.smarthome.ui.components.DemoBadge
+import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.SmartCard
+import vn.smarthome.ui.components.TrangThaiKetNoiBomPill
 import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -88,36 +96,47 @@ fun StatsScreen(
     onKind: (StatKind) -> Unit,
     onRange: (StatRange) -> Unit,
     onXemChiTiet: () -> Unit = {},
+    bomNuoc: BomNuocState? = null,
+    luongNuocThang: List<LuongNuocThang> = emptyList(),
+    ketNoiBom: TrangThaiKetNoiBom = TrangThaiKetNoiBom.ChuaCauHinh,
+    kenhBom: KenhBomNuoc = KenhBomNuoc.KHONG,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val laDien = state.statKind == StatKind.POWER
+    val laNuoc = state.statKind == StatKind.WATER
 
     Column(Modifier.fillMaxSize()) {
 
         TopBar(title = "Thống kê & Báo cáo", onBack = onBack) {
-            if (laDien) TrangThaiKetNoi(ketNoi) else if (DemoData.IS_DEMO) DemoBadge()
-            Box {
-                Row(
-                    Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SH.Card2)
-                        .clickable { menuOpen = true }
-                        .padding(horizontal = 11.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(state.statRange.label, style = SHType.Button, color = SH.Text, maxLines = 1)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Filled.ExpandMore, null,
-                        tint = SH.TextDim, modifier = Modifier.size(17.dp),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    StatRange.entries.forEach { r ->
-                        DropdownMenuItem(
-                            text = { Text(r.label, style = SHType.Body, color = SH.Text) },
-                            onClick = { onRange(r); menuOpen = false },
+            when {
+                laDien -> TrangThaiKetNoi(ketNoi)
+                laNuoc -> TrangThaiKetNoiBomPill(ketNoiBom, kenhBom)
+                DemoData.IS_DEMO -> DemoBadge()
+            }
+            if (!laNuoc) {
+                Box {
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SH.Card2)
+                            .clickable { menuOpen = true }
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(state.statRange.label, style = SHType.Button, color = SH.Text, maxLines = 1)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Filled.ExpandMore, null,
+                            tint = SH.TextDim, modifier = Modifier.size(17.dp),
                         )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        StatRange.entries.forEach { r ->
+                            DropdownMenuItem(
+                                text = { Text(r.label, style = SHType.Body, color = SH.Text) },
+                                onClick = { onRange(r); menuOpen = false },
+                            )
+                        }
                     }
                 }
             }
@@ -143,10 +162,10 @@ fun StatsScreen(
             }
 
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (laDien) {
-                    TabDienNang(dien, ketNoi, state.statRange, onXemChiTiet)
-                } else {
-                    TabDuLieuMau(state)
+                when {
+                    laDien -> TabDienNang(dien, ketNoi, state.statRange, onXemChiTiet)
+                    laNuoc -> TabNuoc(bomNuoc, luongNuocThang, ketNoiBom)
+                    else -> TabDuLieuMau(state)
                 }
             }
         }
@@ -363,7 +382,177 @@ private fun ChuaCoSo(ketNoi: KetNoi) {
 }
 
 // =====================================================================
-//  BON TAB CON LAI - van la du lieu mau
+//  TAB NUOC - so lieu that tu bo bom nuoc AquaControl (khong bia so)
+// =====================================================================
+
+@Composable
+private fun ColumnScope.TabNuoc(
+    bomNuoc: BomNuocState?,
+    luongNuocThang: List<LuongNuocThang>,
+    ketNoiBom: TrangThaiKetNoiBom,
+) {
+    val tongThangLit = bomNuoc?.useT ?: luongNuocThang.firstOrNull()?.bomLit
+    val nuocMayThangLit = bomNuoc?.useC ?: luongNuocThang.firstOrNull()?.nuocMayLit
+
+    SmartCard(Modifier.fillMaxWidth().weight(1f), padding = 12.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Lượng nước tiêu thụ theo tháng", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            if (luongNuocThang.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Dot(SH.Cyan, 7.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Bơm lên bồn", style = SHType.Caption, color = SH.TextDim)
+                    }
+                    if (luongNuocThang.any { it.nuocMayLit != null }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Dot(SH.Green, 7.dp)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Nước máy", style = SHType.Caption, color = SH.TextDim)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+
+        Row(verticalAlignment = Alignment.Bottom) {
+            val tongM3 = tongThangLit?.let { it / 1000.0 }
+            Text(
+                tongM3?.let { soLe1(it) } ?: "--",
+                style = SHType.ValueBig,
+                color = if (tongM3 != null) SH.Text else SH.TextOff,
+                maxLines = 1,
+            )
+            Text(
+                "m³",
+                style = SHType.CardTitle,
+                color = SH.TextDim,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+            )
+            if (tongThangLit != null) {
+                Spacer(Modifier.width(12.dp))
+                val phu = buildString {
+                    append("${tongThangLit.toInt()} L bơm")
+                    if (nuocMayThangLit != null) append(" · ${nuocMayThangLit.toInt()} L nước máy")
+                }
+                Text(phu, style = SHType.Caption, color = SH.TextDim, modifier = Modifier.padding(bottom = 5.dp))
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        if (bomNuoc == null && luongNuocThang.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconBadge(Icons.Filled.Water, SH.TextOff, size = 44.dp, iconSize = 23.dp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Chưa có số liệu nước", style = SHType.CardTitle, color = SH.TextDim, maxLines = 1)
+                    Text(
+                        ketNoiBom.nhan,
+                        style = SHType.Caption,
+                        color = SH.TextOff,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp, start = 20.dp, end = 20.dp),
+                    )
+                }
+            }
+        } else if (luongNuocThang.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    "Đã nối bo bơm nhưng chưa có lịch sử nước theo tháng.",
+                    style = SHType.Caption,
+                    color = SH.TextOff,
+                )
+            }
+        } else {
+            BieuDoNuocThang(
+                usage = luongNuocThang,
+                maxMonths = 12,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        }
+    }
+
+    Spacer(Modifier.height(Dim.CardGap))
+
+    Row(
+        Modifier.fillMaxWidth().height(116.dp),
+        horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+    ) {
+        SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 10.dp) {
+            Text("Mức bồn trên", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+            val pct = bomNuoc?.mucNuocPhanTram
+            if (pct != null) {
+                ArcGauge(
+                    fraction = (pct / 100.0).toFloat(),
+                    value = "${pct.toInt()}%",
+                    color = StatKind.WATER.color,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("--", style = SHType.Value, color = SH.TextOff)
+                    Text(
+                        when {
+                            bomNuoc == null -> "Chưa nối bo bơm"
+                            bomNuoc.bonDay -> "Phao: Đang đầy"
+                            else -> "Chưa có cảm biến mức"
+                        },
+                        style = SHType.Caption,
+                        color = SH.TextOff,
+                        maxLines = 1,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
+        }
+
+        val thangLabel = bomNuoc?.useM?.takeIf { it.isNotBlank() && it != "chua ro thang" } ?: "hiện tại"
+        TheSo(
+            nhan = "Tháng $thangLabel",
+            icon = Icons.Filled.WaterDrop,
+            mau = SH.Cyan,
+            giaTri = tongThangLit?.let { "${it.toInt()} L" } ?: "--",
+            phu = nuocMayThangLit?.let { "Nước máy: ${it.toInt()} L" }
+                ?: if (bomNuoc != null) "Bơm lên bồn" else "chưa có dữ liệu",
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+        )
+
+        val fault = LoiBomNuoc.phanTich(bomNuoc?.fault)
+        val (mauTt, chuTt, phuTt) = when {
+            bomNuoc == null -> Triple(SH.TextOff, "Chưa có số", ketNoiBom.nhan)
+            fault != null -> Triple(SH.Red, "Có sự cố", fault.noiDung)
+            bomNuoc.dangKhoa || bomNuoc.bomApDangKhoa -> Triple(SH.Red, "Đang khoá", "Vào Tự động hóa mở khoá")
+            bomNuoc.bomChinhDangChay -> Triple(SH.Green, "Đang bơm", "Chế độ ${bomNuoc.cheDoBon.nhan}")
+            else -> Triple(SH.Green, "Bơm nghỉ", "Chế độ ${bomNuoc.cheDoBon.nhan}")
+        }
+        SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 10.dp) {
+            Text("Trạng thái hệ bơm", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                IconBadge(
+                    if (mauTt == SH.Green) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                    mauTt, size = 30.dp, iconSize = 17.dp,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(chuTt, style = SHType.BodyMed, color = mauTt, maxLines = 1)
+                Text(
+                    phuTt, style = SHType.Caption, color = SH.TextOff,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+// =====================================================================
+//  BA TAB CON LAI - van la du lieu mau
 // =====================================================================
 
 @Composable

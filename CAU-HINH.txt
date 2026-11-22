@@ -264,12 +264,29 @@ Ngoại lệ đáng lưu ý: màn WiFi và màn Server vẫn lấy giá trị m�
 
 
 -------------------------------------------------------------------------------
-11. CHỖ LƯU MẬT KHẨU (để biết khi đổi máy / cài lại)
+11. BƠM NƯỚC ESP32 — AQUACONTROL (tích hợp trong màn Tự động hóa)
 -------------------------------------------------------------------------------
-Trên máy tính bảng   DataStore của app, 3 file riêng:
+Kênh kết nối    1) LAN HTTP: http://<espHost>/api/state, /api/cmd, /api/usage
+                   (nhịp 1s khi đang mở Tự động hóa hoặc bơm đang chạy, 5s lúc
+                   nghỉ; Mutex tuần tự hoá vì WebServer ESP32 chỉ phục vụ 1
+                   kết nối cùng lúc).
+                2) MQTT: bomnuoc/state, bomnuoc/status, bomnuoc/usage, bomnuoc/cmd
+                   (EMQX/broker riêng do người dùng khai báo; clientId riêng
+                   "tablet-sh-bom-<8 ký tự>").
+Tự chọn kênh    Có LAN và gọi được -> dùng LAN; mất LAN -> tự rơi về MQTT.
+Cấu hình lưu    DataStore riêng: cau_hinh_bom_nuoc (đã loại khỏi sao lưu mây).
+                Nhật ký sự kiện phía tablet: filesDir/bom_nuoc_nhat_ky.json.
+                KHÔNG nhúng host/tài khoản/mật khẩu bơm nước trong mã nguồn.
+
+
+-------------------------------------------------------------------------------
+12. CHỖ LƯU MẬT KHẨU (để biết khi đổi máy / cài lại)
+-------------------------------------------------------------------------------
+Trên máy tính bảng   DataStore của app, 4 file riêng:
                      cau_hinh           (MQTT: host, cổng, tls, tài khoản, mk)
                      cau_hinh_camera    (go2rtc: host, cổng, tls, tài khoản, mk)
                      cau_hinh_thoitiet  (tên, lat, lon - không có gì bí mật)
+                     cau_hinh_bom_nuoc  (LAN host + MQTT broker/tk/mk cho bo bơm)
                      Đã loại khỏi sao lưu đám mây (res/xml/backup_rules.xml,
                      data_extraction_rules.xml)
 Trên serverubuntu    ~/server_collector/.env, ~/wifi_collector/.env (chmod 600)

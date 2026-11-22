@@ -20,6 +20,16 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import vn.smarthome.data.DemoData
+import vn.smarthome.data.StatKind
+import vn.smarthome.data.bomnuoc.BomNuocState
+import vn.smarthome.data.bomnuoc.CauHinhBomNuoc
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
+import vn.smarthome.data.bomnuoc.LuongNuocThang
+import vn.smarthome.data.bomnuoc.MucNhatKy
+import vn.smarthome.data.bomnuoc.NhomNhatKy
+import vn.smarthome.data.bomnuoc.SuKienBom
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
+import vn.smarthome.ui.screens.AutomationScreen
 import vn.smarthome.ui.screens.CameraScreen
 import vn.smarthome.ui.screens.DevicesScreen
 import vn.smarthome.ui.screens.ChiTietDienScreen
@@ -398,6 +408,137 @@ class ScreenshotTest {
         val dir = File("build/screenshots").apply { mkdirs() }
         FileOutputStream(File(dir, "5-man-chua-lam.png")).use {
             bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
+    private fun bomNuocMau(): BomNuocState = BomNuocState.tuJson(
+        """
+        {
+          "up": 3725, "fw": "6.261111.2", "hb": 30,
+          "rssi": -58, "ssid": "Nha_5G", "ip": "192.168.0.120",
+          "aboveLow": 0, "isFull": 0,
+          "lvl": 68.0, "litres": 1020.0, "lvlRaw": 12700, "lvlE": 2600, "lvlF": 17500,
+          "tankOn": 0, "tankMode": "auto", "tankRun": 0, "fTank": 0.0,
+          "boostOn": 0, "boostRun": 0, "bstMode": "off", "bstLock": 0,
+          "fCity": 3.4, "useC": 320.0, "cityPulses": 450.0,
+          "den": 1, "locked": 0, "fault": "", "temp": 27.5,
+          "dryCheck": 45, "minRest": 2.0, "maxRun": 90, "pulses": 450.0, "minFlow": 1.0,
+          "calPT": 900, "calLT": 2.0,
+          "useM": "2026-11", "useT": 1450.0,
+          "temps": [
+            {"n": "Nước bồn mái", "v": 27.5},
+            {"n": "Bơm lên bồn", "v": 38.4},
+            {"n": "Bơm áp", "v": 34.1}
+          ],
+          "io": [{"n": "Còi", "g": 5, "v": 0}]
+        }
+        """.trimIndent()
+    )!!
+
+    private fun luongNuocMau(): List<LuongNuocThang> = LuongNuocThang.tuJsonArray(
+        """
+        [
+          {"m": "2026-11", "t": 1450, "c": 320},
+          {"m": "2026-10", "t": 2100, "c": 480},
+          {"m": "2026-09", "t": 1850, "c": 410},
+          {"m": "2026-08", "t": 2300, "c": 520},
+          {"m": "2026-07", "t": 1950, "c": 390},
+          {"m": "2026-06", "t": 1680, "c": 310}
+        ]
+        """.trimIndent()
+    )!!
+
+    @Test
+    fun chup_tu_dong_hoa_chua_cau_hinh() {
+        shoot("10-tu-dong-hoa-chua-cau-hinh") {
+            Content {
+                AutomationScreen(onBack = {}, onNotice = {})
+            }
+        }
+    }
+
+    @Test
+    fun chup_tu_dong_hoa_bom_nuoc_co_loi() {
+        val stateCoLoi = bomNuocMau().copy(
+            // Tat chuyen dong de Robolectric khong bi animation vo han, nhung van co bang canh bao + so lieu day du.
+            fCity = 0.0,
+            fault = "Bom len bon qua nong (71.5 do C)",
+            locked = 1,
+            io = listOf(vn.smarthome.data.bomnuoc.ChanIo("Còi", 5, 1)),
+        )
+        shoot("10b-tu-dong-hoa-bom-nuoc") {
+            Content {
+                AutomationScreen(
+                    onBack = {},
+                    onNotice = {},
+                    bomNuoc = stateCoLoi,
+                    luongNuocThang = luongNuocMau(),
+                    ketNoiBom = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 0),
+                    kenhBom = KenhBomNuoc.LAN,
+                    cauHinhBom = CauHinhBomNuoc(espHost = "192.168.0.120"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun chup_tu_dong_hoa_bao_ve() {
+        shoot("10c-tu-dong-hoa-bao-ve") {
+            Content {
+                AutomationScreen(
+                    onBack = {},
+                    onNotice = {},
+                    bomNuoc = bomNuocMau().copy(fCity = 0.0),
+                    ketNoiBom = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 0),
+                    kenhBom = KenhBomNuoc.LAN,
+                    cauHinhBom = CauHinhBomNuoc(espHost = "192.168.0.120"),
+                    initialTab = 1,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun chup_tu_dong_hoa_nhat_ky() {
+        val ds = listOf(
+            SuKienBom(1L, 1763800000000L, NhomNhatKy.BOM, "Bơm lên bồn bắt đầu chạy", "Chế độ tự động · mức 42%", MucNhatKy.THONG_TIN),
+            SuKienBom(2L, 1763800900000L, NhomNhatKy.NUOC, "Bồn đã đầy", "Phao báo đầy", MucNhatKy.THONG_TIN),
+            SuKienBom(3L, 1763801200000L, NhomNhatKy.CANH_BAO, "Bơm lên bồn quá nóng (71 °C)", "Thiết bị đang bị khoá", MucNhatKy.LOI),
+        )
+        shoot("10d-tu-dong-hoa-nhat-ky") {
+            Content {
+                AutomationScreen(
+                    onBack = {},
+                    onNotice = {},
+                    bomNuoc = bomNuocMau().copy(fCity = 0.0),
+                    luongNuocThang = luongNuocMau(),
+                    ketNoiBom = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 0),
+                    kenhBom = KenhBomNuoc.LAN,
+                    cauHinhBom = CauHinhBomNuoc(espHost = "192.168.0.120"),
+                    nhatKyBom = ds,
+                    initialTab = 2,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun chup_thong_ke_nuoc_co_so() {
+        shoot("4d-thong-ke-nuoc-co-so") {
+            Content {
+                StatsScreen(
+                    state = HomeState(statKind = StatKind.WATER),
+                    dien = DienState(),
+                    ketNoi = KetNoi.ChuaCauHinh,
+                    onBack = {},
+                    onKind = {},
+                    onRange = {},
+                    bomNuoc = bomNuocMau().copy(fCity = 0.0),
+                    luongNuocThang = luongNuocMau(),
+                    ketNoiBom = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 0),
+                    kenhBom = KenhBomNuoc.LAN,
+                )
+            }
         }
     }
 }

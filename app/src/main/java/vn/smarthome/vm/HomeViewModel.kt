@@ -63,6 +63,19 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import vn.smarthome.data.bomnuoc.BomNuocState
+import vn.smarthome.data.bomnuoc.CauHinhBomNuoc
+import vn.smarthome.data.bomnuoc.CauHinhBomNuocStore
+import vn.smarthome.data.bomnuoc.CheDoBon
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
+import vn.smarthome.data.bomnuoc.KetQuaLenhBom
+import vn.smarthome.data.bomnuoc.LoiBomNuoc
+import vn.smarthome.data.bomnuoc.LuongNuocThang
+import vn.smarthome.data.bomnuoc.NhatKyBomNuoc
+import vn.smarthome.data.bomnuoc.QuanLyBomNuoc
+import vn.smarthome.data.bomnuoc.SuKienBom
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
+import java.io.File
 import java.time.LocalDate
 
 data class HomeState(
@@ -104,6 +117,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val storeGiongNoi = CauHinhGiongNoiStore(app)
     private val storeCam = CauHinhCameraStore(app)
     private val storeThoiTiet = CauHinhThoiTietStore(app)
+    private val storeBomNuoc = CauHinhBomNuocStore(app)
+    private val nhatKyBom = NhatKyBomNuoc(File(app.filesDir, "bom_nuoc_nhat_ky.json"), viewModelScope)
+    private val quanLyBom = QuanLyBomNuoc(viewModelScope)
     private val mqtt = MqttDien()
 
     private val _state = MutableStateFlow(HomeState())
@@ -335,6 +351,18 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val cauHinhThoiTiet: StateFlow<CauHinhThoiTiet> = storeThoiTiet.cauHinh
         .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhThoiTiet())
 
+    // ---- He thong bom nuoc AquaControl ----
+
+    val cauHinhBomNuoc: StateFlow<CauHinhBomNuoc> = storeBomNuoc.cauHinh
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhBomNuoc())
+
+    val bomNuoc: StateFlow<BomNuocState?> = quanLyBom.state
+    val luongNuocThang: StateFlow<List<LuongNuocThang>> = quanLyBom.usage
+    val ketNoiBom: StateFlow<TrangThaiKetNoiBom> = quanLyBom.link
+    val kenhBom: StateFlow<KenhBomNuoc> = quanLyBom.kenh
+    val choBomNuoc: StateFlow<Set<String>> = quanLyBom.choLenh
+    val nhatKyBomNuoc: StateFlow<List<SuKienBom>> = nhatKyBom.danhSach
+
     // ---- Tro ly giong noi ----
 
     val cauHinhGiongNoi: StateFlow<CauHinhGiongNoi> = storeGiongNoi.cauHinh
@@ -427,6 +455,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 delay(1000L)
                 quetQuaHan()
+            }
+        }
+        // He thong bom nuoc: tu dong ghi nhat ky phia tablet va ket noi theo cau hinh da luu.
+        nhatKyBom.theoDoi(quanLyBom.state)
+        viewModelScope.launch {
+            storeBomNuoc.cauHinh.distinctUntilChanged().collect { c ->
+                quanLyBom.ketNoi(c)
             }
         }
     }
@@ -567,7 +602,129 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         mqtt.ngat()
+        quanLyBom.ngat()
         super.onCleared()
+    }
+
+    // ---- He thong bom nuoc AquaControl ----
+
+    fun luuCauHinhBomNuoc(c: CauHinhBomNuoc) {
+        viewModelScope.launch {
+            storeBomNuoc.luu(c)
+            _thongBao.tryEmit("Đã lưu cấu hình kết nối bo bơm nước.")
+        }
+    }
+
+    fun datDangXemManBom(dangXem: Boolean) {
+        quanLyBom.datDangXemMan(dangXem)
+    }
+
+    fun datCheDoBon(mode: String) {
+        if (mode !in setOf("auto", "on", "off")) return
+        val nhan = CheDoBon.tuChuoi(mode).nhan
+        guiLenhBom("tank", "tank=$mode", "Bơm lên bồn: đã chuyển sang $nhan.") {
+            it.tankMode == mode
+        }
+    }
+
+    fun datBomTangAp(bat: Boolean) {
+        viewModelScope.launch {
+            when (val kq = quanLyBom.guiBomTangAp(bat)) {
+                KetQuaLenhBom.DaXacNhan -> _thongBao.tryEmit(
+                    if (bat) "Đã bật bơm tăng áp." else "Đã tắt bơm tăng áp."
+                )
+                KetQuaLenhBom.BiKhoaBaoVe -> _thongBao.tryEmit(
+                    "Bo nhận lệnh nhưng không bật được vì đang khoá bảo vệ. Bấm Xoá lỗi trước."
+                )
+                KetQuaLenhBom.ChuaXacNhan -> _thongBao.tryEmit(
+                    "Bo bơm chưa xác nhận lệnh. Kiểm tra bo còn online không rồi thử lại."
+                )
+                is KetQuaLenhBom.GuiThatBai -> _thongBao.tryEmit(
+                    "Chưa gửi được lệnh bơm tăng áp: ${kq.lyDo}"
+                )
+            }
+        }
+    }
+
+    fun datDenPhuBom(bat: Boolean) {
+        val want = if (bat) 1 else 0
+        guiLenhBom(
+            "led",
+            "led=${if (bat) "on" else "off"}",
+            if (bat) "Đã bật đèn phụ hộp điện." else "Đã tắt đèn phụ hộp điện.",
+        ) { it.den == want }
+    }
+
+    fun xoaLoiBom() {
+        guiLenhBom("clear", "clear=1", "Đã xoá lỗi và mở khoá hệ thống bơm.") {
+            !it.coLoi && !it.dangKhoa && !it.bomApDangKhoa
+        }
+    }
+
+    fun tatCoiBom() {
+        guiLenhBom("coiTat", "coiTat=1", "Đã gửi lệnh tắt còi báo động.") { true }
+    }
+
+    fun thuCoiBom() {
+        guiLenhBom("coiThu", "coiThu=1", "Đã gửi lệnh thử còi báo động.") { true }
+    }
+
+    fun luuBaoVeBom(dry: Int, rest: Double, run: Int, pulses: Double, minFlow: Double) {
+        val p = QuanLyBomNuoc.lamTronBaoVe(dry, rest, run, pulses, minFlow)
+        guiLenhBom("protection", p.thanhQuery(), "Bo đã nhận và lưu cài đặt bảo vệ bơm.") { s ->
+            s.dryCheck == p.dryCheck.toLong() &&
+                QuanLyBomNuoc.ganBang(s.minRest, p.minRest, 0.05) &&
+                s.maxRun == p.maxRun.toLong() &&
+                QuanLyBomNuoc.ganBang(s.pulses, p.pulses, 0.05) &&
+                QuanLyBomNuoc.ganBang(s.minFlow, p.minFlow, 0.005)
+        }
+    }
+
+    fun ghiMocCanBom() {
+        guiLenhBom("lvlSetEmpty", "lvlSetEmpty=1", "Đã ghi mốc CẠN cho cảm biến mức nước.") { true }
+    }
+
+    fun ghiMocDayBom() {
+        guiLenhBom("lvlSetFull", "lvlSetFull=1", "Đã ghi mốc ĐẦY cho cảm biến mức nước.") { true }
+    }
+
+    fun datLaiDemLuuLuong() {
+        guiLenhBom("calReset", "calReset=1", "Đã đặt lại bộ đếm hiệu chuẩn lưu lượng.") {
+            it.calPT == 0L
+        }
+    }
+
+    fun xoaLichSuNuocTrenBo() {
+        guiLenhBom("usageClear", "usageClear=1", "Đã xoá lịch sử lượng nước trên bo.") { true }
+    }
+
+    fun xoaNhatKyBomCucBo() {
+        viewModelScope.launch {
+            nhatKyBom.xoaTatCa()
+            _thongBao.tryEmit("Đã xoá nhật ký bơm trên máy tính bảng.")
+        }
+    }
+
+    private fun guiLenhBom(
+        khoa: String,
+        query: String,
+        thanhCongMsg: String,
+        xacNhan: (BomNuocState) -> Boolean,
+    ) {
+        viewModelScope.launch {
+            when (val kq = quanLyBom.guiLenh(khoa, query, xacNhan)) {
+                KetQuaLenhBom.DaXacNhan -> _thongBao.tryEmit(thanhCongMsg)
+                KetQuaLenhBom.ChuaXacNhan -> _thongBao.tryEmit(
+                    "Bo bơm chưa xác nhận. Kiểm tra bo còn online không rồi thử lại."
+                )
+                KetQuaLenhBom.BiKhoaBaoVe -> _thongBao.tryEmit(
+                    "Bo bơm đang khoá bảo vệ. Bấm Xoá lỗi trước."
+                )
+                is KetQuaLenhBom.GuiThatBai -> _thongBao.tryEmit(
+                    "Chưa gửi được lệnh bơm: ${kq.lyDo}"
+                )
+            }
+        }
     }
 
     // ---- Trang chu ----
@@ -1185,7 +1342,94 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         override fun laThat(phong: String, thietBi: String): Boolean =
             congTac.value.laThat(phong, thietBi)
 
-        override fun thietBiThat(): List<String> = congTac.value.tenThietBiThat()
+        override fun thietBiThat(): List<String> = buildList {
+            addAll(congTac.value.tenThietBiThat())
+            if (bomNuocLaThat()) add("Hệ thống bơm nước AquaControl")
+        }
+
+        override fun bomNuocLaThat(): Boolean =
+            cauHinhBomNuoc.value.daCauHinh && bomNuoc.value != null
+
+        override fun dieuKhienBom(thietBi: String, hanhDong: String, giaTri: String?): String {
+            if (!cauHinhBomNuoc.value.daCauHinh) {
+                throw LoiLenh("Chưa cấu hình kết nối bo bơm nước. Hãy vào Tự động hóa hoặc Cài đặt.")
+            }
+            val s = bomNuoc.value ?: throw LoiLenh(
+                "Chưa nhận được dữ liệu từ bo bơm nước (${ketNoiBom.value.nhan})."
+            )
+            if (ketNoiBom.value !is TrangThaiKetNoiBom.TrucTiep) {
+                throw LoiLenh("Bo bơm nước hiện không trực tuyến (${ketNoiBom.value.nhan}).")
+            }
+
+            return when (thietBi) {
+                CongCuNha.BOM_CHINH, CongCuNha.CHE_DO -> {
+                    val mode = when (hanhDong) {
+                        CongCuNha.BAT -> "on"
+                        CongCuNha.TAT -> "off"
+                        CongCuNha.DAO -> if (s.bomChinhDangChay) "off" else "on"
+                        CongCuNha.DAT -> when (giaTri?.trim()?.lowercase()) {
+                            "auto", "tu_dong", "tự động" -> "auto"
+                            "on", "bat", "bật", "bat_tay" -> "on"
+                            "off", "tat", "tắt", "tat_tay" -> "off"
+                            else -> throw LoiLenh("Bơm chính chỉ hỗ trợ chế độ auto, on hoặc off.")
+                        }
+                        else -> throw LoiLenh("Chưa hỗ trợ hành động \"$hanhDong\" cho bơm chính.")
+                    }
+                    if (mode != "off" && s.dangKhoa) {
+                        throw LoiLenh("Bơm lên bồn đang bị khoá bảo vệ. Hãy xoá lỗi trước.")
+                    }
+                    datCheDoBon(mode)
+                    "Bơm lên bồn: đã gửi lệnh chuyển sang chế độ ${CheDoBon.tuChuoi(mode).nhan}"
+                }
+
+                CongCuNha.BOM_TANG_AP -> {
+                    val bat = when (hanhDong) {
+                        CongCuNha.BAT -> true
+                        CongCuNha.TAT -> false
+                        CongCuNha.DAO -> !s.bomApDangChay
+                        else -> throw LoiLenh("Bơm tăng áp chỉ bật hoặc tắt được.")
+                    }
+                    if (bat && (s.bomApDangKhoa || s.dangKhoa)) {
+                        throw LoiLenh("Bơm tăng áp đang bị khoá bảo vệ sau sự cố. Hãy xoá lỗi trước.")
+                    }
+                    datBomTangAp(bat)
+                    if (bat) "Bơm tăng áp: đã gửi lệnh bật" else "Bơm tăng áp: đã gửi lệnh tắt"
+                }
+
+                CongCuNha.DEN_PHU -> {
+                    if (!s.coDenPhu) throw LoiLenh("Bo bơm hiện không có đèn phụ hộp điện.")
+                    val bat = when (hanhDong) {
+                        CongCuNha.BAT -> true
+                        CongCuNha.TAT -> false
+                        CongCuNha.DAO -> !s.denPhuBat
+                        else -> throw LoiLenh("Đèn phụ chỉ bật hoặc tắt được.")
+                    }
+                    datDenPhuBom(bat)
+                    if (bat) "Đèn phụ hộp bơm: đã gửi lệnh bật" else "Đèn phụ hộp bơm: đã gửi lệnh tắt"
+                }
+
+                CongCuNha.LOI_BOM -> {
+                    xoaLoiBom()
+                    "Hệ thống bơm: đã gửi lệnh xoá lỗi và mở khoá"
+                }
+
+                CongCuNha.COI_BOM -> when (hanhDong) {
+                    CongCuNha.TAT -> {
+                        tatCoiBom()
+                        "Còi báo động bơm: đã gửi lệnh tắt"
+                    }
+                    CongCuNha.BAT -> {
+                        thuCoiBom()
+                        "Còi báo động bơm: đã gửi lệnh kêu thử"
+                    }
+                    else -> throw LoiLenh("Còi bơm chỉ bật thử hoặc tắt được.")
+                }
+
+                else -> throw LoiLenh(
+                    "Hệ bơm nước chỉ hỗ trợ bơm chính, bơm tăng áp, đèn phụ, xoá lỗi và còi."
+                )
+            }
+        }
 
         override fun dangBat(phong: String, thietBi: String): Boolean? {
             if (phong == "nhanh") {
@@ -1230,6 +1474,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             "wifi" -> jsonWifi()
             "thoi_tiet" -> jsonThoiTiet()
             "lich_am" -> jsonLichAm()
+            "bom_nuoc" -> jsonBomNuoc()
             else -> chuaCoSo("Không biết mục này.")
         }
 
@@ -1238,45 +1483,63 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
          * Gemini noi sai suot ca phien. Thiet bi that ma khong ro trang thai
          * phai in "khong ro", khong duoc in "tat".
          */
-        override fun chupTrangThai(): String = _state.value.rooms.joinToString("\n") { p ->
-            if (p.id == "kitchen") {
-                val cheDoBep = when (p.mode) {
-                    RoomMode.HOME -> "Nấu ăn"
-                    RoomMode.CUSTOM -> "Ăn tối"
-                    RoomMode.SLEEP -> "Dọn dẹp"
-                    RoomMode.AWAY -> "Vắng nhà"
+        override fun chupTrangThai(): String = buildString {
+            append(
+                _state.value.rooms.joinToString("\n") { p ->
+                    if (p.id == "kitchen") {
+                        val cheDoBep = when (p.mode) {
+                            RoomMode.HOME -> "Nấu ăn"
+                            RoomMode.CUSTOM -> "Ăn tối"
+                            RoomMode.SLEEP -> "Dọn dẹp"
+                            RoomMode.AWAY -> "Vắng nhà"
+                        }
+                        val gasNote = if (p.gasAlert) "cảnh báo rò rỉ ${p.gasPpm} ppm" else "an toàn ${p.gasPpm} ppm"
+                        "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
+                            "máy hút mùi ${theNao(p.id, CongCuNha.QUAT, p.fanOn)} (cấp ${p.hoodSpeed}), " +
+                            "bếp từ ${batTat(p.stoveOn)} (mức ${p.stoveLevel}), " +
+                            "cảm biến Gas $gasNote, chế độ $cheDoBep"
+                    } else if (p.id == "hall") {
+                        val cheDoHanhLang = when (p.mode) {
+                            RoomMode.SLEEP -> "Đêm an ninh"
+                            RoomMode.HOME -> "Về nhà"
+                            RoomMode.CUSTOM -> "Tiếp khách"
+                            RoomMode.AWAY -> "Đi vắng"
+                        }
+                        val khoaNote = if (p.hallDoorLocked) "đã khóa" else "đang mở"
+                        val camNote = when {
+                            !p.hallCameraOn -> "tắt"
+                            p.hallIrMode -> "bật (hồng ngoại IR)"
+                            else -> "bật"
+                        }
+                        "- ${p.name}: đèn hành lang ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
+                            "đèn phía trước ${batTat(p.hallFrontLightOn)} (${p.hallFrontBrightness}%), " +
+                            "đèn xung quanh ${batTat(p.hallSurroundingLightOn)} (${p.hallSurroundingBrightness}%), " +
+                            "khóa cửa chính $khoaNote, camera $camNote, chế độ $cheDoHanhLang"
+                    } else {
+                        val extra = if (p.id == "living") {
+                            ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"
+                        } else {
+                            ""
+                        }
+                        "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
+                            "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
+                            "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ$extra, chế độ ${p.mode.label}"
+                    }
                 }
-                val gasNote = if (p.gasAlert) "cảnh báo rò rỉ ${p.gasPpm} ppm" else "an toàn ${p.gasPpm} ppm"
-                "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
-                    "máy hút mùi ${theNao(p.id, CongCuNha.QUAT, p.fanOn)} (cấp ${p.hoodSpeed}), " +
-                    "bếp từ ${batTat(p.stoveOn)} (mức ${p.stoveLevel}), " +
-                    "cảm biến Gas $gasNote, chế độ $cheDoBep"
-            } else if (p.id == "hall") {
-                val cheDoHanhLang = when (p.mode) {
-                    RoomMode.SLEEP -> "Đêm an ninh"
-                    RoomMode.HOME -> "Về nhà"
-                    RoomMode.CUSTOM -> "Tiếp khách"
-                    RoomMode.AWAY -> "Đi vắng"
-                }
-                val khoaNote = if (p.hallDoorLocked) "đã khóa" else "đang mở"
-                val camNote = when {
-                    !p.hallCameraOn -> "tắt"
-                    p.hallIrMode -> "bật (hồng ngoại IR)"
-                    else -> "bật"
-                }
-                "- ${p.name}: đèn hành lang ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
-                    "đèn phía trước ${batTat(p.hallFrontLightOn)} (${p.hallFrontBrightness}%), " +
-                    "đèn xung quanh ${batTat(p.hallSurroundingLightOn)} (${p.hallSurroundingBrightness}%), " +
-                    "khóa cửa chính $khoaNote, camera $camNote, chế độ $cheDoHanhLang"
-            } else {
-                val extra = if (p.id == "living") {
-                    ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"
+            )
+            if (cauHinhBomNuoc.value.daCauHinh) {
+                val b = bomNuoc.value
+                append("\n- Hệ thống bơm nước: ")
+                if (b == null || ketNoiBom.value !is TrangThaiKetNoiBom.TrucTiep) {
+                    append(ketNoiBom.value.nhan)
                 } else {
-                    ""
+                    val muc = b.mucNuocPhanTram?.let { "${it.toInt()}%" } ?: "không có cảm biến mức"
+                    val phao = if (b.bonDay) "báo đầy" else "chưa đầy"
+                    append("bơm chính ${if (b.bomChinhDangChay) "đang chạy" else "tắt"} (${b.cheDoBon.nhan}), ")
+                    append("bơm tăng áp ${if (b.bomApDangChay) "đang chạy" else "tắt"}, ")
+                    append("phao $phao, mức nước $muc")
+                    LoiBomNuoc.phanTich(b.fault)?.let { append(", cảnh báo: ${it.noiDung}") }
                 }
-                "- ${p.name}: đèn ${theNao(p.id, CongCuNha.DEN, p.lightOn)}, " +
-                    "quạt ${theNao(p.id, CongCuNha.QUAT, p.fanOn)}, " +
-                    "điều hòa ${batTat(p.acOn)} ${p.acTemp} độ$extra, chế độ ${p.mode.label}"
             }
         }
 
@@ -1492,6 +1755,34 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             .put("can_chi_nam", cc.nam)
             .put("gio_hoang_dao", JSONArray().apply { AmLich.gioHoangDao(cc.chiNgay).forEach { put(it) } })
             .put("su_kien", AmLich.suKien(hom.dayOfMonth, hom.monthValue, am) ?: JSONObject.NULL)
+    }
+
+    private fun jsonBomNuoc(): JSONObject {
+        if (!cauHinhBomNuoc.value.daCauHinh) {
+            return chuaCoSo("Chưa cấu hình kết nối bo bơm nước.")
+        }
+        val s = bomNuoc.value ?: return chuaCoSo(
+            "Chưa nhận được gói dữ liệu nào từ bo bơm (${ketNoiBom.value.nhan})."
+        )
+        return JSONObject()
+            .put("co_so", true)
+            .put("kenh", kenhBom.value.nhanNgan)
+            .put("trang_thai_ket_noi", ketNoiBom.value.nhan)
+            .put("bom_chinh_dang_chay", s.bomChinhDangChay)
+            .put("che_do_bon", s.cheDoBon.nhan)
+            .put("bom_tang_ap_dang_chay", s.bomApDangChay)
+            .put("phao_bon", if (s.bonDay) "báo đầy" else "chưa đầy")
+            .put("muc_nuoc_phan_tram", s.mucNuocPhanTram ?: JSONObject.NULL)
+            .put("muc_nuoc_lit", s.mucNuocLit ?: JSONObject.NULL)
+            .put("luu_luong_bom_l_phut", s.fTank ?: JSONObject.NULL)
+            .put("luu_luong_nuoc_may_l_phut", s.fCity ?: JSONObject.NULL)
+            .put("nhiet_do_nuoc_c", s.nhietDoNuoc ?: JSONObject.NULL)
+            .put("nhiet_do_bom_bon_c", s.nhietDoBomBon ?: JSONObject.NULL)
+            .put("nhiet_do_bom_ap_c", s.nhietDoBomAp ?: JSONObject.NULL)
+            .put("nuoc_thang_nay_lit", s.useT ?: JSONObject.NULL)
+            .put("nuoc_may_thang_nay_lit", s.useC ?: JSONObject.NULL)
+            .put("dang_khoa", s.dangKhoa || s.bomApDangKhoa)
+            .put("loi", LoiBomNuoc.phanTich(s.fault)?.noiDung ?: JSONObject.NULL)
     }
 
     fun dongHopThoaiCapNhat() {

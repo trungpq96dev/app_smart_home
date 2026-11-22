@@ -48,6 +48,17 @@ class CongCuNhaTest {
         /** Gia lap datDen/datQuat bi chan vi thiet bi that dang mat ket noi. */
         val nemKhiDat = mutableMapOf<String, String>()
 
+        var bomThat = false
+        var nemKhiDieuKhienBom: String? = null
+
+        override fun bomNuocLaThat(): Boolean = bomThat
+
+        override fun dieuKhienBom(thietBi: String, hanhDong: String, giaTri: String?): String {
+            nemKhiDieuKhienBom?.let { throw LoiLenh(it) }
+            daGoi += "dieuKhienBom($thietBi,$hanhDong,$giaTri)"
+            return "Đã thực hiện $thietBi ($hanhDong)"
+        }
+
         override fun maPhong() = listOf("living", "bed1")
 
         override fun tenPhong(ma: String): String? = when (ma) {
@@ -584,5 +595,51 @@ class CongCuNhaTest {
         )
         assertFalse(kq.getBoolean("ok"))
         assertTrue(kq.getString("loi").contains("mất kết nối"))
+    }
+
+    // ---------- He thong bom nuoc AquaControl ----------
+
+    @Test
+    fun dieu_khien_bom_nuoc_qua_phong_bom_nuoc() {
+        val nha = NhaGia().apply { bomThat = true }
+        val kq = CongCuNha(nha, guiMqtt = true).chay(
+            CongCuNha.DIEU_KHIEN,
+            args(
+                "phong" to CongCuNha.BOM_NUOC,
+                "thiet_bi" to CongCuNha.BOM_CHINH,
+                "hanh_dong" to CongCuNha.DAT,
+                "gia_tri" to "auto",
+            ),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertTrue(kq.getBoolean("that"))
+        assertTrue(nha.daGoi.contains("dieuKhienBom(bom_chinh,dat,auto)"))
+        // Khong ban nham len smarthome/control.
+        assertEquals(0, nha.soLanGuiMqtt)
+    }
+
+    @Test
+    fun goi_thiet_bi_bom_truc_tiep_khong_can_dung_phong_van_dinh_tuyen_dung() {
+        val nha = NhaGia().apply { bomThat = true }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args(
+                "phong" to CongCuNha.NHANH,
+                "thiet_bi" to CongCuNha.BOM_TANG_AP,
+                "hanh_dong" to CongCuNha.BAT,
+            ),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertTrue(nha.daGoi.contains("dieuKhienBom(bom_tang_ap,bat,null)"))
+    }
+
+    @Test
+    fun doc_so_lieu_bom_nuoc_hop_le() {
+        val kq = CongCuNha(NhaGia()).chay(
+            CongCuNha.DOC_SO_LIEU,
+            args("muc" to "bom_nuoc"),
+        )
+        assertTrue(kq.getBoolean("ok"))
+        assertEquals("bom_nuoc", kq.getJSONObject("so_lieu").getString("muc"))
     }
 }
