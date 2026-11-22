@@ -29,15 +29,20 @@ import androidx.compose.material.icons.filled.Blinds
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Work
@@ -66,12 +71,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import vn.smarthome.data.DemoData
+import vn.smarthome.data.HallwayView
 import vn.smarthome.data.RoomMode
 import vn.smarthome.data.RoomUi
 import vn.smarthome.data.stoveWatts
 import vn.smarthome.ui.components.ChoiceChip
 import vn.smarthome.ui.components.DeviceSwitchRow
 import vn.smarthome.ui.components.Dot
+import vn.smarthome.ui.components.HallwayStage
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.ImagePlaceholder
 import vn.smarthome.ui.components.KitchenStage
@@ -117,9 +124,22 @@ fun RoomDetailScreen(
     onStoveLevel: (Int) -> Unit = {},
     onGasAlert: (Boolean) -> Unit = {},
     onFanSpeed: (Int) -> Unit = {},
+    onHallView: (HallwayView) -> Unit = {},
+    onToggleHallFrontLight: () -> Unit = {},
+    onHallFrontBrightness: (Int) -> Unit = {},
+    onToggleHallSurroundingLight: () -> Unit = {},
+    onHallSurroundingBrightness: (Int) -> Unit = {},
+    onToggleHallAllLights: () -> Unit = {},
+    onToggleHallLock: () -> Unit = {},
+    onToggleHallCamera: () -> Unit = {},
+    onToggleHallIr: () -> Unit = {},
+    onToggleHallMotionAuto: () -> Unit = {},
+    onTriggerHallMotion: () -> Unit = {},
+    onDismissHallMotion: () -> Unit = {},
 ) {
     val laPhongKhach = room.id == "living"
     val laNhaBep = room.id == "kitchen"
+    val laHanhLang = room.id == "hall"
     val laPhongNgu = room.id in setOf("bed1", "bed2", "bed3")
     val denHienThi = (oDen as? OThietBi.That)?.let {
         when {
@@ -159,6 +179,13 @@ fun RoomDetailScreen(
                 KitchenStage(
                     room = room.copy(lightOn = denHienThi, fanOn = quatHienThi),
                     onSilenceGasAlert = { onGasAlert(false) },
+                    modifier = Modifier.weight(1.05f).fillMaxHeight(),
+                )
+            } else if (laHanhLang) {
+                HallwayStage(
+                    room = room.copy(lightOn = denHienThi),
+                    onSelectView = onHallView,
+                    onDismissMotion = onDismissHallMotion,
                     modifier = Modifier.weight(1.05f).fillMaxHeight(),
                 )
             } else if (laPhongNgu) {
@@ -210,6 +237,24 @@ fun RoomDetailScreen(
                     onToggleStove = onToggleStove,
                     onStoveLevel = onStoveLevel,
                     onGasAlert = onGasAlert,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            } else if (laHanhLang) {
+                HallwayControlsColumn(
+                    room = room,
+                    oDen = oDen,
+                    onToggleHallwayLight = onToggleLight,
+                    onHallwayBrightness = onLightBrightness,
+                    onToggleFrontLight = onToggleHallFrontLight,
+                    onFrontBrightness = onHallFrontBrightness,
+                    onToggleSurroundingLight = onToggleHallSurroundingLight,
+                    onSurroundingBrightness = onHallSurroundingBrightness,
+                    onToggleAllLights = onToggleHallAllLights,
+                    onToggleLock = onToggleHallLock,
+                    onToggleCamera = onToggleHallCamera,
+                    onToggleIr = onToggleHallIr,
+                    onToggleMotionAuto = onToggleHallMotionAuto,
+                    onTriggerMotion = onTriggerHallMotion,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             } else if (laPhongNgu) {
@@ -286,6 +331,13 @@ fun RoomDetailScreen(
                             Triple(RoomMode.SLEEP, "Dọn dẹp", Icons.Filled.AutoAwesome),
                             Triple(RoomMode.AWAY, "Vắng nhà", Icons.Filled.Work),
                         )
+                    } else if (laHanhLang) {
+                        listOf(
+                            Triple(RoomMode.SLEEP, "Đêm an ninh", Icons.Filled.DarkMode),
+                            Triple(RoomMode.HOME, "Về nhà", Icons.Filled.Home),
+                            Triple(RoomMode.CUSTOM, "Tiếp khách", Icons.Filled.Groups),
+                            Triple(RoomMode.AWAY, "Đi vắng", Icons.Filled.Work),
+                        )
                     } else {
                         RoomMode.entries.map { Triple(it, it.label, modeIcon(it)) }
                     }
@@ -342,6 +394,59 @@ fun RoomDetailScreen(
                                 color = if (room.scheduleOn) SH.TextDim else SH.TextOff,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Switch(
+                            checked = room.scheduleOn,
+                            onCheckedChange = { onToggleSchedule() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = SH.Blue,
+                                checkedBorderColor = SH.Blue,
+                                uncheckedThumbColor = SH.TextDim,
+                                uncheckedTrackColor = SH.Card2,
+                                uncheckedBorderColor = SH.Border,
+                            ),
+                        )
+                    }
+                } else if (laHanhLang) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Lịch hẹn", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+                        Text(
+                            text = if (room.scheduleOn) "Đang bật" else "Đã tắt",
+                            style = SHType.Caption,
+                            color = if (room.scheduleOn) SH.Blue else SH.TextDim,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (room.scheduleOn) SH.Blue.tint(0.16f) else SH.Card2)
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier.fillMaxWidth().weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconBadge(Icons.Filled.Event, SH.Blue, size = 34.dp, iconSize = 18.dp)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                room.scheduleLabel,
+                                style = SHType.Caption,
+                                color = SH.TextDim,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                room.scheduleTime,
+                                style = SHType.CardTitle,
+                                color = if (room.scheduleOn) SH.Text else SH.TextOff,
+                                maxLines = 1,
                             )
                         }
                         Switch(
@@ -1200,6 +1305,394 @@ private fun KitchenControlsColumn(
     }
 }
 
+@Composable
+private fun HallwayControlsColumn(
+    room: RoomUi,
+    oDen: OThietBi?,
+    onToggleHallwayLight: () -> Unit,
+    onHallwayBrightness: (Int) -> Unit,
+    onToggleFrontLight: () -> Unit,
+    onFrontBrightness: (Int) -> Unit,
+    onToggleSurroundingLight: () -> Unit,
+    onSurroundingBrightness: (Int) -> Unit,
+    onToggleAllLights: () -> Unit,
+    onToggleLock: () -> Unit,
+    onToggleCamera: () -> Unit,
+    onToggleIr: () -> Unit,
+    onToggleMotionAuto: () -> Unit,
+    onTriggerMotion: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val denThat = oDen as? OThietBi.That
+    val (hallChecked, hallRo, hallEnabled) = resolveSwitchState(oDen, room.lightOn)
+    val anyLightOn = (hallRo && hallChecked) || room.hallFrontLightOn || room.hallSurroundingLightOn
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        // 1. He thong chieu sang (3 cum den doc lap + nut Bat/Tat tat ca)
+        SmartCard(Modifier.fillMaxWidth().weight(2.04f), padding = 7.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Dot(SH.Amber, 6.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Hệ thống chiếu sáng (3 cụm đèn)",
+                            style = SHType.Caption,
+                            color = SH.Text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(SH.Card2)
+                            .border(1.dp, SH.Border, RoundedCornerShape(7.dp))
+                            .clickable(onClick = onToggleAllLights)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = if (anyLightOn) "Tắt tất cả đèn" else "Bật tất cả đèn",
+                            style = SHType.Caption,
+                            color = SH.Amber,
+                            maxLines = 1,
+                        )
+                    }
+                }
+
+                HallwayLightRow(
+                    icon = Icons.Filled.Lightbulb,
+                    name = "Đèn hành lang",
+                    desc = "Sảnh hiên & tường hành lang",
+                    checked = hallChecked,
+                    roRang = hallRo,
+                    enabled = hallEnabled,
+                    brightness = room.lightBrightness,
+                    note = denThat?.ghiChu,
+                    notePending = denThat?.dangCho == true,
+                    onToggle = onToggleHallwayLight,
+                    onBrightness = onHallwayBrightness,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+                HallwayLightRow(
+                    icon = Icons.Filled.WbSunny,
+                    name = "Đèn phía trước nhà",
+                    desc = "Diềm mái Nhật & trụ cổng",
+                    checked = room.hallFrontLightOn,
+                    roRang = true,
+                    enabled = true,
+                    brightness = room.hallFrontBrightness,
+                    note = null,
+                    notePending = false,
+                    onToggle = onToggleFrontLight,
+                    onBrightness = onFrontBrightness,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+                HallwayLightRow(
+                    icon = Icons.Filled.AutoAwesome,
+                    name = "Đèn xung quanh",
+                    desc = "Sân vườn, đèn nấm & tường rào",
+                    checked = room.hallSurroundingLightOn,
+                    roRang = true,
+                    enabled = true,
+                    brightness = room.hallSurroundingBrightness,
+                    note = null,
+                    notePending = false,
+                    onToggle = onToggleSurroundingLight,
+                    onBrightness = onSurroundingBrightness,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            }
+        }
+
+        // 2. Khoa cua chinh
+        SmartCard(Modifier.fillMaxWidth().weight(0.62f), padding = 7.dp) {
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                IconBadge(
+                    icon = if (room.hallDoorLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                    color = if (room.hallDoorLocked) SH.Green else SH.Red,
+                    size = 28.dp,
+                    iconSize = 16.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("Khóa cửa chính", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+                        val pillColor = if (room.hallDoorLocked) SH.Green else SH.Red
+                        Text(
+                            text = if (room.hallDoorLocked) "Đã khóa" else "Đang mở",
+                            style = SHType.Caption,
+                            color = pillColor,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(pillColor.tint(0.16f))
+                                .border(1.dp, pillColor.tint(0.4f), RoundedCornerShape(999.dp))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                    Text(
+                        text = if (room.hallDoorLocked) "Chốt an ninh đang kích hoạt" else "Cảnh báo: Cửa chính đang mở",
+                        style = SHType.Caption,
+                        color = SH.TextDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                HallMiniSwitch(
+                    checked = room.hallDoorLocked,
+                    enabled = true,
+                    activeColor = SH.Green,
+                    onClick = onToggleLock,
+                )
+            }
+        }
+
+        // 3. Camera hanh lang + Hong ngoai (IR)
+        SmartCard(Modifier.fillMaxWidth().weight(0.82f), padding = 7.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(
+                        icon = Icons.Filled.Videocam,
+                        color = if (room.hallCameraOn) SH.Blue else SH.TextOff,
+                        size = 28.dp,
+                        iconSize = 16.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Camera hành lang", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+                        Text(
+                            text = when {
+                                !room.hallCameraOn -> "Camera đang tắt"
+                                room.hallIrMode -> "Đang ghi hình • Hồng ngoại (IR)"
+                                else -> "Đang ghi hình • 3 góc nhìn"
+                            },
+                            style = SHType.Caption,
+                            color = SH.TextDim,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    HallMiniSwitch(
+                        checked = room.hallCameraOn,
+                        enabled = true,
+                        activeColor = SH.Green,
+                        onClick = onToggleCamera,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(if (room.hallCameraOn) 1f else 0.4f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Dot(SH.Green, 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Chế độ Hồng ngoại (IR)",
+                        style = SHType.Caption,
+                        color = SH.Text,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f),
+                    )
+                    HallMiniSwitch(
+                        checked = room.hallIrMode,
+                        enabled = room.hallCameraOn,
+                        activeColor = SH.Blue,
+                        onClick = onToggleIr,
+                    )
+                }
+            }
+        }
+
+        // 4. Cam bien chuyen dong + Test phat hien
+        SmartCard(
+            modifier = Modifier.fillMaxWidth().weight(0.84f),
+            borderColor = if (room.hallMotionDetected) SH.Red.copy(alpha = 0.7f) else SH.Border,
+            padding = 7.dp,
+        ) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(
+                        icon = Icons.Filled.Sensors,
+                        color = if (room.hallMotionDetected) SH.Red else SH.Purple,
+                        size = 28.dp,
+                        iconSize = 16.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Cảm biến chuyển động", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+                        Text(
+                            text = "Tự bật Đèn hành lang & Xung quanh",
+                            style = SHType.Caption,
+                            color = SH.TextDim,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    HallMiniSwitch(
+                        checked = room.hallMotionAuto,
+                        enabled = true,
+                        activeColor = SH.Green,
+                        onClick = onToggleMotionAuto,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Tự động bật đèn: ", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+                        Text(
+                            text = if (room.hallMotionAuto) "Đang bật" else "Đang tắt",
+                            style = SHType.Caption,
+                            color = if (room.hallMotionAuto) SH.Green else SH.TextOff,
+                            maxLines = 1,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(SH.Red.tint(0.16f))
+                            .border(1.dp, SH.Red.tint(0.4f), RoundedCornerShape(7.dp))
+                            .clickable(onClick = onTriggerMotion)
+                            .padding(horizontal = 9.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = "Test phát hiện",
+                            style = SHType.Caption,
+                            color = Color(0xFFFCA5A5),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HallwayLightRow(
+    icon: ImageVector,
+    name: String,
+    desc: String,
+    checked: Boolean,
+    roRang: Boolean,
+    enabled: Boolean,
+    brightness: Int,
+    note: String?,
+    notePending: Boolean,
+    onToggle: () -> Unit,
+    onBrightness: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(SH.Card2.copy(alpha = 0.65f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (roRang && checked) SH.Amber else SH.TextOff,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(name, style = SHType.Label, color = SH.Text, maxLines = 1)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = note ?: if (!roRang) "—" else if (checked) "$desc • $brightness%" else "$desc • Đang tắt",
+                style = SHType.Caption,
+                color = if (note != null && !notePending) SH.Amber else SH.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(6.dp))
+            if (!roRang) {
+                Text("—", style = SHType.Label, color = SH.TextDim)
+            } else {
+                HallMiniSwitch(
+                    checked = checked,
+                    enabled = enabled,
+                    activeColor = SH.Green,
+                    onClick = onToggle,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (roRang && checked) 1f else 0.35f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Độ sáng", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+            Spacer(Modifier.width(6.dp))
+            CompactSlider(
+                value = brightness,
+                valueRange = 10..100,
+                enabled = roRang && checked,
+                thumbColor = SH.Amber,
+                onValueChange = onBrightness,
+                sliderHeight = 15.dp,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "$brightness%",
+                style = SHType.Caption,
+                color = SH.Amber,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                modifier = Modifier.width(32.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HallMiniSwitch(
+    checked: Boolean,
+    enabled: Boolean = true,
+    activeColor: Color = SH.Green,
+    onClick: () -> Unit,
+) {
+    val bg = if (checked) activeColor else Color(0xFF26334D)
+    val borderColor = if (checked) activeColor else Color(0x14FFFFFF)
+    Box(
+        modifier = Modifier
+            .alpha(if (enabled) 1f else 0.45f)
+            .size(width = 36.dp, height = 20.dp)
+            .clip(CircleShape)
+            .background(bg)
+            .border(1.dp, borderColor, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(if (checked) Alignment.CenterEnd else Alignment.CenterStart)
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(if (checked) Color.White else Color(0xFFCBD5E1)),
+        )
+    }
+}
+
 private fun resolveSwitchState(o: OThietBi?, fallback: Boolean): Triple<Boolean, Boolean, Boolean> {
     val that = o as? OThietBi.That
     val checked = that?.let { it.mong ?: it.bat ?: false } ?: fallback
@@ -1331,6 +1824,7 @@ private fun CompactSlider(
     thumbColor: Color,
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    sliderHeight: Dp = 22.dp,
 ) {
     val span = (valueRange.last - valueRange.first).coerceAtLeast(1)
     val fraction = ((value - valueRange.first).toFloat() / span).coerceIn(0f, 1f)
@@ -1344,7 +1838,7 @@ private fun CompactSlider(
 
     Canvas(
         modifier = modifier
-            .height(22.dp)
+            .height(sliderHeight)
             .pointerInput(enabled, valueRange) {
                 detectTapGestures { offset -> updateAt(offset.x, size.width.toFloat()) }
             }

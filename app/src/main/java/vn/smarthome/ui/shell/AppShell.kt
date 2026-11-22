@@ -187,6 +187,18 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onToggleStove = { vm.toggleStove(room.id) },
                         onStoveLevel = { d -> vm.changeStoveLevel(room.id, d) },
                         onGasAlert = { a -> vm.setGasAlert(room.id, a) },
+                        onHallView = { v -> vm.setHallView(room.id, v) },
+                        onToggleHallFrontLight = { vm.toggleHallFrontLight(room.id) },
+                        onHallFrontBrightness = { b -> vm.setHallFrontBrightness(room.id, b) },
+                        onToggleHallSurroundingLight = { vm.toggleHallSurroundingLight(room.id) },
+                        onHallSurroundingBrightness = { b -> vm.setHallSurroundingBrightness(room.id, b) },
+                        onToggleHallAllLights = { vm.toggleHallAllLights(room.id) },
+                        onToggleHallLock = { vm.toggleHallLock(room.id) },
+                        onToggleHallCamera = { vm.toggleHallCamera(room.id) },
+                        onToggleHallIr = { vm.toggleHallIr(room.id) },
+                        onToggleHallMotionAuto = { vm.toggleHallMotionAuto(room.id) },
+                        onTriggerHallMotion = { vm.triggerHallMotion(room.id) },
+                        onDismissHallMotion = { vm.clearHallMotion(room.id) },
                     )
 
                     showChiTietDien -> ChiTietDienScreen(

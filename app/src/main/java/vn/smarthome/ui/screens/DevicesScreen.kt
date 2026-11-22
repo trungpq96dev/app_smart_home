@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -149,6 +152,41 @@ private fun tomTatPhong(room: RoomUi, ct: CongTacState): TomTatPhongUi {
         )
         return TomTatPhongUi(room = room, mucThietBi = listOf(den, hutMui, bepTu))
     }
+    if (room.id == "hall") {
+        val denGoc = mucCongTac(room.id, "den", "Đèn", Icons.Filled.Lightbulb, SH.Amber, room.lightOn, ct)
+        val den = if (!denGoc.roRang) {
+            denGoc
+        } else {
+            val soDenBat = listOf(denGoc.bat, room.hallFrontLightOn, room.hallSurroundingLightOn).count { it }
+            denGoc.copy(
+                bat = soDenBat > 0,
+                chuTrangThai = if (soDenBat > 0) "$soDenBat/3 bật" else "Tắt",
+            )
+        }
+        val khoa = TrangThaiMucThietBi(
+            ten = "Khóa cửa",
+            icon = if (room.hallDoorLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+            mau = if (room.hallDoorLocked) SH.Green else SH.Red,
+            bat = room.hallDoorLocked,
+            chuTrangThai = if (room.hallDoorLocked) "Đã khóa" else "Đang mở",
+            that = false,
+            roRang = true,
+        )
+        val cam = TrangThaiMucThietBi(
+            ten = "Camera",
+            icon = Icons.Filled.Videocam,
+            mau = if (room.hallCameraOn) SH.Blue else SH.TextOff,
+            bat = room.hallCameraOn,
+            chuTrangThai = when {
+                !room.hallCameraOn -> "Tắt"
+                room.hallIrMode -> "IR"
+                else -> "Bật"
+            },
+            that = false,
+            roRang = true,
+        )
+        return TomTatPhongUi(room = room, mucThietBi = listOf(den, khoa, cam))
+    }
     val den = mucCongTac(room.id, "den", "Đèn", Icons.Filled.Lightbulb, SH.Amber, room.lightOn, ct)
     val quat = mucCongTac(room.id, "quat", "Quạt", Icons.Filled.Air, SH.Blue, room.fanOn, ct)
     val dieuHoa = TrangThaiMucThietBi(
@@ -228,15 +266,20 @@ private fun ThePhong(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val tenCheDo = if (room.id == "kitchen") {
-                    when (room.mode) {
+                val tenCheDo = when (room.id) {
+                    "kitchen" -> when (room.mode) {
                         RoomMode.HOME -> "Nấu ăn"
                         RoomMode.CUSTOM -> "Ăn tối"
                         RoomMode.SLEEP -> "Dọn dẹp"
                         RoomMode.AWAY -> "Vắng nhà"
                     }
-                } else {
-                    room.mode.label
+                    "hall" -> when (room.mode) {
+                        RoomMode.SLEEP -> "Đêm an ninh"
+                        RoomMode.HOME -> "Về nhà"
+                        RoomMode.CUSTOM -> "Tiếp khách"
+                        RoomMode.AWAY -> "Đi vắng"
+                    }
+                    else -> room.mode.label
                 }
                 val moTa = buildString {
                     append("Chế độ: ").append(tenCheDo)

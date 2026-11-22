@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Videocam
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import vn.smarthome.data.CameraFeed
 import vn.smarthome.data.DemoData
+import vn.smarthome.data.HallwayView
 import vn.smarthome.data.QuickItem
 import vn.smarthome.data.RoomMode
 import vn.smarthome.data.RoomUi
@@ -126,6 +128,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val cuktech: StateFlow<CuktechState> = mqtt.cuktech
 
     private val _dangNoiLaiCuktech = MutableStateFlow(false)
+    private var hallMotionJob: Job? = null
 
     /** Dang trong mot lan "noi lai" -> UI khoa nut va ve "Đang nối lại…". */
     val dangNoiLaiCuktech: StateFlow<Boolean> = _dangNoiLaiCuktech.asStateFlow()
@@ -585,7 +588,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun setLightBrightness(roomId: String, brightness: Int) {
         val b = brightness.coerceIn(10, 100)
         editRoom(roomId) {
-            it.copy(lightOn = true, lightBrightness = b, mode = RoomMode.CUSTOM)
+            it.copy(
+                lightOn = true,
+                lightBrightness = b,
+                mode = if (roomId == "hall") it.mode else RoomMode.CUSTOM,
+            )
         }
     }
 
@@ -644,6 +651,72 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             r.copy(gasAlert = false, gasPpm = 18)
         }
+    }
+
+    // ---- Hanh lang (3 goc nhin, 3 cum den, khoa cua, camera IR, PIR) ----
+
+    fun setHallView(roomId: String, view: HallwayView) =
+        editRoom(roomId) { it.copy(hallView = view) }
+
+    fun toggleHallFrontLight(roomId: String) =
+        editRoom(roomId) { it.copy(hallFrontLightOn = !it.hallFrontLightOn) }
+
+    fun setHallFrontBrightness(roomId: String, brightness: Int) = editRoom(roomId) {
+        it.copy(hallFrontLightOn = true, hallFrontBrightness = brightness.coerceIn(10, 100))
+    }
+
+    fun toggleHallSurroundingLight(roomId: String) =
+        editRoom(roomId) { it.copy(hallSurroundingLightOn = !it.hallSurroundingLightOn) }
+
+    fun setHallSurroundingBrightness(roomId: String, brightness: Int) = editRoom(roomId) {
+        it.copy(hallSurroundingLightOn = true, hallSurroundingBrightness = brightness.coerceIn(10, 100))
+    }
+
+    fun toggleHallAllLights(roomId: String) {
+        val r = _state.value.rooms.firstOrNull { it.id == roomId } ?: return
+        val anyOn = r.lightOn || r.hallFrontLightOn || r.hallSurroundingLightOn
+        val target = !anyOn
+        gatCongTac(roomId, CongCuNha.DEN, dao = false, bat = target, nguon = LenhCongTac.NGUON_MAN_HINH)
+        editRoom(roomId) { it.copy(hallFrontLightOn = target, hallSurroundingLightOn = target) }
+    }
+
+    fun toggleHallLock(roomId: String) =
+        editRoom(roomId) { it.copy(hallDoorLocked = !it.hallDoorLocked) }
+
+    fun toggleHallCamera(roomId: String) =
+        editRoom(roomId) { it.copy(hallCameraOn = !it.hallCameraOn) }
+
+    fun toggleHallIr(roomId: String) =
+        editRoom(roomId) { it.copy(hallCameraOn = true, hallIrMode = !it.hallIrMode) }
+
+    fun toggleHallMotionAuto(roomId: String) =
+        editRoom(roomId) { it.copy(hallMotionAuto = !it.hallMotionAuto) }
+
+    fun triggerHallMotion(roomId: String) {
+        editRoom(roomId) { r ->
+            if (r.hallMotionAuto) {
+                r.copy(
+                    hallMotionDetected = true,
+                    lightOn = true,
+                    lightBrightness = maxOf(85, r.lightBrightness),
+                    hallSurroundingLightOn = true,
+                    hallSurroundingBrightness = maxOf(85, r.hallSurroundingBrightness),
+                )
+            } else {
+                r.copy(hallMotionDetected = true)
+            }
+        }
+        hallMotionJob?.cancel()
+        hallMotionJob = viewModelScope.launch {
+            delay(6500L)
+            clearHallMotion(roomId)
+        }
+    }
+
+    fun clearHallMotion(roomId: String) {
+        hallMotionJob?.cancel()
+        hallMotionJob = null
+        editRoom(roomId) { if (it.hallMotionDetected) it.copy(hallMotionDetected = false) else it }
     }
 
     fun setMode(roomId: String, mode: RoomMode) {
@@ -728,6 +801,57 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                         stoveOn = false,
                     )
                 }
+            } else if (roomId == "hall") {
+                when (mode) {
+                    // Dem an ninh: Hanh lang TAT, Truoc nha 60%, Xung quanh 75%, Khoa & Cam IR & PIR Auto BAT
+                    RoomMode.SLEEP -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else false,
+                        hallFrontLightOn = true,
+                        hallFrontBrightness = 60,
+                        hallSurroundingLightOn = true,
+                        hallSurroundingBrightness = 75,
+                        hallDoorLocked = true,
+                        hallCameraOn = true,
+                        hallIrMode = true,
+                        hallMotionAuto = true,
+                    )
+                    // Ve nha: Hanh lang 100%, Truoc nha 100%, Xung quanh 80%, Mo khoa cua, IR tat
+                    RoomMode.HOME -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
+                        hallFrontLightOn = true,
+                        hallFrontBrightness = 100,
+                        hallSurroundingLightOn = true,
+                        hallSurroundingBrightness = 80,
+                        hallDoorLocked = false,
+                        hallIrMode = false,
+                    )
+                    // Tiep khach: Ca 3 den 100%, Mo khoa cua, IR tat
+                    RoomMode.CUSTOM -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else true,
+                        lightBrightness = 100,
+                        hallFrontLightOn = true,
+                        hallFrontBrightness = 100,
+                        hallSurroundingLightOn = true,
+                        hallSurroundingBrightness = 100,
+                        hallDoorLocked = false,
+                        hallIrMode = false,
+                    )
+                    // Di vang: Tat ca 3 den, Khoa cua, Camera IR & Cam bien PIR bat
+                    RoomMode.AWAY -> r.copy(
+                        mode = mode,
+                        lightOn = if (denThat) r.lightOn else false,
+                        hallFrontLightOn = false,
+                        hallSurroundingLightOn = false,
+                        hallDoorLocked = true,
+                        hallCameraOn = true,
+                        hallIrMode = true,
+                        hallMotionAuto = true,
+                    )
+                }
             } else {
                 when (mode) {
                     RoomMode.SLEEP -> r.copy(
@@ -802,16 +926,17 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             editRoom(roomId) { r ->
                 val hienTai = if (thietBi == CongCuNha.DEN) r.lightOn else r.fanOn
                 val moi = if (dao) !hienTai else bat
+                val nextMode = if (tuManHinh && roomId != "hall") RoomMode.CUSTOM else r.mode
                 if (thietBi == CongCuNha.DEN) {
                     r.copy(
                         lightOn = moi,
                         lightBrightness = if (moi && r.lightBrightness <= 25) 100 else r.lightBrightness,
-                        mode = if (tuManHinh) RoomMode.CUSTOM else r.mode,
+                        mode = nextMode,
                     )
                 } else {
                     r.copy(
                         fanOn = moi,
-                        mode = if (tuManHinh) RoomMode.CUSTOM else r.mode,
+                        mode = nextMode,
                     )
                 }
             }
@@ -855,13 +980,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 dongBoCho()
                 if (tuManHinh) {
                     editRoom(roomId) { r ->
+                        val nextMode = if (roomId == "hall") r.mode else RoomMode.CUSTOM
                         if (thietBi == CongCuNha.DEN) {
                             r.copy(
                                 lightBrightness = if (mong && r.lightBrightness <= 25) 100 else r.lightBrightness,
-                                mode = RoomMode.CUSTOM,
+                                mode = nextMode,
                             )
                         } else {
-                            r.copy(mode = RoomMode.CUSTOM)
+                            r.copy(mode = nextMode)
                         }
                     }
                 }
@@ -1105,6 +1231,23 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     "máy hút mùi ${theNao(p.id, CongCuNha.QUAT, p.fanOn)} (cấp ${p.hoodSpeed}), " +
                     "bếp từ ${batTat(p.stoveOn)} (mức ${p.stoveLevel}), " +
                     "cảm biến Gas $gasNote, chế độ $cheDoBep"
+            } else if (p.id == "hall") {
+                val cheDoHanhLang = when (p.mode) {
+                    RoomMode.SLEEP -> "Đêm an ninh"
+                    RoomMode.HOME -> "Về nhà"
+                    RoomMode.CUSTOM -> "Tiếp khách"
+                    RoomMode.AWAY -> "Đi vắng"
+                }
+                val khoaNote = if (p.hallDoorLocked) "đã khóa" else "đang mở"
+                val camNote = when {
+                    !p.hallCameraOn -> "tắt"
+                    p.hallIrMode -> "bật (hồng ngoại IR)"
+                    else -> "bật"
+                }
+                "- ${p.name}: đèn hành lang ${theNao(p.id, CongCuNha.DEN, p.lightOn)} (${p.lightBrightness}%), " +
+                    "đèn phía trước ${batTat(p.hallFrontLightOn)} (${p.hallFrontBrightness}%), " +
+                    "đèn xung quanh ${batTat(p.hallSurroundingLightOn)} (${p.hallSurroundingBrightness}%), " +
+                    "khóa cửa chính $khoaNote, camera $camNote, chế độ $cheDoHanhLang"
             } else {
                 val extra = if (p.id == "living") {
                     ", TV ${batTat(p.tvOn)}, rèm mở ${p.curtainOpen}%"

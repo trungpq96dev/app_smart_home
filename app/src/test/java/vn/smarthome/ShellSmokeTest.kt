@@ -207,7 +207,51 @@ class ShellSmokeTest {
         rule.onNodeWithText("Hành lang").performClick()
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Điều khiển hành lang").assertIsDisplayed()
-        rule.onNodeWithText("Đèn phòng").assertIsDisplayed()
+        rule.onNodeWithText("Đèn hành lang").assertIsDisplayed()
+    }
+
+    @Test
+    fun mo_duoc_hanh_lang_va_dieu_khien_du_goc_nhin_den_khoa_cam_bien() {
+        start()
+        rule.onNodeWithText("Thiết bị").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Hành lang").performClick()
+        rule.mainClock.advanceTimeByFrame()
+
+        rule.onNodeWithText("Điều khiển hành lang").assertIsDisplayed()
+        rule.onNodeWithText("Đầu hè").assertIsDisplayed()
+        rule.onNodeWithText("Xung quanh").assertIsDisplayed()
+        rule.onNodeWithText("Từ xa").assertIsDisplayed()
+        rule.onNodeWithText("Đèn hành lang").assertIsDisplayed()
+        rule.onNodeWithText("Đèn phía trước nhà").assertIsDisplayed()
+        rule.onNodeWithText("Đèn xung quanh").assertIsDisplayed()
+        rule.onNodeWithText("Khóa cửa chính").assertIsDisplayed()
+        rule.onNodeWithText("Camera hành lang").assertIsDisplayed()
+        rule.onNodeWithText("Cảm biến chuyển động").assertIsDisplayed()
+        rule.onNodeWithText("Đêm an ninh").assertIsDisplayed()
+        rule.onNodeWithText("Về nhà").assertIsDisplayed()
+        rule.onNodeWithText("Tiếp khách").assertIsDisplayed()
+        rule.onNodeWithText("Đi vắng").assertIsDisplayed()
+        rule.onNodeWithText("18:00 - 05:30").assertIsDisplayed()
+
+        rule.onNodeWithText("Xung quanh").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("REC | CAM-02 XUNG QUANH").assertIsDisplayed()
+
+        rule.onNodeWithText("Từ xa").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("REC | CAM-03 TỪ XA").assertIsDisplayed()
+
+        rule.onNodeWithText("Test phát hiện").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Phát hiện chuyển động tại Từ xa!").assertIsDisplayed()
+        rule.onNodeWithText("Đã xem").performClick()
+        rule.mainClock.advanceTimeByFrame()
+
+        rule.onNodeWithText("Đi vắng").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Bật tất cả đèn").assertIsDisplayed()
+        rule.onNodeWithText("IR NIGHT").assertIsDisplayed()
     }
 
     @Test

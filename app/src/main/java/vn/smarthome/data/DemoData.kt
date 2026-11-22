@@ -102,7 +102,20 @@ object DemoData {
         RoomUi(
             id = "hall", name = "Hành lang", icon = Icons.Filled.Stairs, accent = SH.Cyan,
             lightOn = true, fanOn = false, acOn = false, acTemp = 26, mode = RoomMode.HOME,
-            scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "22:00",
+            scheduleOn = true,
+            scheduleLabel = "Tự bật đèn phía trước & xung quanh",
+            scheduleTime = "18:00 - 05:30",
+            lightBrightness = 100,
+            hallView = HallwayView.DAU_HE,
+            hallFrontLightOn = true,
+            hallFrontBrightness = 100,
+            hallSurroundingLightOn = true,
+            hallSurroundingBrightness = 80,
+            hallDoorLocked = true,
+            hallCameraOn = true,
+            hallIrMode = false,
+            hallMotionAuto = true,
+            hallMotionDetected = false,
         ),
     )
 

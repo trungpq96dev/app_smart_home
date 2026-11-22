@@ -11,6 +11,13 @@ enum class RoomMode(val label: String) {
     CUSTOM("Tùy chỉnh"),
 }
 
+/** 3 goc nhin camera / mo phong 2.5D cho khu vuc Hanh lang. */
+enum class HallwayView(val label: String, val camTitle: String) {
+    DAU_HE("Đầu hè", "CAM-01 ĐẦU HÈ"),
+    XUNG_QUANH("Xung quanh", "CAM-02 XUNG QUANH"),
+    TU_XA("Từ xa", "CAM-03 TỪ XA"),
+}
+
 /**
  * Mot phong + trang thai thiet bi trong phong.
  * Khung giao dien: trang thai nay chi song trong bo nho, khong gui di dau.
@@ -37,6 +44,16 @@ data class RoomUi(
     val stoveLevel: Int = 5,        // 1..9 (muc cong suat bep tu)
     val gasAlert: Boolean = false,
     val gasPpm: Int = 18,
+    val hallView: HallwayView = HallwayView.DAU_HE,
+    val hallFrontLightOn: Boolean = true,
+    val hallFrontBrightness: Int = 100,       // 10..100 (%)
+    val hallSurroundingLightOn: Boolean = true,
+    val hallSurroundingBrightness: Int = 80,  // 10..100 (%)
+    val hallDoorLocked: Boolean = true,
+    val hallCameraOn: Boolean = true,
+    val hallIrMode: Boolean = false,
+    val hallMotionAuto: Boolean = true,
+    val hallMotionDetected: Boolean = false,
 )
 
 /** Cong suat uoc tinh (Watt) cua bep tu theo muc 1..9 trong file design. */
