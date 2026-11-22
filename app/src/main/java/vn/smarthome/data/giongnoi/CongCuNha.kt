@@ -14,7 +14,7 @@ import org.json.JSONObject
  */
 interface HanhDongNha {
 
-    /** Danh sach ma phong dang co: living, bed1, bed2, bed3, kitchen. */
+    /** Danh sach ma phong dang co: living, bed1, bed2, bed3, kitchen, hall. */
     fun maPhong(): List<String>
 
     /** Ten tieng Viet co dau de Gemini doc len. Null neu khong co phong do. */
@@ -136,9 +136,20 @@ class CongCuNha(
             val ten = nha.tenPhong(p) ?: continue
             val that = nha.laThat(p, thietBi)
             if (!that) moiCaiDeuThat = false
-            val r = motPhong(p, ten, thietBi, hanhDong, giaTri) ?: return loi(
-                "Chưa làm được \"$hanhDong\" với \"$thietBi\"."
-            )
+            val r = if (dsPhong.size > 1) {
+                try {
+                    motPhong(p, ten, thietBi, hanhDong, giaTri) ?: return loi(
+                        "Chưa làm được \"$hanhDong\" với \"$thietBi\"."
+                    )
+                } catch (e: LoiLenh) {
+                    ketQua += "$ten: không làm được (${e.cau})"
+                    continue
+                }
+            } else {
+                motPhong(p, ten, thietBi, hanhDong, giaTri) ?: return loi(
+                    "Chưa làm được \"$hanhDong\" với \"$thietBi\"."
+                )
+            }
             ketQua += r
             // Thiet bi THAT: nha.datDen/datQuat da ban lenh ra MQTT roi. Ban
             // them o day la hai lenh cho mot cau noi - cong tac nhay hai lan.

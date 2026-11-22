@@ -88,7 +88,7 @@ class Driver(ABC):
         #: Khoang cach toi thieu giua hai lan quet (giay) - quet lien tuc
         #: moi vong poll thi vua cham vua lam phien ca mang.
         self.cho_quet: float = float(cau.get("cho_quet", 120))
-        self._lan_quet = 0.0
+        self._lan_quet: float | None = None
 
     @abstractmethod
     def doc(self) -> KetQuaDoc:
@@ -128,7 +128,7 @@ class Driver(ABC):
         if not self.mang or not self.cong_dac_trung:
             return None
         bay_gio = time.monotonic()
-        if bay_gio - self._lan_quet < self.cho_quet:
+        if self._lan_quet is not None and bay_gio - self._lan_quet < self.cho_quet:
             return None
         self._lan_quet = bay_gio
 
@@ -316,11 +316,18 @@ class CozyLifeDriver(Driver):
         return KetQuaDoc(True, bat, None)
 
     def dat(self, bat: bool) -> KetQuaDoc:
+        if not self.ip and self.tim_lai_ip() is None:
+            return KetQuaDoc(False, None, "chua co IP va khong tim thay thiet bi tren mang")
         gt = self.gia_tri_bat if bat else 0
         try:
             o = self._goi(CMD_DAT, {"attr": [int(self.dpid)], "data": {self.dpid: gt}})
         except LoiDoc as e:
-            return KetQuaDoc(False, None, str(e))
+            if self.tim_lai_ip() is None:
+                return KetQuaDoc(False, None, str(e))
+            try:
+                o = self._goi(CMD_DAT, {"attr": [int(self.dpid)], "data": {self.dpid: gt}})
+            except LoiDoc as e2:
+                return KetQuaDoc(False, None, str(e2))
         if o.get("res") != 0:
             return KetQuaDoc(True, None, "thiet bi tu choi lenh, res=%s" % o.get("res"))
         # Doc lai tu thiet bi. Tra ve cai vua gui la bao cao MONG MUON chu
@@ -418,32 +425,44 @@ class TuyaDriver(Driver):
         if any(k in thap for k in ("json", "payload", "decrypt", "55aa", "checksum")):
             return ("giai ma that bai - local_key co the da doi sau khi ghep lai thiet bi, "
                     "hoac sai protocol version")
-        if any(k in thap for k in ("timeout", "no response", "timed out")):
-            return ("khong tra loi trong thoi gian cho - thiet bi mat dien, sai IP, "
+        if any(k in thap for k in (
+            "timeout", "no response", "timed out", "unreachable", "network error", "905",
+        )):
+            return ("khong noi duoc thiet bi - mat dien, sai IP, doi IP, "
                     "hoac sai protocol version")
         if any(k in thap for k in ("refused", "connect")):
             return "tu choi ket noi - khe local dang bi client khac giu (app Smart Life?)"
         return "tinytuya bao loi: %s" % loi
 
-    def doc(self) -> KetQuaDoc:
+    def _thu_doc(self) -> tuple[dict | None, Exception | None]:
         try:
-            tt = self._thiet_bi().status()
+            return self._thiet_bi().status(), None
         except Exception as e:
-            self._ghi_loi()
-            cu = self.ip
-            if self.tim_lai_ip() is not None and self.ip != cu:
-                # Doi IP that: phai vut instance cu di, no van om dia chi cu.
-                self.dong()
-                try:
-                    tt = self._thiet_bi().status()
-                except Exception as e2:
-                    return KetQuaDoc(False, None,
-                                     "khong noi duoc %s:6668 (%s)" % (self.ip, e2))
-            else:
-                return KetQuaDoc(False, None, "khong noi duoc %s:6668 (%s)" % (self.ip, e))
+            return None, e
 
-        if not isinstance(tt, dict) or "dps" not in tt:
+    def _thu_dat(self, bat: bool) -> tuple[dict | None, Exception | None]:
+        try:
+            res = self._thiet_bi().set_value(self.dp, bat)
+            return (res if isinstance(res, dict) else None), None
+        except Exception as e:
+            return None, e
+
+    def doc(self) -> KetQuaDoc:
+        if not self.ip and self.tim_lai_ip() is None:
+            return KetQuaDoc(False, None, "chua co IP va khong tim thay thiet bi tren mang")
+
+        tt, err = self._thu_doc()
+        # tinytuya khong nem khi mat ket noi ma tra dict {'Error': ..., 'Err': '905'}
+        if err is not None or not isinstance(tt, dict) or "dps" not in tt:
             self._ghi_loi()
+            if self.tim_lai_ip() is not None:
+                # Vut instance cu di: socket persistent van om dia chi cu.
+                self.dong()
+                tt, err = self._thu_doc()
+
+        if err is not None:
+            return KetQuaDoc(False, None, "khong noi duoc %s:6668 (%s)" % (self.ip, err))
+        if not isinstance(tt, dict) or "dps" not in tt:
             return KetQuaDoc(False, None, self.dien_giai(tt if isinstance(tt, dict) else {}))
 
         self._loi_lien_tiep = 0
@@ -454,11 +473,21 @@ class TuyaDriver(Driver):
         return KetQuaDoc(True, bool(dps[self.dp]), None)
 
     def dat(self, bat: bool) -> KetQuaDoc:
-        try:
-            self._thiet_bi().set_value(self.dp, bat)
-        except Exception as e:
+        if not self.ip and self.tim_lai_ip() is None:
+            return KetQuaDoc(False, None, "chua co IP va khong tim thay thiet bi tren mang")
+
+        res, err = self._thu_dat(bat)
+        loi_dict = isinstance(res, dict) and ("Error" in res or "Err" in res)
+        if err is not None or loi_dict:
             self._ghi_loi()
-            return KetQuaDoc(False, None, "khong gui duoc lenh toi %s:6668 (%s)" % (self.ip, e))
+            if self.tim_lai_ip() is not None:
+                self.dong()
+                res, err = self._thu_dat(bat)
+                loi_dict = isinstance(res, dict) and ("Error" in res or "Err" in res)
+            if err is not None:
+                return KetQuaDoc(False, None, "khong gui duoc lenh toi %s:6668 (%s)" % (self.ip, err))
+            if loi_dict:
+                return KetQuaDoc(False, None, self.dien_giai(res))
         return self.doc()
 
 

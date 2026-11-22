@@ -199,8 +199,13 @@ class ShellSmokeTest {
         start()
         rule.onNodeWithText("Thiết bị").performClick()
         rule.mainClock.advanceTimeByFrame()
-        // Co dong dem thiet bi va it nhat mot the Den.
-        rule.onAllNodesWithText("Đèn").onFirst().assertIsDisplayed()
+        // Hien du 6 muc phong lon va kich vao la mo man chi tiet phong.
+        listOf("Phòng ngủ 1", "Phòng ngủ 2", "Phòng ngủ 3", "Nhà bếp", "Phòng khách", "Hành lang")
+            .forEach { rule.onNodeWithText(it).assertIsDisplayed() }
+        rule.onNodeWithText("Hành lang").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Điều khiển hành lang").assertIsDisplayed()
+        rule.onNodeWithText("Đèn phòng").assertIsDisplayed()
     }
 
     // ---------------------------------------------------------------

@@ -179,8 +179,118 @@ class TestDienGiaiLoiTuya(unittest.TestCase):
         s = TuyaDriver.dien_giai({"Error": "Connection refused"})
         self.assertIn("khe local", s)
 
+    def test_unreachable_noi_den_mat_dien_hoac_doi_ip(self):
+        s = TuyaDriver.dien_giai({"Error": "Network Error: Device Unreachable", "Err": "905"})
+        self.assertIn("mat dien", s)
+        self.assertIn("doi IP", s)
+
     def test_loi_la_van_noi_duoc_thanh_cau(self):
         self.assertIn("gi do moi", TuyaDriver.dien_giai({"Error": "gi do moi"}))
+
+
+class _FakeTuyaDevice:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.closed = False
+
+    def status(self):
+        r = self._responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    def close(self):
+        self.closed = True
+
+
+class TestTuyaAutoRediscover(unittest.TestCase):
+    def _make_driver(self, ip="192.168.0.100", cho_quet=0):
+        return TuyaDriver({
+            "id": "bed1_den", "ten": "Den", "phong": "bed1", "loai": "den",
+            "ip": ip, "device_id": "eb74553feb16595327lzam",
+            "local_key": "0123456789abcdef", "version": "3.3", "dp": "1",
+            "mang": "192.168.0.0/24", "cho_quet": cho_quet,
+        })
+
+    def test_tuya_doc_tu_tim_lai_ip_khi_status_tra_dict_loi_905(self):
+        import driver as mod
+        d = self._make_driver(ip="192.168.0.100")
+        old_tb = _FakeTuyaDevice([{"Error": "Network Error: Device Unreachable", "Err": "905"}])
+        new_tb = _FakeTuyaDevice([{"dps": {"1": True}}])
+        d._tb = old_tb
+        d._thiet_bi = lambda: new_tb if d.ip == "192.168.0.107" else old_tb
+        d.xac_minh = lambda ip: ip == "192.168.0.107"
+
+        goc_quet = mod.quet_cong
+        mod.quet_cong = lambda mang, cong, **kw: ["192.168.0.104", "192.168.0.107"]
+        try:
+            kq = d.doc()
+        finally:
+            mod.quet_cong = goc_quet
+
+        self.assertTrue(kq.online)
+        self.assertIs(kq.is_on, True)
+        self.assertEqual(d.ip, "192.168.0.107")
+        self.assertTrue(old_tb.closed)
+
+    def test_tuya_doc_khi_ip_rong_tu_tim_ra_ip(self):
+        import driver as mod
+        d = self._make_driver(ip="")
+        new_tb = _FakeTuyaDevice([{"dps": {"1": False}}])
+        d._thiet_bi = lambda: new_tb
+        d.xac_minh = lambda ip: ip == "192.168.0.107"
+
+        goc_quet = mod.quet_cong
+        mod.quet_cong = lambda mang, cong, **kw: ["192.168.0.107"]
+        try:
+            kq = d.doc()
+        finally:
+            mod.quet_cong = goc_quet
+
+        self.assertTrue(kq.online)
+        self.assertIs(kq.is_on, False)
+        self.assertEqual(d.ip, "192.168.0.107")
+
+    def test_tim_lai_ip_chay_ngay_lan_dau_khi_uptime_nho_hon_cho_quet(self):
+        import driver as mod
+        d = DriverTim("abc", "192.168.0.77", ["192.168.0.77"])
+        d.cho_quet = 120
+        goc_quet = mod.quet_cong
+        goc_mono = mod.time.monotonic
+        mod.quet_cong = lambda mang, cong, **kw: d._quet()
+        mod.time.monotonic = lambda: 10.0
+        try:
+            self.assertEqual("192.168.0.77", d.tim_lai_ip())
+        finally:
+            mod.quet_cong = goc_quet
+            mod.time.monotonic = goc_mono
+
+    def test_cozylife_dat_thu_lai_sau_khi_tim_lai_ip(self):
+        d = CozyLifeDriver({
+            "id": "bed1_quat", "ten": "Quat", "phong": "bed1", "loai": "quat",
+            "ip": "192.168.0.103", "did": "727700990050c2ecbf27",
+            "mang": "192.168.0.0/24", "cho_quet": 0,
+        })
+        calls = []
+
+        def fake_goi(cmd, msg):
+            calls.append((d.ip, cmd))
+            if d.ip == "192.168.0.103":
+                raise LoiDoc("timeout")
+            if cmd == 3:
+                return {"cmd": 3, "res": 0, "msg": {}}
+            return {"cmd": 2, "res": 0, "msg": {"data": {"1": 255}}}
+
+        def fake_tim():
+            d.ip = "192.168.0.108"
+            return d.ip
+
+        d._goi = fake_goi
+        d.tim_lai_ip = fake_tim
+        kq = d.dat(True)
+        self.assertTrue(kq.online)
+        self.assertIs(kq.is_on, True)
+        self.assertEqual(calls, [("192.168.0.103", 3), ("192.168.0.108", 3), ("192.168.0.108", 2)])
 
 
 class DriverTim(CozyLifeDriver):

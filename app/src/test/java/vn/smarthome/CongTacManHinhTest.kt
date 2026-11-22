@@ -85,6 +85,16 @@ class CongTacManHinhTest {
     }
 
     @Test
+    fun bridge_chet_nhung_retained_van_bao_online_thi_VAN_KHONG_VE_cong_tac() {
+        // Khi congtac/trangthai = offline, topic congtac/thietbi/<id> retained
+        // van giu online=true, bat=true. Khong duoc ve Switch o the BAT.
+        ve(that(bridgeSong = false, online = true, bat = true))
+        rule.onNodeWithText("Bộ nối chưa chạy trên máy chủ").assertIsDisplayed()
+        rule.onNodeWithText("—").assertIsDisplayed()
+        assertEquals(2, rule.onAllNodes(isToggleable()).fetchSemanticsNodes().size)
+    }
+
+    @Test
     fun online_ma_khong_doc_duoc_cong_tac_cung_ve_dau_gach() {
         ve(that(online = true, bat = null))
         rule.onNodeWithText("Chưa đọc được công tắc").assertIsDisplayed()

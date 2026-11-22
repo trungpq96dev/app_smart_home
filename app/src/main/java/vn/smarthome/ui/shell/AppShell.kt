@@ -130,6 +130,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
     }
 
+    // Thong bao loi / qua han 6s cua cong tac that (tap hoac giong noi).
+    LaunchedEffect(Unit) {
+        vm.thongBao.collect { msg -> snackbar.showSnackbar(msg) }
+    }
+
     // Nut Back cua may: thoat man con truoc, chua thoat app ngay.
     BackHandler(enabled = openRoom != null || showChiTietDien || showWifi || dest != Dest.HOME) {
         when {
@@ -225,6 +230,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onRefreshWeather = vm::taiLaiThoiTiet,
                         onOpenWifi = { showWifi = true },
                         onOpenLich = { current = Dest.UTILITIES.route },
+                        congTac = congTac,
                     )
 
                     dest == Dest.SETTINGS -> SettingsScreen(

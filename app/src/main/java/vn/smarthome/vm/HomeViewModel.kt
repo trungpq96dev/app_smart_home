@@ -51,6 +51,7 @@ import vn.smarthome.data.giongnoi.CauHinhGiongNoi
 import vn.smarthome.data.giongnoi.CongCuNha
 import vn.smarthome.data.giongnoi.CauHinhGiongNoiStore
 import vn.smarthome.data.giongnoi.HanhDongNha
+import vn.smarthome.data.giongnoi.LoiLenh
 import vn.smarthome.data.giongnoi.MucDungNgay
 import vn.smarthome.data.giongnoi.PhienGiongNoi
 import vn.smarthome.data.lunar.AmLich
@@ -569,13 +570,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Chi tiet phong ----
 
-    fun toggleLight(roomId: String) =
+    fun toggleLight(roomId: String) {
         gatCongTac(roomId, CongCuNha.DEN, dao = true, bat = false,
             nguon = LenhCongTac.NGUON_MAN_HINH)
+    }
 
-    fun toggleFan(roomId: String) =
+    fun toggleFan(roomId: String) {
         gatCongTac(roomId, CongCuNha.QUAT, dao = true, bat = false,
             nguon = LenhCongTac.NGUON_MAN_HINH)
+    }
 
     fun toggleAc(roomId: String) = editRoom(roomId) { it.copy(acOn = !it.acOn) }
 
@@ -598,11 +601,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     // bam. Giong noi thi khong: "bat den phong khach" luc den dang bat ma lai
     // dao thanh tat la lam nguoc y nguoi noi.
 
-    fun datDen(roomId: String, bat: Boolean) =
+    fun datDen(roomId: String, bat: Boolean): String? =
         gatCongTac(roomId, CongCuNha.DEN, dao = false, bat = bat,
             nguon = LenhCongTac.NGUON_GIONG_NOI)
 
-    fun datQuat(roomId: String, bat: Boolean) =
+    fun datQuat(roomId: String, bat: Boolean): String? =
         gatCongTac(roomId, CongCuNha.QUAT, dao = false, bat = bat,
             nguon = LenhCongTac.NGUON_GIONG_NOI)
 
@@ -614,7 +617,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
      * Thiet bi MAU thi doi `_state` ngay nhu truoc, het. Thiet bi THAT thi
      * dung lai TRUOC KHI publish o bon ca - vi gui mot lenh ma biet truoc no
      * vo nghia thi tha noi thang con hon de nguoi dung nhin cong tac mo roi
-     * tu doan.
+     * tu doan. Tra ve null khi thanh cong (hoac da gui len broker), tra cau
+     * loi tieng Viet khi bi chan.
      */
     private fun gatCongTac(
         roomId: String,
@@ -622,7 +626,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         dao: Boolean,
         bat: Boolean,
         nguon: String,
-    ) {
+    ): String? {
         val ct = congTac.value
         val tb = ct.tim(roomId, thietBi)
         if (tb == null) {
@@ -637,38 +641,46 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     if (thietBi == CongCuNha.DEN) it.copy(lightOn = bat) else it.copy(fanOn = bat)
                 }
             }
-            return
+            return null
         }
 
         val tt = ct.trangThai[tb.ma]
         if (!ct.bridgeSong) {
-            _thongBao.tryEmit("Bộ nối công tắc chưa chạy trên máy chủ nên chưa gửi được lệnh.")
-            return
+            val loi = "Bộ nối công tắc chưa chạy trên máy chủ nên chưa gửi được lệnh."
+            _thongBao.tryEmit(loi)
+            return loi
         }
         if (tt == null || !tt.online) {
-            _thongBao.tryEmit("${tb.ten} đang mất kết nối" + (tt?.lyDoLoi?.let { " ($it)" } ?: "") + ".")
-            return
+            val loi = "${tb.ten} đang mất kết nối" + (tt?.lyDoLoi?.let { " ($it)" } ?: "") + "."
+            _thongBao.tryEmit(loi)
+            return loi
         }
         // Dao ma khong biet dang o the nao thi KHONG duoc doan. Doan o day la
         // "bam bat thi no tat" - rat kho chiu va rat kho tai hien.
         if (dao && tt.bat == null) {
-            _thongBao.tryEmit(
-                "Chưa biết ${tb.ten} đang bật hay tắt nên không đảo được. " +
-                    "Hãy nói rõ bật hoặc tắt.",
-            )
-            return
+            val loi = "Chưa biết ${tb.ten} đang bật hay tắt nên không đảo được. " +
+                "Hãy nói rõ bật hoặc tắt."
+            _thongBao.tryEmit(loi)
+            return loi
         }
 
         val mong = if (dao) !tt.bat!! else bat
-        when (val kq = mqtt.guiLenh(roomId, thietBi, if (mong) "ON" else "OFF", nguon = nguon)) {
+        return when (val kq = mqtt.guiLenh(roomId, thietBi, if (mong) "ON" else "OFF", nguon = nguon)) {
             is KetQuaGui.DaGui -> {
                 hangCho.ganh(tb.ma, mong, kq.id, System.currentTimeMillis())
                 dongBoCho()
+                null
             }
-            KetQuaGui.ChuaNoiBroker ->
-                _thongBao.tryEmit("Chưa nối broker MQTT nên chưa gửi được lệnh. Kiểm tra Cài đặt.")
-            is KetQuaGui.Loi ->
-                _thongBao.tryEmit("Không gửi được lệnh: ${kq.moTa}")
+            KetQuaGui.ChuaNoiBroker -> {
+                val loi = "Chưa nối broker MQTT nên chưa gửi được lệnh. Kiểm tra Cài đặt."
+                _thongBao.tryEmit(loi)
+                loi
+            }
+            is KetQuaGui.Loi -> {
+                val loi = "Không gửi được lệnh: ${kq.moTa}"
+                _thongBao.tryEmit(loi)
+                loi
+            }
         }
     }
 
@@ -782,9 +794,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         override fun tenPhong(ma: String): String? =
             _state.value.rooms.firstOrNull { it.id == ma }?.name
 
-        override fun datDen(phong: String, bat: Boolean) = this@HomeViewModel.datDen(phong, bat)
+        override fun datDen(phong: String, bat: Boolean) {
+            this@HomeViewModel.datDen(phong, bat)?.let { throw LoiLenh(it) }
+        }
 
-        override fun datQuat(phong: String, bat: Boolean) = this@HomeViewModel.datQuat(phong, bat)
+        override fun datQuat(phong: String, bat: Boolean) {
+            this@HomeViewModel.datQuat(phong, bat)?.let { throw LoiLenh(it) }
+        }
 
         override fun datDieuHoa(phong: String, bat: Boolean) =
             this@HomeViewModel.datDieuHoa(phong, bat)
@@ -822,9 +838,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 return _state.value.quick.firstOrNull { it.id == thietBi }?.on
             }
             // Thiet bi that: su that nam o broker, khong nam o man hinh. Va
-            // mat ket noi thi tra null chu khong tra gia tri cuoi cung - de
-            // `dao` biet duong ma tu choi thay vi doan.
-            congTac.value.trangThaiCua(phong, thietBi)?.let { return if (it.online) it.bat else null }
+            // mat ket noi (hoac bridge tat) thi tra null chu khong tra gia
+            // tri cuoi cung - de `dao` biet duong ma tu choi thay vi doan.
+            val ct = congTac.value
+            if (ct.laThat(phong, thietBi)) {
+                if (!ct.bridgeSong) return null
+                val tt = ct.trangThaiCua(phong, thietBi)
+                return if (tt?.online == true) tt.bat else null
+            }
             val p = _state.value.rooms.firstOrNull { it.id == phong } ?: return null
             return when (thietBi) {
                 "den" -> p.lightOn
@@ -886,7 +907,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Mau thi lay tu man hinh; that thi lay tu broker, khong ro thi noi khong ro. */
     private fun theNao(phong: String, thietBi: String, mau: Boolean): String {
-        val tt = congTac.value.trangThaiCua(phong, thietBi) ?: return batTat(mau)
+        val ct = congTac.value
+        if (!ct.laThat(phong, thietBi)) return batTat(mau)
+        if (!ct.bridgeSong) return "không rõ (bộ nối chưa chạy)"
+        val tt = ct.trangThaiCua(phong, thietBi) ?: return "không rõ"
         if (!tt.online) return "không rõ (mất kết nối)"
         return tt.bat?.let { batTat(it) } ?: "không rõ"
     }
@@ -907,12 +931,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val ds = JSONArray()
         ct.danhSach.forEach { tb ->
             val tt = ct.trangThai[tb.ma]
+            val online = ct.bridgeSong && (tt?.online == true)
             ds.put(
                 JSONObject()
                     .put("ma", tb.ma).put("ten", tb.ten).put("he", tb.he)
-                    .put("online", tt?.online ?: false)
+                    .put("online", online)
                     // Khong ro thi JSONObject.NULL, khong phai false.
-                    .put("bat", if (tt?.online == true && tt.bat != null) tt.bat else JSONObject.NULL)
+                    .put("bat", if (online && tt?.bat != null) tt.bat else JSONObject.NULL)
                     .put("luc", tt?.luc ?: JSONObject.NULL)
                     .put("loi", tt?.lyDoLoi ?: JSONObject.NULL),
             )
@@ -939,20 +964,31 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private fun chuaCoSo(lyDo: String) = JSONObject().put("co_so", false).put("ly_do", lyDo)
 
     private fun jsonTrangThaiNha(): JSONObject {
+        val ct = congTac.value
         val phong = JSONArray()
         _state.value.rooms.forEach { p ->
+            val denThat = ct.laThat(p.id, CongCuNha.DEN)
+            val quatThat = ct.laThat(p.id, CongCuNha.QUAT)
+            val ttDen = ct.trangThaiCua(p.id, CongCuNha.DEN)
+            val ttQuat = ct.trangThaiCua(p.id, CongCuNha.QUAT)
+            val denVal: Any = if (!denThat) p.lightOn
+            else if (ct.bridgeSong && ttDen?.online == true && ttDen.bat != null) ttDen.bat
+            else JSONObject.NULL
+            val quatVal: Any = if (!quatThat) p.fanOn
+            else if (ct.bridgeSong && ttQuat?.online == true && ttQuat.bat != null) ttQuat.bat
+            else JSONObject.NULL
             phong.put(
                 JSONObject()
                     .put("ma", p.id).put("ten", p.name)
-                    .put("den", p.lightOn).put("quat", p.fanOn)
+                    .put("den", denVal).put("quat", quatVal)
                     .put("dieu_hoa", p.acOn).put("nhiet_do", p.acTemp)
                     .put("che_do", p.mode.label)
                     .put("lich_hen", p.scheduleOn)
                     .put("gio_hen", p.scheduleTime)
                     // Co theo TUNG thiet bi, khong con mot co toan cuc: tu nay
                     // bed1/den va bed1/quat la that con lai van la mau.
-                    .put("den_that", congTac.value.laThat(p.id, CongCuNha.DEN))
-                    .put("quat_that", congTac.value.laThat(p.id, CongCuNha.QUAT)),
+                    .put("den_that", denThat)
+                    .put("quat_that", quatThat),
             )
         }
         val nhanh = JSONArray()

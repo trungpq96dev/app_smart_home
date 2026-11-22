@@ -286,7 +286,6 @@ class Bridge:
             self.ghi_nhan(st, KetQuaDoc(False, None, str(e)), "lenh", ma_lenh)
             return
 
-        st.tra_loi_id = ma_lenh
         self.ghi_nhan(st, kq, "lenh", ma_lenh, ep_publish=True)
         ket("ok" if kq.online and kq.is_on is not None else "loi", kq.ly_do_loi, kq)
 
@@ -344,6 +343,7 @@ class Bridge:
                     continue
                 try:
                     self.xu_ly_lenh(lenh)
+                    self.pub_info_neu_doi()
                 except Exception:
                     log.exception("Loi khi xu ly lenh, bridge van chay tiep.")
             if not self.chay:

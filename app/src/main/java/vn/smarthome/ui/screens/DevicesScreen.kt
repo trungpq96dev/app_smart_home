@@ -8,15 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
@@ -37,6 +35,7 @@ import vn.smarthome.data.RoomUi
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.IconBadge
+import vn.smarthome.ui.components.StatusPill
 import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
@@ -46,18 +45,20 @@ import vn.smarthome.ui.theme.tint
 import vn.smarthome.vm.HomeState
 
 /**
- * Man Thiet bi - KHUNG HIEN THI TRANG THAI, chua dieu khien qua MQTT.
+ * Thu tu hien thi 6 muc phong lon tren luoi 3x2.
+ * Hang 1: Phong ngu 1, 2, 3. Hang 2: Nha bep, Phong khach, Hanh lang.
+ */
+private val THU_TU_PHONG = listOf("bed1", "bed2", "bed3", "kitchen", "living", "hall")
+
+/**
+ * Man Thiet bi - luoi 6 muc phong lon.
  *
- * Moi phong co 3 thiet bi (den, quat, dieu hoa) -> moi cai mot the. Trang
- * thai lay tu [HomeState.rooms], dung nguon voi man chi tiet phong, nen bat
- * den o phong roi qua day thay doi theo ngay.
+ * Moi the la mot phong (Phong ngu 1, 2, 3, Nha bep, Phong khach, Hanh lang),
+ * tom tat trang thai den/quat/dieu hoa trong phong do. Bam vao the la mo man
+ * chi tiet phong [RoomDetailScreen] de bat/tat va dieu chinh chi tiet.
  *
- * Tu 21/11/2026 nha co hai cong tac THAT (bed1: den + quat), con lai van la
- * du lieu mau. Nen chip "MAU" chuyen tu header xuong TUNG THE - mot co toan
- * cuc khong con noi dung su that nua. The that ma chua doc duoc trang thai
- * thi hien dau gach "—", khong hien "Tat".
- *
- * Bam vao the chi MO MAN CHI TIET PHONG, khong gui lenh tu day.
+ * Voi thiet bi THAT doc tu [CongTacState]: chua ro trang thai thi hien "—",
+ * khong doan la "Tat".
  */
 @Composable
 fun DevicesScreen(
@@ -67,140 +68,245 @@ fun DevicesScreen(
     /** Mac dinh rong = chua co cong tac that nao; moi the deu deo chip MAU. */
     congTac: CongTacState = CongTacState(),
 ) {
-    val thietBi = thietBiTuPhong(state.rooms, congTac)
+    val dsPhong = state.rooms
+        .sortedBy { r -> THU_TU_PHONG.indexOf(r.id).let { if (it >= 0) it else Int.MAX_VALUE } }
+        .map { r -> tomTatPhong(r, congTac) }
+
+    val tongDangBat = dsPhong.sumOf { it.soDangBat }
+    val tongThietBi = dsPhong.size * 3
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(title = "Thiết bị", onBack = null)
+        TopBar(title = "Thiết bị", onBack = null) {
+            StatusPill("${dsPhong.size} phòng", SH.Blue, showDot = false)
+            StatusPill(
+                "$tongDangBat/$tongThietBi thiết bị đang bật",
+                if (tongDangBat > 0) SH.Green else SH.TextOff,
+            )
+        }
 
-        // Dong dem: bao nhieu dang bat / tong.
-        val dangBat = thietBi.count { it.bat }
-        Text(
-            dangBat.toString() + "/" + thietBi.size + " thiết bị đang bật",
-            style = SHType.Caption, color = SH.TextDim,
-            modifier = Modifier.padding(start = 2.dp, bottom = 8.dp),
-        )
-
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 228.dp),
-            horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
-            verticalArrangement = Arrangement.spacedBy(Dim.CardGap),
+        Column(
             modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(Dim.CardGap),
         ) {
-            items(thietBi, key = { it.id }) { tb ->
-                TheThietBi(tb, onClick = { onOpenRoom(tb.roomId) })
+            dsPhong.chunked(3).forEach { hang ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+                ) {
+                    hang.forEach { tomTat ->
+                        ThePhong(
+                            tomTat = tomTat,
+                            onClick = { onOpenRoom(tomTat.room.id) },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
+                    repeat(3 - hang.size) {
+                        Spacer(Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
             }
         }
     }
 }
 
-/** Mot thiet bi suy ra tu phong. */
-private data class ThietBiUi(
-    val id: String,
-    val roomId: String,
-    val loai: String,
-    val phong: String,
+private data class TrangThaiMucThietBi(
+    val ten: String,
     val icon: ImageVector,
     val mau: Color,
     val bat: Boolean,
-    val trangThai: String,
-    /** false = du lieu mau, the deo chip "MAU". */
-    val that: Boolean = false,
-    /** false = thiet bi that nhung khong doc duoc trang thai -> ve "—". */
-    val roRang: Boolean = true,
+    val chuTrangThai: String,
+    val that: Boolean,
+    val roRang: Boolean,
 )
 
-/** Bung danh sach the tu cac phong. */
-private fun thietBiTuPhong(rooms: List<RoomUi>, ct: CongTacState): List<ThietBiUi> = buildList {
-    rooms.forEach { r ->
-        // Thiet bi that: trang thai lay tu broker, va khong doc duoc thi ve
-        // "—" chu khong ve "Tat".
-        val ttDen = ct.trangThaiCua(r.id, "den")
-        val denThat = ct.laThat(r.id, "den")
-        val denRo = !denThat || (ttDen?.online == true && ttDen.bat != null)
-        add(ThietBiUi(
-            id = r.id + "-den", roomId = r.id, loai = "Đèn", phong = r.name,
-            icon = Icons.Filled.Lightbulb, mau = SH.Amber,
-            bat = r.lightOn && denRo,
-            trangThai = if (!denRo) "—" else if (r.lightOn) "Bật" else "Tắt",
-            that = denThat, roRang = denRo,
-        ))
-        val ttQuat = ct.trangThaiCua(r.id, "quat")
-        val quatThat = ct.laThat(r.id, "quat")
-        val quatRo = !quatThat || (ttQuat?.online == true && ttQuat.bat != null)
-        add(ThietBiUi(
-            id = r.id + "-quat", roomId = r.id, loai = "Quạt", phong = r.name,
-            icon = Icons.Filled.Air, mau = SH.Blue,
-            bat = r.fanOn && quatRo,
-            trangThai = if (!quatRo) "—" else if (r.fanOn) "Bật" else "Tắt",
-            that = quatThat, roRang = quatRo,
-        ))
-        add(ThietBiUi(
-            id = r.id + "-dh", roomId = r.id, loai = "Điều hòa", phong = r.name,
-            icon = Icons.Filled.AcUnit, mau = SH.Purple,
-            bat = r.acOn, trangThai = if (r.acOn) r.acTemp.toString() + "°C" else "Tắt",
-        ))
+private data class TomTatPhongUi(
+    val room: RoomUi,
+    val mucThietBi: List<TrangThaiMucThietBi>,
+) {
+    val coCongTacThat: Boolean get() = mucThietBi.any { it.that }
+    val soDangBat: Int get() = mucThietBi.count { it.bat }
+}
+
+private fun tomTatPhong(room: RoomUi, ct: CongTacState): TomTatPhongUi {
+    val den = mucCongTac(room.id, "den", "Đèn", Icons.Filled.Lightbulb, SH.Amber, room.lightOn, ct)
+    val quat = mucCongTac(room.id, "quat", "Quạt", Icons.Filled.Air, SH.Blue, room.fanOn, ct)
+    val dieuHoa = TrangThaiMucThietBi(
+        ten = "Điều hòa",
+        icon = Icons.Filled.AcUnit,
+        mau = SH.Purple,
+        bat = room.acOn,
+        chuTrangThai = if (room.acOn) "${room.acTemp}°C" else "Tắt",
+        that = false,
+        roRang = true,
+    )
+    return TomTatPhongUi(room = room, mucThietBi = listOf(den, quat, dieuHoa))
+}
+
+private fun mucCongTac(
+    roomId: String,
+    loai: String,
+    ten: String,
+    icon: ImageVector,
+    mau: Color,
+    giaTriRoom: Boolean,
+    ct: CongTacState,
+): TrangThaiMucThietBi {
+    val that = ct.laThat(roomId, loai)
+    val tt = ct.trangThaiCua(roomId, loai)
+    val roRang = !that || (ct.bridgeSong && tt?.online == true && tt.bat != null)
+    val bat = giaTriRoom && roRang
+    val chu = if (!roRang) "—" else if (giaTriRoom) "Bật" else "Tắt"
+    return TrangThaiMucThietBi(
+        ten = ten,
+        icon = icon,
+        mau = mau,
+        bat = bat,
+        chuTrangThai = chu,
+        that = that,
+        roRang = roRang,
+    )
+}
+
+@Composable
+private fun ThePhong(
+    tomTat: TomTatPhongUi,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val room = tomTat.room
+    val coThietBiBat = tomTat.soDangBat > 0
+    val vienMau = if (coThietBiBat) room.accent.tint(0.55f) else SH.Border
+    val hinh = RoundedCornerShape(Dim.CardRadius)
+
+    Column(
+        modifier
+            .clip(hinh)
+            .background(SH.Card)
+            .border(Dim.BorderWidth, vienMau, hinh)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+    ) {
+        // ---- Dau the: icon + ten phong + chip THAT/MAU ----
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconBadge(
+                icon = room.icon,
+                color = if (coThietBiBat) room.accent else SH.TextOff,
+                size = 44.dp,
+                iconSize = 24.dp,
+                filled = coThietBiBat,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    room.name,
+                    style = SHType.PageTitle,
+                    color = SH.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val moTa = buildString {
+                    append("Chế độ: ").append(room.mode.label)
+                    if (room.scheduleOn) append(" • ").append(room.scheduleTime)
+                }
+                Text(
+                    moTa,
+                    style = SHType.Caption,
+                    color = SH.TextDim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            val chipMau = if (tomTat.coCongTacThat) SH.Green else SH.Amber
+            Text(
+                if (tomTat.coCongTacThat) "THẬT" else "MẪU",
+                style = SHType.Caption,
+                color = chipMau,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(chipMau.tint(0.14f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---- Giua the: 3 o tom tat Den / Quat / Dieu hoa ----
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            tomTat.mucThietBi.forEach { muc ->
+                OThietBiNho(muc = muc, modifier = Modifier.weight(1f).fillMaxHeight())
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---- Chan the: tong dang bat + goi y bam de chinh ----
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Dot(if (coThietBiBat) SH.Green else SH.TextOff, 8.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (coThietBiBat) "${tomTat.soDangBat}/3 đang bật" else "Tất cả đang tắt",
+                style = SHType.Caption,
+                color = if (coThietBiBat) SH.Green else SH.TextOff,
+                maxLines = 1,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Vào chỉnh →",
+                style = SHType.Label,
+                color = room.accent,
+                maxLines = 1,
+            )
+        }
     }
 }
 
 @Composable
-private fun TheThietBi(tb: ThietBiUi, onClick: () -> Unit) {
-    val vienMau = if (tb.bat) tb.mau.tint(0.5f) else SH.Border
+private fun OThietBiNho(
+    muc: TrangThaiMucThietBi,
+    modifier: Modifier = Modifier,
+) {
+    val nen = if (muc.bat) muc.mau.tint(0.12f) else SH.Card2
+    val vien = if (muc.bat) muc.mau.tint(0.35f) else SH.Border
+    val hinh = RoundedCornerShape(10.dp)
+
     Column(
-        Modifier
-            .height(132.dp)
-            .clip(RoundedCornerShape(Dim.CardRadius))
-            .background(SH.Card)
-            .border(Dim.BorderWidth, vienMau, RoundedCornerShape(Dim.CardRadius))
-            .clickable(onClick = onClick)
-            .padding(14.dp),
+        modifier
+            .clip(hinh)
+            .background(nen)
+            .border(Dim.BorderWidth, vien, hinh)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Icon sang mau khi bat, xam khi tat - nhin phat biet trang thai.
-            IconBadge(
-                tb.icon,
-                if (tb.bat) tb.mau else SH.TextOff,
-                size = 38.dp, iconSize = 21.dp,
-                filled = tb.bat,
-            )
-            Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!tb.that) {
-                    // Chip theo TUNG the: mot co toan cuc khong con noi dung
-                    // su that khi nha vua that vua mau.
-                    Text(
-                        "MẪU",
-                        style = SHType.Caption,
-                        color = SH.Amber,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(SH.Amber.tint(0.14f))
-                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Dot(if (tb.bat) SH.Green else SH.TextOff, 8.dp)
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    if (!tb.roRang) "—" else if (tb.bat) "Bật" else "Tắt",
-                    style = SHType.Caption,
-                    color = if (!tb.roRang) SH.TextDim else if (tb.bat) SH.Green else SH.TextOff,
-                )
-            }
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        Text(tb.loai, style = SHType.CardTitle, color = SH.Text, maxLines = 1)
-        Text(
-            tb.phong,
-            style = SHType.Caption, color = SH.TextDim,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Icon(
+            muc.icon,
+            contentDescription = null,
+            tint = if (muc.bat) muc.mau else SH.TextOff,
+            modifier = Modifier.size(22.dp),
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
-            tb.trangThai,
+            muc.ten,
+            style = SHType.Label,
+            color = SH.TextDim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            muc.chuTrangThai,
             style = SHType.BodyMed,
-            color = if (tb.bat) tb.mau else SH.TextOff,
+            color = if (!muc.roRang) SH.TextDim else if (muc.bat) muc.mau else SH.TextOff,
             maxLines = 1,
         )
     }

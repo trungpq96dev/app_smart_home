@@ -139,7 +139,7 @@ fun DeviceSwitchRow(
     val that = o as? OThietBi.That
     // Dang cho thi ve o the nguoi dung vua gat toi, cho do mat tu nhien.
     val veBat = that?.let { it.mong ?: it.bat ?: false } ?: checked
-    val roRang = that == null || that.dangCho || (that.online && that.bat != null)
+    val roRang = that == null || that.dangCho || (that.bridgeSong && that.online && that.bat != null)
     val ghiChu = that?.ghiChu
 
     SmartCard(modifier = modifier.defaultMinSize(minHeight = Dim.DeviceRowH), padding = 10.dp) {

@@ -773,9 +773,10 @@ private fun GhiChuGiongNoi() {
         )
         Spacer(Modifier.height(10.dp))
         Ghi(
-            "Đèn quạt vẫn là dữ liệu mẫu",
-            "Nói \"bật đèn phòng khách\" sẽ gạt công tắc trên màn hình, nhưng chưa " +
-                "có bóng đèn thật nào nối vào. Bảng thoại ghi rõ điều đó dưới mỗi lệnh.",
+            "Thiết bị thật vs dữ liệu mẫu",
+            "Công tắc đã nối qua bộ nối máy chủ (như Phòng ngủ 1) điều khiển đồ vật " +
+                "ngoài đời thật. Các phòng còn lại vẫn là dữ liệu mẫu — bảng thoại " +
+                "ghi rõ điều đó dưới từng lệnh.",
         )
         Spacer(Modifier.height(10.dp))
         Ghi(

@@ -54,6 +54,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import vn.smarthome.data.DemoData
 import vn.smarthome.data.RoomUi
+import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.lunar.AmLich
 import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.data.wifi.WifiState
@@ -94,6 +95,7 @@ fun HomeScreen(
     onRefreshWeather: () -> Unit,
     onOpenWifi: () -> Unit = {},
     onOpenLich: () -> Unit = {},
+    congTac: CongTacState = CongTacState(),
 ) {
     val clock = rememberClock(seconds = true)
 
@@ -168,6 +170,7 @@ fun HomeScreen(
                 onPage = onSelectRoom,
                 onOpen = onOpenRoom,
                 modifier = Modifier.weight(1.25f).fillMaxHeight(),
+                congTac = congTac,
             )
 
             Column(
@@ -377,6 +380,7 @@ private fun RoomPager(
     onPage: (Int) -> Unit,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    congTac: CongTacState = CongTacState(),
 ) {
     val pager = rememberPagerState(initialPage = current) { rooms.size }
 
@@ -408,6 +412,9 @@ private fun RoomPager(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                val denThat = congTac.laThat(room.id, "den")
+                val ttDen = congTac.trangThaiCua(room.id, "den")
+                val denRo = !denThat || (congTac.bridgeSong && ttDen?.online == true && ttDen.bat != null)
                 Row(
                     Modifier
                         .align(Alignment.BottomStart)
@@ -416,14 +423,14 @@ private fun RoomPager(
                 ) {
                     Icon(
                         Icons.Filled.Lightbulb, null,
-                        tint = if (room.lightOn) SH.Amber else SH.TextOff,
+                        tint = if (denRo && room.lightOn) SH.Amber else SH.TextOff,
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        if (room.lightOn) "Đèn: Bật" else "Đèn: Tắt",
+                        if (!denRo) "Đèn: —" else if (room.lightOn) "Đèn: Bật" else "Đèn: Tắt",
                         style = SHType.BodyMed,
-                        color = if (room.lightOn) SH.Amber else SH.TextDim,
+                        color = if (!denRo) SH.TextDim else if (room.lightOn) SH.Amber else SH.TextDim,
                         maxLines = 1,
                     )
                 }

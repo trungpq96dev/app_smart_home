@@ -96,6 +96,11 @@ object DemoData {
             lightOn = true, fanOn = true, acOn = false, acTemp = 28, mode = RoomMode.HOME,
             scheduleOn = false, scheduleLabel = "Tắt đèn lúc", scheduleTime = "21:30",
         ),
+        RoomUi(
+            id = "hall", name = "Hành lang", icon = Icons.Filled.Stairs, accent = SH.Cyan,
+            lightOn = true, fanOn = false, acOn = false, acTemp = 26, mode = RoomMode.HOME,
+            scheduleOn = true, scheduleLabel = "Tắt đèn lúc", scheduleTime = "22:00",
+        ),
     )
 
     // ---- O thao tac nhanh ----

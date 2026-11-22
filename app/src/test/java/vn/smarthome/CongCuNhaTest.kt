@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import vn.smarthome.data.giongnoi.CongCuNha
 import vn.smarthome.data.giongnoi.HanhDongNha
+import vn.smarthome.data.giongnoi.LoiLenh
 
 /**
  * Kiem thu phan DOC LENH cua Gemini - cho de sai nhat cua tinh nang giong noi.
@@ -44,6 +45,9 @@ class CongCuNhaTest {
         /** `dangBat` tra null cho nhung cap nay - gia lap cong tac mat ket noi. */
         val khongRo = mutableSetOf<String>()
 
+        /** Gia lap datDen/datQuat bi chan vi thiet bi that dang mat ket noi. */
+        val nemKhiDat = mutableMapOf<String, String>()
+
         override fun maPhong() = listOf("living", "bed1")
 
         override fun tenPhong(ma: String): String? = when (ma) {
@@ -53,11 +57,13 @@ class CongCuNhaTest {
         }
 
         override fun datDen(phong: String, bat: Boolean) {
+            nemKhiDat["$phong:den"]?.let { throw LoiLenh(it) }
             den[phong] = bat
             daGoi += "datDen($phong,$bat)"
         }
 
         override fun datQuat(phong: String, bat: Boolean) {
+            nemKhiDat["$phong:quat"]?.let { throw LoiLenh(it) }
             daGoi += "datQuat($phong,$bat)"
         }
 
@@ -564,5 +570,19 @@ class CongCuNhaTest {
     fun doc_so_lieu_nhan_muc_cong_tac() {
         val kq = CongCuNha(NhaGia()).chay(CongCuNha.DOC_SO_LIEU, args("muc" to "cong_tac"))
         assertTrue(kq.getBoolean("ok"))
+    }
+
+    @Test
+    fun bat_thiet_bi_that_dang_mat_ket_noi_thi_bao_loi_chu_khong_bia_da_gui() {
+        val nha = NhaGia().apply {
+            thatCua += "bed1:quat"
+            nemKhiDat["bed1:quat"] = "Quạt Phòng ngủ 1 đang mất kết nối."
+        }
+        val kq = CongCuNha(nha).chay(
+            CongCuNha.DIEU_KHIEN,
+            args("phong" to "bed1", "thiet_bi" to "quat", "hanh_dong" to "bat"),
+        )
+        assertFalse(kq.getBoolean("ok"))
+        assertTrue(kq.getString("loi").contains("mất kết nối"))
     }
 }
