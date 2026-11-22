@@ -143,21 +143,32 @@ export type DestRoute =
   | 'stats'
   | 'utilities';
 
+export type NavGroupId = 'DAILY' | 'SYSTEM';
+
+export const NAV_GROUP_TITLES: Record<NavGroupId, string> = {
+  DAILY: 'HẰNG NGÀY',
+  SYSTEM: 'HỆ THỐNG',
+};
+
 export interface DestItem {
   route: DestRoute;
   title: string;
   built: boolean;
+  group: NavGroupId;
 }
 
 export const DEST_ITEMS: DestItem[] = [
-  { route: 'home', title: 'Trang chủ', built: true },
-  { route: 'devices', title: 'Thiết bị', built: true },
-  { route: 'camera', title: 'Camera', built: true },
-  { route: 'sensors', title: 'Cảm biến', built: true },
-  { route: 'automation', title: 'Tự động hóa', built: true },
-  { route: 'settings', title: 'Cài đặt', built: false },
-  { route: 'server', title: 'Server', built: true },
-  { route: 'stats', title: 'Thống kê', built: true },
-  { route: 'utilities', title: 'Tiện ích', built: true },
+  // Cụm 1 — Sử dụng hằng ngày
+  { route: 'home', title: 'Trang chủ', built: true, group: 'DAILY' },
+  { route: 'devices', title: 'Thiết bị', built: true, group: 'DAILY' },
+  { route: 'camera', title: 'Camera', built: true, group: 'DAILY' },
+  { route: 'utilities', title: 'Tiện ích', built: true, group: 'DAILY' },
+
+  // Cụm 2 — Quản trị & Hệ thống
+  { route: 'automation', title: 'Tự động hóa', built: true, group: 'SYSTEM' },
+  { route: 'sensors', title: 'Cảm biến', built: true, group: 'SYSTEM' },
+  { route: 'stats', title: 'Thống kê', built: true, group: 'SYSTEM' },
+  { route: 'server', title: 'Server', built: true, group: 'SYSTEM' },
+  { route: 'settings', title: 'Cài đặt', built: true, group: 'SYSTEM' },
 ];
 

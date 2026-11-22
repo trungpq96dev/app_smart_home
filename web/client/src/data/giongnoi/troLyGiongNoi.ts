@@ -35,6 +35,7 @@ export class TroLyGiongNoi {
   private giayTruocPhien = 0;
   private mocHoatDong = 0;
   private banSongCong = false;
+  private boQuaLuotHienTai = false;
 
   constructor(params: {
     nha: HanhDongNha;
@@ -88,6 +89,7 @@ export class TroLyGiongNoi {
     this.tokenVaoPhien = 0;
     this.tokenRaPhien = 0;
     this.tokenTongPhien = 0;
+    this.boQuaLuotHienTai = false;
     this.cauHinh = c;
     this.congCu = new CongCuNha(this.nha, c.guiMqtt);
     this.mocHoatDong = Date.now();
@@ -126,9 +128,11 @@ export class TroLyGiongNoi {
     const g = new GeminiLive({
       sanSang: () => {
         this.mocHoatDong = Date.now();
+        this.boQuaLuotHienTai = false;
         this.dat({ state: 'dang_nghe' });
       },
       tiengNoi: (pcmBytes) => {
+        if (this.boQuaLuotHienTai) return;
         this.mocHoatDong = Date.now();
         if (this.phienState.trangThai.state !== 'dang_tra_loi') {
           this.dat({ state: 'dang_tra_loi' });
@@ -136,15 +140,18 @@ export class TroLyGiongNoi {
         this.phat?.phat(pcmBytes);
       },
       biNgatLoi: () => {
+        this.boQuaLuotHienTai = false;
         this.phat?.xoaHangDoi();
         this.dat({ state: 'dang_nghe' });
       },
       hetLuot: () => {
         this.mocHoatDong = Date.now();
+        this.boQuaLuotHienTai = false;
         this.dat({ state: 'dang_nghe' });
       },
       loiThoai: (cau, cuaMinh) => {
         this.mocHoatDong = Date.now();
+        if (cuaMinh) this.boQuaLuotHienTai = false;
         this.themThoai(cau, cuaMinh);
       },
       goiCongCu: (id, ten, args) => {
@@ -195,6 +202,7 @@ export class TroLyGiongNoi {
     this.live?.dong();
     this.live = null;
     this.congCu = null;
+    this.boQuaLuotHienTai = false;
 
     this.emitPhien((prev) => ({
       ...prev,
@@ -208,6 +216,15 @@ export class TroLyGiongNoi {
     } else {
       void this.bat(c);
     }
+  }
+
+  ngatLoi(): void {
+    if (this.phienState.trangThai.state !== 'dang_tra_loi') return;
+    this.boQuaLuotHienTai = true;
+    this.phat?.xoaHangDoi();
+    if (this.banSongCong) this.thu?.khoaMic(false);
+    this.mocHoatDong = Date.now();
+    this.dat({ state: 'dang_nghe' });
   }
 
   xoaLoi(): void {

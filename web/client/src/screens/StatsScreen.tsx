@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
-import { Bolt, ChevronRight, Droplets, TrendingDown, TrendingUp } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bolt,
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
+  Droplets,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 import { DemoData } from '../data/demoData.js';
 import {
   chenhPhanTramDien,
   coSoLieuDien,
+  dinhDangDdMm,
   doTuoiDien,
+  nhanThuNgayDayDu,
+  nhanThuNgayNgan,
   tongKwhDien,
+  trungBinhKwh,
+  uocTinhTienNgay,
 } from '../data/dien.js';
 import {
   bomChinhDangChay,
@@ -34,6 +49,7 @@ import {
   Dot,
   EmptyState,
   FlatButton,
+  IconBadge,
   SectionHeader,
   SmartCard,
   StatusPill,
@@ -59,9 +75,12 @@ export function StatsScreen() {
   } = useSmartHome();
   const [kindId, setKindId] = useState<StatKindId>('POWER');
   const [rangeId, setRangeId] = useState<StatRangeId>('WEEK');
+  const [selectedBarIdx, setSelectedBarIdx] = useState<number | null>(null);
 
   const kindInfo = STAT_KINDS.find((k) => k.id === kindId)!;
   const rangeInfo = STAT_RANGES.find((r) => r.id === rangeId)!;
+
+  const fmt1 = (v: number) => v.toFixed(1).replace(/\.0$/, '');
 
   // POWER tab uses strict real EVN/MQTT telemetry (khong bia so)
   const renderRealPowerStats = () => {
@@ -70,17 +89,26 @@ export function StatsScreen() {
     const slice = dien.lichSu.slice(-rangeInfo.days);
     const total = tongKwhDien(dien, rangeInfo.days);
     const delta = chenhPhanTramDien(dien, rangeInfo.days);
-    const labels = slice.map((d) => {
-      const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(d.ngay);
-      return m ? `${m[2]}/${m[1]}` : d.ngay.slice(-5);
-    });
+    const avgKwh = trungBinhKwh(slice);
+    const activeBarIdx = selectedBarIdx !== null && selectedBarIdx < slice.length ? selectedBarIdx : null;
+    const selectedDay = activeBarIdx !== null ? slice[activeBarIdx] : null;
+
+    const labels =
+      slice.length <= 7
+        ? slice.map((d) => nhanThuNgayNgan(d.ngay))
+        : slice.map((d, i) => {
+            const step = Math.max(1, Math.floor(slice.length / 7));
+            return i % step === 0 ? dinhDangDdMm(d.ngay) : '';
+          });
     const values = slice.map((d) => d.kwh);
 
     const statusOk =
       mqttStatus.state === 'da_noi' &&
       !dien.loi &&
       dien.trangThai !== 'loi' &&
-      tuoi !== 'QUA_CU';
+      tuoi !== 'QUA_CU' &&
+      tuoi !== 'HOI_CU' &&
+      tuoi !== 'CHUA_CO';
 
     const statusText = dien.loi
       ? `Lỗi: ${dien.loi}`
@@ -90,10 +118,48 @@ export function StatsScreen() {
           ? 'Dữ liệu cũ > 24h'
           : tuoi === 'HOI_CU'
             ? 'Số hơi cũ (8–24h)'
-            : 'Hoạt động bình thường';
+            : tuoi === 'CHUA_CO'
+              ? 'Chưa có mốc cập nhật'
+              : 'Bình thường';
 
-    const latestDayVal = dien.ngaySanLuong !== null ? `${dien.ngaySanLuong.toFixed(2)} kWh` : '—';
-    const gaugeFraction = dien.ngaySanLuong !== null ? Math.min(1, dien.ngaySanLuong / 25) : 0;
+    const selectedCost = selectedDay ? uocTinhTienNgay(selectedDay.kwh, dien) : null;
+    const diffPctVsAvg =
+      selectedDay && avgKwh !== null && avgKwh > 0
+        ? Math.round(((selectedDay.kwh - avgKwh) / avgKwh) * 100)
+        : null;
+
+    const dayStatus = (() => {
+      if (!selectedDay || !statusOk) {
+        return {
+          ok: statusOk,
+          color: statusOk ? SH.Green : SH.Amber,
+          label: statusText,
+          sub: dien.capNhat || '',
+        };
+      }
+      if (avgKwh !== null && avgKwh > 0 && selectedDay.kwh > avgKwh * 1.25) {
+        return {
+          ok: false,
+          color: SH.Amber,
+          label: 'Cao hơn TB',
+          sub: dinhDangDdMm(selectedDay.ngay),
+        };
+      }
+      if (avgKwh !== null && avgKwh > 0 && selectedDay.kwh < avgKwh * 0.85) {
+        return {
+          ok: true,
+          color: SH.Green,
+          label: 'Tiết kiệm',
+          sub: dinhDangDdMm(selectedDay.ngay),
+        };
+      }
+      return {
+        ok: true,
+        color: SH.Green,
+        label: 'Bình thường',
+        sub: dinhDangDdMm(selectedDay.ngay),
+      };
+    })();
 
     return (
       <div className="flex-1 min-h-0 flex flex-col gap-2.5">
@@ -133,27 +199,72 @@ export function StatsScreen() {
             />
           </div>
         ) : (
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5">
-            <SmartCard className="lg:col-span-8 flex flex-col justify-between gap-2 p-3 min-h-0">
-              <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-h-0 flex flex-col gap-2.5">
+            {/* Main chart card */}
+            <SmartCard className="flex-1 min-h-0 flex flex-col justify-between gap-2 p-3">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
                 <div>
                   <div className="text-xs text-[#8A9BB8]">
-                    Tổng {slice.length} ngày có số liệu (cửa sổ {rangeInfo.label})
+                    Điện năng tiêu thụ · {slice.length} ngày ({rangeInfo.label})
                   </div>
-                  <div className="font-mono-num text-2xl font-bold text-[#E6EDF7] mt-1">
-                    {total !== null ? `${total.toFixed(1)} kWh` : '—'}
+                  <div className="flex items-baseline gap-2.5 mt-1 flex-wrap">
+                    <span className="font-mono-num text-2xl sm:text-3xl font-bold text-[#E6EDF7]">
+                      {total !== null ? fmt1(total) : '—'}
+                    </span>
+                    <span className="text-sm font-semibold text-[#8A9BB8]">kWh</span>
+                    {delta !== null && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        style={{
+                          color: delta >= 0 ? SH.Red : SH.Green,
+                          backgroundColor: delta >= 0 ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                        }}
+                      >
+                        {delta >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        <span>{Math.abs(delta)}%</span>
+                      </span>
+                    )}
                   </div>
+                  {(dien.congToChiSo !== null || dien.congNoSoTien !== null) && (
+                    <div className="text-[11px] text-[#8A9BB8] mt-0.5">
+                      {[
+                        dien.congToChiSo !== null ? `Chỉ số công tơ: ${fmt1(dien.congToChiSo)}` : null,
+                        dien.congNoSoTien !== null
+                          ? `Công nợ: ${Math.round(dien.congNoSoTien).toLocaleString('vi-VN')} đ`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
+                  )}
                 </div>
-                {delta !== null && (
-                  <StatusPill
-                    label={`${delta >= 0 ? '+' : ''}${delta}% so với kỳ trước`}
-                    color={delta > 10 ? SH.Red : delta < 0 ? SH.Green : SH.Blue}
-                  />
+                {selectedDay && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBarIdx(null)}
+                    className="rounded-lg border border-[#253459] bg-[#1C2946] px-2.5 py-1 text-[11px] text-[#CBD5E1] hover:text-white cursor-pointer"
+                  >
+                    Bỏ chọn ngày
+                  </button>
                 )}
               </div>
 
               {values.length > 0 ? (
-                <BarChart values={values} labels={labels} color={SH.Blue} unit="kWh" />
+                <div className="flex-1 min-h-0 flex items-center">
+                  <BarChart
+                    values={values}
+                    labels={labels}
+                    color={SH.Blue}
+                    unit="kWh"
+                    height={210}
+                    labelMode={slice.length <= 7 ? 'all' : 'key_points'}
+                    averageValue={avgKwh}
+                    averageLabel={avgKwh !== null ? `TB: ${fmt1(avgKwh)} kWh` : undefined}
+                    selectedIndex={activeBarIdx}
+                    onSelectIndex={(idx) => setSelectedBarIdx((prev) => (prev === idx ? null : idx))}
+                    startAtZero
+                  />
+                </div>
               ) : (
                 <div className="py-10 text-center text-xs text-[#8A9BB8]">
                   Chưa có chuỗi ngày trong topic dien/lichsu.
@@ -161,30 +272,96 @@ export function StatsScreen() {
               )}
             </SmartCard>
 
-            <SmartCard className="lg:col-span-4 space-y-4 flex flex-col justify-between">
-              <ArcGauge
-                fraction={gaugeFraction}
-                valueText={latestDayVal}
-                label={dien.ngay ? `Sản lượng ${dien.ngay}` : 'Sản lượng ngày gần nhất'}
-                color={SH.Blue}
-              />
-              <div className="space-y-2 border-t border-[#253459] pt-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[#8A9BB8]">Chi phí tháng này đến giờ</span>
-                  <span className="font-mono-num font-bold text-[#22C55E]">
-                    {dien.thangTien !== null
-                      ? `${Math.round(dien.thangTien).toLocaleString('vi-VN')} đ`
-                      : dien.thangSanLuong !== null
-                        ? `${dien.thangSanLuong.toFixed(1)} kWh`
-                        : '—'}
-                  </span>
+            {/* Bottom 3 summary cards (update dynamically when tapping a column) */}
+            <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <SmartCard
+                glowColor={selectedDay ? SH.Blue : undefined}
+                className="flex flex-col justify-between gap-1.5 p-3"
+              >
+                <div className="text-[11px] text-[#8A9BB8] truncate">
+                  {selectedDay
+                    ? `Sản lượng ${nhanThuNgayDayDu(selectedDay.ngay)} (${dinhDangDdMm(selectedDay.ngay)})`
+                    : 'Sản lượng ngày gần nhất'}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#8A9BB8]">Trạng thái</span>
-                  <StatusPill label={statusText} color={statusOk ? SH.Green : SH.Amber} />
+                <div className="flex items-center gap-2.5">
+                  <IconBadge color={SH.Blue} size={32}>
+                    <Calendar size={16} />
+                  </IconBadge>
+                  <div className="min-w-0">
+                    <div className="font-mono-num text-base font-bold text-[#E6EDF7] truncate">
+                      {selectedDay
+                        ? `${fmt1(selectedDay.kwh)} kWh`
+                        : dien.ngaySanLuong !== null
+                          ? `${fmt1(dien.ngaySanLuong)} kWh`
+                          : '—'}
+                    </div>
+                    <div className="text-[11px] text-[#64748B] truncate">
+                      {selectedDay
+                        ? diffPctVsAvg !== null
+                          ? `${diffPctVsAvg >= 0 ? '+' : ''}${diffPctVsAvg}% so với TB kỳ`
+                          : dinhDangDdMm(selectedDay.ngay)
+                        : dien.ngay || 'chưa có ngày'}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </SmartCard>
+              </SmartCard>
+
+              <SmartCard
+                glowColor={selectedDay ? SH.Blue : undefined}
+                className="flex flex-col justify-between gap-1.5 p-3"
+              >
+                <div className="text-[11px] text-[#8A9BB8] truncate">
+                  {selectedDay ? 'Chi phí ước tính' : 'Chi phí tháng này đến giờ'}
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <IconBadge color={SH.Amber} size={32}>
+                    <Wallet size={16} />
+                  </IconBadge>
+                  <div className="min-w-0">
+                    <div className="font-mono-num text-base font-bold text-[#E6EDF7] truncate">
+                      {selectedDay
+                        ? selectedCost !== null
+                          ? `${Math.round(selectedCost).toLocaleString('vi-VN')} đ`
+                          : '—'
+                        : dien.thangTien !== null
+                          ? `${Math.round(dien.thangTien).toLocaleString('vi-VN')} đ`
+                          : '—'}
+                    </div>
+                    <div className="text-[11px] text-[#64748B] truncate">
+                      {selectedDay
+                        ? selectedCost !== null
+                          ? `Ước tính cho ${fmt1(selectedDay.kwh)} kWh`
+                          : 'Chưa có lũy kế tháng'
+                        : dien.thangSanLuong !== null
+                          ? `${fmt1(dien.thangSanLuong)} kWh lũy kế`
+                          : 'chưa có lũy kế'}
+                    </div>
+                  </div>
+                </div>
+              </SmartCard>
+
+              <SmartCard
+                glowColor={selectedDay && statusOk ? SH.Blue : undefined}
+                className="flex flex-col justify-between gap-1.5 p-3"
+              >
+                <div className="text-[11px] text-[#8A9BB8] truncate">Trạng thái</div>
+                <div className="flex items-center gap-2.5">
+                  <IconBadge color={dayStatus.color} size={32}>
+                    {dayStatus.color === SH.Green ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <AlertTriangle size={16} />
+                    )}
+                  </IconBadge>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate" style={{ color: dayStatus.color }}>
+                      {dayStatus.label}
+                    </div>
+                    <div className="text-[11px] text-[#64748B] truncate">{dayStatus.sub || '—'}</div>
+                  </div>
+                </div>
+              </SmartCard>
+            </div>
           </div>
         )}
       </div>
@@ -376,7 +553,19 @@ export function StatsScreen() {
                 </span>
               </span>
             </div>
-            <BarChart values={s.bars} labels={s.labels} color={s.kind.color} unit={s.unit} />
+            <BarChart
+              values={s.bars}
+              labels={s.labels}
+              color={s.kind.color}
+              unit={s.unit}
+              labelMode={s.bars.length <= 7 ? 'all' : 'key_points'}
+              averageValue={s.bars.length > 0 ? s.bars.reduce((a, b) => a + b, 0) / s.bars.length : null}
+              averageLabel={
+                s.bars.length > 0
+                  ? `TB: ${fmt1(s.bars.reduce((a, b) => a + b, 0) / s.bars.length)} ${s.unit}`
+                  : undefined
+              }
+            />
           </div>
 
           <div className="lg:col-span-4 flex flex-col justify-between rounded-xl border border-[#253459] bg-[#0E1627] p-3.5 space-y-3">
@@ -424,7 +613,10 @@ export function StatsScreen() {
                 label={r.label}
                 selected={rangeId === r.id}
                 color={kindInfo.color}
-                onClick={() => setRangeId(r.id)}
+                onClick={() => {
+                  setRangeId(r.id);
+                  setSelectedBarIdx(null);
+                }}
               />
             ))}
           </div>
