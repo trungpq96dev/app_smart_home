@@ -85,8 +85,13 @@ cuktech/rssi/<nguồn>    JSON sức sóng BLE đo tại MỘT chỗ, retained.
                         Payload RỖNG = LWT, điểm đo đó chết -> app bỏ dòng.
 
 <nguồn> là id của chỗ đo, KHÔNG phải tên thiết bị: "server" cho dongle USB cắm
-ở máy chủ, "esp" cho trạm ESP32-C3 (firmware/esp32c3_ble_proxy/). Nhiều nguồn
+ở máy chủ, "esp" cho trạm ESP32-C3 (firmware/esp32c3_cuktech/). Nhiều nguồn
 cùng lúc là có ý - nhìn hai số cạnh nhau mới biết dời trạm có ăn thua không.
+
+AI PUBLISH `cuktech/charger/#`: hoặc `cuktech-ble-server` trên serverubuntu,
+hoặc trạm ESP32-C3 - KHÔNG BAO GIỜ cả hai. Củ sạc chỉ nhận một kết nối BLE một
+lúc, và hai bên cùng ghi một topic retained thì màn hình nhảy qua lại. Chuyển
+sang trạm thì `systemctl disable --now cuktech-ble-server` trước.
 
 Vì sao để NGOÀI cuktech/charger/: khoảng đó là của `cuktech-ble-server` (mã
 ngoài), và chính nó có hàm xoá sạch retained dưới tiền tố ấy.

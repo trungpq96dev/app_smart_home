@@ -1,0 +1,17 @@
+# Bang phan vung rieng cho tram CUKTECH.
+#
+# VI SAO CAN: binary ra 0x10FA00 (~1.06 MB) - vuot phan vung `factory` 1 MB
+# cua bang mac dinh. Khong phai code phinh: NimBLE + Wi-Fi + mbedTLS (AES-CCM,
+# HKDF, HMAC) + esp-mqtt + cJSON cong lai la ngan ay, da bat -Os roi.
+#
+# 0x180000 = 1.5 MB cho app, het bang o 0x190000 (1.6 MB) nen VAN VUA flash
+# 2 MB. Khong dat to hon de con nap duoc len ca board C3 flash 2 MB; board
+# SuperMini 4 MB thi chi la thua cho, khong sao.
+#
+# Khong co phan vung OTA: tram nap bang USB, them OTA la phai chia doi cho
+# app va luc do 1.5 MB khong du nua.
+#
+# Name,     Type, SubType, Offset,   Size
+nvs,        data, nvs,     0x9000,   0x6000
+phy_init,   data, phy,     0xf000,   0x1000
+factory,    app,  factory, 0x10000,  0x180000
