@@ -1,9 +1,14 @@
 package vn.smarthome.data.dien
 
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import vn.smarthome.data.baomat.GasMqttState
+import vn.smarthome.data.baomat.ManChoLogic
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
 import org.eclipse.paho.client.mqttv3.IMqttToken
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient
@@ -86,6 +91,12 @@ class MqttDien {
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
 
+    private val _pirMotion = MutableSharedFlow<Long>(extraBufferCapacity = 4)
+    val pirMotion: SharedFlow<Long> = _pirMotion.asSharedFlow()
+
+    private val _gasMqtt = MutableStateFlow(GasMqttState())
+    val gasMqtt: StateFlow<GasMqttState> = _gasMqtt.asStateFlow()
+
     private var client: MqttAsyncClient? = null
 
     /**
@@ -140,6 +151,17 @@ class MqttDien {
 
             override fun messageArrived(topic: String, message: MqttMessage) {
                 val payload = String(message.payload, Charsets.UTF_8)
+                if (topic.startsWith("smarthome/sensor/")) {
+                    if (topic.contains("pir", ignoreCase = true) &&
+                        !message.isRetained &&
+                        ManChoLogic.parsePirMotion(payload)
+                    ) {
+                        _pirMotion.tryEmit(System.currentTimeMillis())
+                    } else if (topic.contains("gas", ignoreCase = true)) {
+                        _gasMqtt.value = ManChoLogic.parseGasAlert(payload)
+                    }
+                    return
+                }
                 if (topic.startsWith("dien/")) {
                     _soLieu.update { DienState.gop(it, topic, payload) }
                 } else if (topic.startsWith("wifi/")) {
@@ -197,6 +219,8 @@ class MqttDien {
                                 ". Cần cấp quyền subscribe cho tài khoản này trên Mosquitto."
                         )
                     }
+                    // Dang ky them topic cam bien (best-effort, khong bao loi neu broker siet ACL)
+                    runCatching { c.subscribe("smarthome/sensor/#", 0) }
                 }
 
                 override fun onFailure(token: IMqttToken?, e: Throwable?) {

@@ -112,6 +112,7 @@ fun WifiScreen(
     wifi: WifiState = WifiState(),
     onBack: () -> Unit,
     onReboot: () -> Unit = {},
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var daBamReboot by remember { mutableStateOf(false) }
@@ -183,17 +184,25 @@ fun WifiScreen(
                     0 -> TongQuanContent(
                         wifi = wifi,
                         onRebootClick = {
-                            daBamReboot = true
-                            onReboot()
+                            onYeuCauPinAdmin("Khởi động lại Router WiFi") {
+                                daBamReboot = true
+                                onReboot()
+                            }
                         },
                     )
                     1 -> ThietBiKetNoiContent(wifi = wifi)
                     2 -> ThongKeSuDungContent(wifi = wifi)
                     3 -> BaoMatContent(wifi = wifi)
-                    4 -> QuanLyNangCaoContent(wifi = wifi, onRebootClick = {
-                        daBamReboot = true
-                        onReboot()
-                    })
+                    4 -> QuanLyNangCaoContent(
+                        wifi = wifi,
+                        onRebootClick = {
+                            onYeuCauPinAdmin("Khởi động lại Router WiFi") {
+                                daBamReboot = true
+                                onReboot()
+                            }
+                        },
+                        onYeuCauPinAdmin = onYeuCauPinAdmin,
+                    )
                 }
             }
         }
@@ -1052,6 +1061,7 @@ private fun SecurityToggleRow(setting: SecuritySetting) {
 private fun ColumnScope.QuanLyNangCaoContent(
     wifi: WifiState,
     onRebootClick: () -> Unit,
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -1154,7 +1164,9 @@ private fun ColumnScope.QuanLyNangCaoContent(
                 Spacer(Modifier.weight(1f))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    MiniActionButton("Lưu cấu hình LAN", SH.Blue) {}
+                    MiniActionButton("Lưu cấu hình LAN", SH.Blue) {
+                        onYeuCauPinAdmin("Lưu cấu hình LAN / DHCP") {}
+                    }
                 }
             }
         }
@@ -1212,7 +1224,9 @@ private fun ColumnScope.QuanLyNangCaoContent(
 
                 Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    MiniActionButton("Áp dụng DNS", SH.Blue) {}
+                    MiniActionButton("Áp dụng DNS", SH.Blue) {
+                        onYeuCauPinAdmin("Đổi cấu hình DNS Router") {}
+                    }
                 }
             }
 
@@ -1245,7 +1259,9 @@ private fun ColumnScope.QuanLyNangCaoContent(
                 Spacer(Modifier.weight(1f))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    MiniActionButton("Lưu cấu hình mạng", SH.Blue) {}
+                    MiniActionButton("Lưu cấu hình mạng", SH.Blue) {
+                        onYeuCauPinAdmin("Lưu cấu hình WiFi & WAN") {}
+                    }
                 }
             }
         }
@@ -1367,7 +1383,10 @@ private fun ColumnScope.QuanLyNangCaoContent(
                                     RoundedCornerShape(8.dp),
                                 )
                                 .clickable {
-                                    if (title == "Khởi động lại Router") onRebootClick()
+                                    when (title) {
+                                        "Khởi động lại Router" -> onRebootClick()
+                                        "Khôi phục mặc định" -> onYeuCauPinAdmin("Khôi phục mặc định Router") {}
+                                    }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,

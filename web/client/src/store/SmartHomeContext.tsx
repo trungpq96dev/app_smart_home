@@ -88,6 +88,15 @@ import {
   type RoomUi,
 } from '../data/models.js';
 import { gopServer, ServerTopic, type ServerState } from '../data/server.js';
+import {
+  kiemTraSuCoKhanCap,
+  loadScreensaverConfig,
+  parseGasSensorPayload,
+  parsePirMotionPayload,
+  saveScreensaverConfig,
+  type ScreensaverConfig,
+  type SuCoKhanCap,
+} from '../data/screensaver.js';
 import { layThoiTiet, OpenMeteo, type ThoiTietUi } from '../data/thoitiet.js';
 import { gopWifi, WifiTopic, type WifiState } from '../data/wifi.js';
 
@@ -119,12 +128,49 @@ export interface WeatherConfig {
   lon: number;
 }
 
+export interface PublicTelegramConfig {
+  enabled: boolean;
+  coBotToken: boolean;
+  chatId: string;
+  offlineMinutes: number;
+  electricSpikePct: number;
+  electricSpikeMinKwh: number;
+  gasThresholdPpm: number;
+  cooldownMinutes: number;
+  pirTopic: string;
+  gasTopic: string;
+}
+
+export interface TelegramAlertLogEntry {
+  id: number;
+  ts: number;
+  key: string;
+  title: string;
+  message: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface TelegramAlertsStatus {
+  enabled: boolean;
+  configured: boolean;
+  activeIncidents: {
+    pumpLocked: boolean;
+    gasLeak: boolean;
+    serverOffline: boolean;
+    routerOffline: boolean;
+  };
+  history: TelegramAlertLogEntry[];
+}
+
 export interface PublicAppConfig {
   mqtt: PublicMqttConfig;
   camera: PublicCameraConfig;
   weather: WeatherConfig;
   aquaControlUrl: string;
   bomNuoc: PublicBomNuocConfig;
+  telegram: PublicTelegramConfig;
+  adminPin: { enabled: boolean; daDatPin: boolean };
 }
 
 export interface ToastMessage {
@@ -208,6 +254,19 @@ function defaultPublicConfig(): PublicAppConfig {
       brokerUser: '',
       coMatKhau: false,
     },
+    telegram: {
+      enabled: false,
+      coBotToken: false,
+      chatId: '',
+      offlineMinutes: 5,
+      electricSpikePct: 40,
+      electricSpikeMinKwh: 3,
+      gasThresholdPpm: 200,
+      cooldownMinutes: 30,
+      pirTopic: 'smarthome/sensor/pir',
+      gasTopic: 'smarthome/sensor/gas',
+    },
+    adminPin: { enabled: true, daDatPin: true },
   };
 }
 
@@ -353,6 +412,43 @@ interface SmartHomeContextValue {
   // Update Check
   updateCheck: UpdateCheckState;
   checkGithubUpdate: () => Promise<void>;
+
+  // Ambient Night Screensaver & Emergency Banner
+  screensaverConfig: ScreensaverConfig;
+  updateScreensaverConfig: (cfg: ScreensaverConfig) => void;
+  screensaverActive: boolean;
+  enterScreensaver: () => void;
+  wakeScreensaver: () => void;
+  emergencyAlert: SuCoKhanCap | null;
+  dismissEmergencyAlert: () => void;
+
+  // Telegram Alerts
+  telegramStatus: TelegramAlertsStatus | null;
+  refreshTelegramStatus: () => Promise<void>;
+  luuTelegramConfig: (form: {
+    enabled: boolean;
+    botToken?: string;
+    xoaBotToken?: boolean;
+    chatId: string;
+    offlineMinutes: number;
+    electricSpikePct: number;
+    electricSpikeMinKwh: number;
+    gasThresholdPpm: number;
+    cooldownMinutes: number;
+    pirTopic: string;
+    gasTopic: string;
+  }) => Promise<boolean>;
+  testTelegramAlert: () => Promise<void>;
+
+  // Admin 4-digit PIN Lock
+  adminLockEnabled: boolean;
+  adminUnlocked: boolean;
+  pinPrompt: { label: string; error: string | null; busy: boolean } | null;
+  requireAdminPin: (actionLabel: string, fn: () => void | Promise<void>) => void;
+  submitAdminPin: (pin: string) => Promise<void>;
+  cancelAdminPin: () => void;
+  lockAdmin: () => Promise<void>;
+  updateAdminPin: (form: { currentPin: string; newPin?: string; enabled?: boolean }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const SmartHomeContext = createContext<SmartHomeContextValue | null>(null);
@@ -405,6 +501,24 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
 
   // Update check
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ status: 'idle' });
+
+  // Screensaver, Gas MQTT, Emergency Alert, Telegram & Admin PIN
+  const [screensaverConfig, setScreensaverConfig] = useState<ScreensaverConfig>(() => loadScreensaverConfig());
+  const [screensaverActive, setScreensaverActive] = useState(false);
+  const [mqttGasAlert, setMqttGasAlert] = useState(false);
+  const [mqttGasPpm, setMqttGasPpm] = useState<number | null>(null);
+  const [dismissedEmergencyKey, setDismissedEmergencyKey] = useState<string | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramAlertsStatus | null>(null);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [pinPrompt, setPinPrompt] = useState<{ label: string; error: string | null; busy: boolean } | null>(null);
+  const adminTokenRef = useRef<string | null>(null);
+  const adminUnlockExpiryRef = useRef<number>(0);
+  const pendingAdminActionRef = useRef<(() => void | Promise<void>) | null>(null);
+  const lastInteractionRef = useRef<number>(Date.now());
+  const screensaverConfigRef = useRef(screensaverConfig);
+  screensaverConfigRef.current = screensaverConfig;
+  const screensaverActiveRef = useRef(screensaverActive);
+  screensaverActiveRef.current = screensaverActive;
 
   // AquaControl Pump System (bom_nuoc)
   const [bomNuoc, setBomNuoc] = useState<BomNuocState | null>(null);
@@ -559,6 +673,32 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   // Nhan 1 ban tin MQTT (snapshot hoac live)
   const handleMqttMessage = useCallback(
     (topic: string, payload: string, isLive: boolean) => {
+      const sc = screensaverConfigRef.current;
+      const gasTopic = configRef.current.telegram?.gasTopic || sc.gasTopic || 'smarthome/sensor/gas';
+      const pirTopic = configRef.current.telegram?.pirTopic || sc.pirTopic || 'smarthome/sensor/pir';
+      const gasThreshold = configRef.current.telegram?.gasThresholdPpm || 200;
+
+      if (topic === gasTopic || topic === 'smarthome/sensor/gas') {
+        const res = parseGasSensorPayload(payload, gasThreshold);
+        setMqttGasAlert(res.alert);
+        setMqttGasPpm(res.ppm);
+        return;
+      }
+
+      if (topic === pirTopic || topic === 'smarthome/sensor/pir') {
+        if (isLive && sc.pirWakeEnabled && parsePirMotionPayload(payload)) {
+          lastInteractionRef.current = Date.now();
+          if (screensaverActiveRef.current) {
+            setScreensaverActive(false);
+            setCurrentDest('home');
+            setSelectedRoomDetailId(null);
+            setChiTietDienOpen(false);
+            setWifiOpen(false);
+          }
+        }
+        return;
+      }
+
       if (topic.startsWith('dien/')) {
         setDien((cur) => gopDien(cur, topic, payload));
         return;
@@ -674,6 +814,12 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       if (!cancelled) {
         void taiThoiTiet();
         void taiDanhSachCamera();
+        void fetch('/api/alerts/status')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((st: TelegramAlertsStatus | null) => {
+            if (!cancelled && st) setTelegramStatus(st);
+          })
+          .catch(() => {});
       }
     })();
 
@@ -1333,6 +1479,218 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [guiLenhWifi],
   );
 
+  // Emergency detection + Auto-exit screensaver + Idle timer
+  const kitchenRoom = rooms.find((r) => r.id === 'kitchen');
+  const rawEmergencyAlert = useMemo(
+    () =>
+      kiemTraSuCoKhanCap({
+        kitchenGasAlert: kitchenRoom?.gasAlert === true,
+        mqttGasAlert,
+        mqttGasPpm,
+        bomNuoc,
+        ketNoiBom,
+        mqttStatus,
+        gatewayOnline,
+      }),
+    [kitchenRoom?.gasAlert, mqttGasAlert, mqttGasPpm, bomNuoc, ketNoiBom, mqttStatus, gatewayOnline],
+  );
+
+  const emergencyAlert =
+    rawEmergencyAlert && rawEmergencyAlert.key !== dismissedEmergencyKey ? rawEmergencyAlert : null;
+
+  useEffect(() => {
+    if (!rawEmergencyAlert) {
+      setDismissedEmergencyKey(null);
+    }
+  }, [rawEmergencyAlert]);
+
+  useEffect(() => {
+    if (emergencyAlert && screensaverActive) {
+      setScreensaverActive(false);
+    }
+  }, [emergencyAlert, screensaverActive]);
+
+  const enterScreensaver = useCallback(() => {
+    setScreensaverActive(true);
+  }, []);
+
+  const wakeScreensaver = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    setScreensaverActive(false);
+    setCurrentDest('home');
+    setSelectedRoomDetailId(null);
+    setChiTietDienOpen(false);
+    setWifiOpen(false);
+  }, []);
+
+  const updateScreensaverConfig = useCallback((cfg: ScreensaverConfig) => {
+    setScreensaverConfig(cfg);
+    saveScreensaverConfig(cfg);
+  }, []);
+
+  const dismissEmergencyAlert = useCallback(() => {
+    if (rawEmergencyAlert) {
+      setDismissedEmergencyKey(rawEmergencyAlert.key);
+    }
+  }, [rawEmergencyAlert]);
+
+  useEffect(() => {
+    const bump = () => {
+      if (!screensaverActiveRef.current) {
+        lastInteractionRef.current = Date.now();
+      }
+    };
+    window.addEventListener('pointerdown', bump, { passive: true });
+    window.addEventListener('keydown', bump, { passive: true });
+    window.addEventListener('touchstart', bump, { passive: true });
+    window.addEventListener('wheel', bump, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', bump);
+      window.removeEventListener('keydown', bump);
+      window.removeEventListener('touchstart', bump);
+      window.removeEventListener('wheel', bump);
+    };
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      if (adminTokenRef.current && adminUnlockExpiryRef.current > 0 && now >= adminUnlockExpiryRef.current) {
+        adminTokenRef.current = null;
+        adminUnlockExpiryRef.current = 0;
+        setAdminUnlocked(false);
+      }
+      const sc = screensaverConfigRef.current;
+      if (
+        sc.enabled &&
+        !screensaverActiveRef.current &&
+        !emergencyAlert &&
+        sc.idleMinutes > 0 &&
+        now - lastInteractionRef.current >= sc.idleMinutes * 60_000
+      ) {
+        setScreensaverActive(true);
+      }
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [emergencyAlert]);
+
+  // Admin PIN helpers
+  const adminLockEnabled = config.adminPin?.enabled !== false;
+
+  const adminHeaders = useCallback((): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (adminTokenRef.current) {
+      headers['x-admin-token'] = adminTokenRef.current;
+    }
+    return headers;
+  }, []);
+
+  const handleAdminUnauthorized = useCallback(
+    (actionLabel: string, retryFn: () => void | Promise<void>) => {
+      adminTokenRef.current = null;
+      adminUnlockExpiryRef.current = 0;
+      setAdminUnlocked(false);
+      pendingAdminActionRef.current = retryFn;
+      setPinPrompt({ label: actionLabel, error: 'Phiên kỹ thuật đã hết hạn, vui lòng nhập PIN.', busy: false });
+    },
+    [],
+  );
+
+  const requireAdminPin = useCallback(
+    (actionLabel: string, fn: () => void | Promise<void>) => {
+      const enabled = configRef.current.adminPin?.enabled !== false;
+      const valid =
+        !enabled ||
+        (Boolean(adminTokenRef.current) && Date.now() < adminUnlockExpiryRef.current);
+      if (valid) {
+        if (adminTokenRef.current) {
+          adminUnlockExpiryRef.current = Date.now() + 5 * 60_000;
+        }
+        void fn();
+        return;
+      }
+      pendingAdminActionRef.current = fn;
+      setPinPrompt({ label: actionLabel, error: null, busy: false });
+    },
+    [],
+  );
+
+  const submitAdminPin = useCallback(async (pin: string) => {
+    setPinPrompt((prev) => (prev ? { ...prev, busy: true, error: null } : prev));
+    try {
+      const resp = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      const data = (await resp.json()) as { ok: boolean; token?: string; expiresAt?: number; error?: string };
+      if (resp.ok && data.ok && data.token) {
+        adminTokenRef.current = data.token;
+        adminUnlockExpiryRef.current = data.expiresAt ?? Date.now() + 5 * 60_000;
+        setAdminUnlocked(true);
+        const pending = pendingAdminActionRef.current;
+        pendingAdminActionRef.current = null;
+        setPinPrompt(null);
+        if (pending) await pending();
+        return;
+      }
+      setPinPrompt((prev) =>
+        prev ? { ...prev, busy: false, error: data.error || 'Mã PIN không đúng.' } : prev,
+      );
+    } catch {
+      setPinPrompt((prev) =>
+        prev ? { ...prev, busy: false, error: 'Không kết nối được Gateway để kiểm tra PIN.' } : prev,
+      );
+    }
+  }, []);
+
+  const cancelAdminPin = useCallback(() => {
+    pendingAdminActionRef.current = null;
+    setPinPrompt(null);
+  }, []);
+
+  const lockAdmin = useCallback(async () => {
+    const token = adminTokenRef.current;
+    adminTokenRef.current = null;
+    adminUnlockExpiryRef.current = 0;
+    setAdminUnlocked(false);
+    if (token) {
+      void fetch('/api/admin/lock', {
+        method: 'POST',
+        headers: { 'x-admin-token': token },
+      }).catch(() => {});
+    }
+    showToast('Đã khóa khu vực Kỹ thuật.', 'info');
+  }, [showToast]);
+
+  const updateAdminPin = useCallback(
+    async (form: { currentPin: string; newPin?: string; enabled?: boolean }) => {
+      try {
+        const resp = await fetch('/api/admin/pin', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        const data = (await resp.json()) as { ok: boolean; config?: PublicAppConfig; error?: string };
+        if (resp.ok && data.ok && data.config) {
+          configRef.current = data.config;
+          setConfig(data.config);
+          if (form.newPin || form.enabled === false) {
+            adminTokenRef.current = null;
+            adminUnlockExpiryRef.current = 0;
+            setAdminUnlocked(false);
+          }
+          showToast('Đã cập nhật cấu hình khóa PIN 4 số.', 'success');
+          return { ok: true };
+        }
+        return { ok: false, error: data.error || 'Không cập nhật được mã PIN.' };
+      } catch {
+        return { ok: false, error: 'Lỗi kết nối Gateway.' };
+      }
+    },
+    [showToast],
+  );
+
   // Settings API calls
   const luuMqttConfig = useCallback(
     async (form: {
@@ -1347,9 +1705,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await fetch('/api/config/mqtt', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminHeaders(),
           body: JSON.stringify(form),
         });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Lưu cấu hình MQTT', () => void luuMqttConfig(form));
+          return false;
+        }
         const data = (await resp.json()) as { ok: boolean; config: PublicAppConfig; mqttStatus: KetNoi };
         if (data.ok) {
           configRef.current = data.config;
@@ -1364,7 +1726,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       showToast('Không lưu được cấu hình MQTT.', 'error');
       return false;
     },
-    [showToast],
+    [adminHeaders, handleAdminUnauthorized, showToast],
   );
 
   const luuCameraConfig = useCallback(
@@ -1380,9 +1742,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await fetch('/api/config/camera', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminHeaders(),
           body: JSON.stringify(form),
         });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Lưu cấu hình Camera go2rtc', () => void luuCameraConfig(form));
+          return false;
+        }
         const data = (await resp.json()) as {
           ok: boolean;
           config: PublicAppConfig;
@@ -1406,7 +1772,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       showToast('Không lưu được cấu hình Camera.', 'error');
       return false;
     },
-    [showToast],
+    [adminHeaders, handleAdminUnauthorized, showToast],
   );
 
   const luuWeatherConfig = useCallback(
@@ -1440,9 +1806,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await fetch('/api/config/aquacontrol', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminHeaders(),
           body: JSON.stringify({ aquaControlUrl }),
         });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Lưu địa chỉ AquaControl Web', () => void luuAquaControlUrl(aquaControlUrl));
+          return false;
+        }
         const data = (await resp.json()) as { ok: boolean; config: PublicAppConfig };
         if (data.ok) {
           configRef.current = data.config;
@@ -1456,7 +1826,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       showToast('Không lưu được địa chỉ AquaControl.', 'error');
       return false;
     },
-    [showToast],
+    [adminHeaders, handleAdminUnauthorized, showToast],
   );
 
   const luuBomNuocConfig = useCallback(
@@ -1464,9 +1834,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await fetch('/api/config/bomnuoc', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminHeaders(),
           body: JSON.stringify(form),
         });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Lưu cấu hình bo bơm nước', () => void luuBomNuocConfig(form));
+          return false;
+        }
         const data = (await resp.json()) as {
           ok: boolean;
           config: PublicAppConfig;
@@ -1487,8 +1861,91 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       showToast('Không lưu được cấu hình bo bơm nước.', 'error');
       return false;
     },
-    [showToast],
+    [adminHeaders, handleAdminUnauthorized, showToast],
   );
+
+  const refreshTelegramStatus = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/alerts/status');
+      if (resp.ok) {
+        const data = (await resp.json()) as TelegramAlertsStatus;
+        setTelegramStatus(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const luuTelegramConfig = useCallback(
+    async (form: {
+      enabled: boolean;
+      botToken?: string;
+      xoaBotToken?: boolean;
+      chatId: string;
+      offlineMinutes: number;
+      electricSpikePct: number;
+      electricSpikeMinKwh: number;
+      gasThresholdPpm: number;
+      cooldownMinutes: number;
+      pirTopic: string;
+      gasTopic: string;
+    }) => {
+      try {
+        const resp = await fetch('/api/config/telegram', {
+          method: 'PUT',
+          headers: adminHeaders(),
+          body: JSON.stringify(form),
+        });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Lưu cấu hình cảnh báo Telegram', () => void luuTelegramConfig(form));
+          return false;
+        }
+        const data = (await resp.json()) as {
+          ok: boolean;
+          config: PublicAppConfig;
+          alertsStatus: TelegramAlertsStatus;
+        };
+        if (data.ok) {
+          configRef.current = data.config;
+          setConfig(data.config);
+          setTelegramStatus(data.alertsStatus);
+          showToast('Đã lưu cấu hình cảnh báo Telegram.', 'success');
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+      showToast('Không lưu được cấu hình Telegram.', 'error');
+      return false;
+    },
+    [adminHeaders, handleAdminUnauthorized, showToast],
+  );
+
+  const testTelegramAlert = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/alerts/telegram/test', {
+        method: 'POST',
+        headers: adminHeaders(),
+      });
+      if (resp.status === 401) {
+        handleAdminUnauthorized('Gửi thử tin nhắn Telegram', () => void testTelegramAlert());
+        return;
+      }
+      const data = (await resp.json()) as {
+        ok: boolean;
+        error?: string;
+        alertsStatus?: TelegramAlertsStatus;
+      };
+      if (data.alertsStatus) setTelegramStatus(data.alertsStatus);
+      if (data.ok) {
+        showToast('Đã gửi tin nhắn thử tới Telegram!', 'success');
+      } else {
+        showToast(data.error || 'Chưa gửi được tin nhắn Telegram.', 'warning');
+      }
+    } catch {
+      showToast('Không gọi được Gateway để gửi thử Telegram.', 'error');
+    }
+  }, [adminHeaders, handleAdminUnauthorized, showToast]);
 
   const guiLenhBom = useCallback(
     async (khoa: string, cmd: BomNuocCmd): Promise<void> => {
@@ -1496,9 +1953,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await fetch('/api/bomnuoc/cmd', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: adminHeaders(),
           body: JSON.stringify(cmd),
         });
+        if (resp.status === 401) {
+          handleAdminUnauthorized('Thao tác kỹ thuật bo bơm', () => guiLenhBom(khoa, cmd));
+          return;
+        }
         const res = (await resp.json()) as KetQuaLenhBomRes;
         if (res.ok) {
           showToast(res.message, 'success');
@@ -1521,7 +1982,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [showToast],
+    [adminHeaders, handleAdminUnauthorized, showToast],
   );
 
   const datCheDoBon = useCallback(
@@ -1582,7 +2043,14 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
 
   const xoaNhatKyBomCucBo = useCallback(async () => {
     try {
-      const resp = await fetch('/api/bomnuoc/log', { method: 'DELETE' });
+      const resp = await fetch('/api/bomnuoc/log', {
+        method: 'DELETE',
+        headers: adminHeaders(),
+      });
+      if (resp.status === 401) {
+        handleAdminUnauthorized('Xóa nhật ký bơm', () => xoaNhatKyBomCucBo());
+        return;
+      }
       if (resp.ok) {
         setNhatKyBom([]);
         showToast('Đã xoá nhật ký bơm trên gateway.', 'info');
@@ -1592,7 +2060,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
     showToast('Không xoá được nhật ký bơm.', 'error');
-  }, [showToast]);
+  }, [adminHeaders, handleAdminUnauthorized, showToast]);
 
   // Voice Actions + TroLyGiongNoi
   const hanhDongNha = useMemo<HanhDongNha>(
@@ -2129,6 +2597,25 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     xoaLoiGiongNoi,
     updateCheck,
     checkGithubUpdate,
+    screensaverConfig,
+    updateScreensaverConfig,
+    screensaverActive,
+    enterScreensaver,
+    wakeScreensaver,
+    emergencyAlert,
+    dismissEmergencyAlert,
+    telegramStatus,
+    refreshTelegramStatus,
+    luuTelegramConfig,
+    testTelegramAlert,
+    adminLockEnabled,
+    adminUnlocked,
+    pinPrompt,
+    requireAdminPin,
+    submitAdminPin,
+    cancelAdminPin,
+    lockAdmin,
+    updateAdminPin,
   };
 
   return <SmartHomeContext.Provider value={value}>{children}</SmartHomeContext.Provider>;

@@ -162,6 +162,7 @@ fun AutomationScreen(
     onXoaLichSuNuocTrenBo: () -> Unit = {},
     onXoaNhatKyBomCucBo: () -> Unit = {},
     onLuuCauHinhBom: (CauHinhBomNuoc) -> Unit = {},
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
     initialTab: Int = 0,
 ) {
     val context = LocalContext.current
@@ -192,7 +193,9 @@ fun AutomationScreen(
                     .size(36.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(SH.Card2)
-                    .clickable { showConfigDialog = true },
+                    .clickable {
+                        onYeuCauPinAdmin("Cấu hình kết nối bo bơm nước") { showConfigDialog = true }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -219,7 +222,9 @@ fun AutomationScreen(
                     onDatDenPhuBom = onDatDenPhuBom,
                     onXoaLoiBom = onXoaLoiBom,
                     onTatCoiBom = onTatCoiBom,
-                    onMoCauHinh = { showConfigDialog = true },
+                    onMoCauHinh = {
+                        onYeuCauPinAdmin("Cấu hình kết nối bo bơm nước") { showConfigDialog = true }
+                    },
                     onMoAquaApp = { launchAquaControl(context, onNotice) },
                 )
 
@@ -227,10 +232,18 @@ fun AutomationScreen(
                     bomNuoc = bomNuoc,
                     ketNoiBom = ketNoiBom,
                     choBomNuoc = choBomNuoc,
-                    onLuuBaoVeBom = onLuuBaoVeBom,
-                    onGhiMocCanBom = onGhiMocCanBom,
-                    onGhiMocDayBom = onGhiMocDayBom,
-                    onDatLaiDemLuuLuong = onDatLaiDemLuuLuong,
+                    onLuuBaoVeBom = { d, r, m, p, f ->
+                        onYeuCauPinAdmin("Lưu ngưỡng bảo vệ bơm") { onLuuBaoVeBom(d, r, m, p, f) }
+                    },
+                    onGhiMocCanBom = {
+                        onYeuCauPinAdmin("Hiệu chuẩn mốc CẠN mức nước") { onGhiMocCanBom() }
+                    },
+                    onGhiMocDayBom = {
+                        onYeuCauPinAdmin("Hiệu chuẩn mốc ĐẦY mức nước") { onGhiMocDayBom() }
+                    },
+                    onDatLaiDemLuuLuong = {
+                        onYeuCauPinAdmin("Đặt lại bộ đếm hiệu chuẩn lưu lượng") { onDatLaiDemLuuLuong() }
+                    },
                     onTatCoiBom = onTatCoiBom,
                     onThuCoiBom = onThuCoiBom,
                 )
@@ -240,8 +253,12 @@ fun AutomationScreen(
                     usage = luongNuocThang,
                     canControl = canControlBom,
                     choBomNuoc = choBomNuoc,
-                    onXoaNhatKyCucBo = onXoaNhatKyBomCucBo,
-                    onXoaLichSuBo = onXoaLichSuNuocTrenBo,
+                    onXoaNhatKyCucBo = {
+                        onYeuCauPinAdmin("Xoá nhật ký bơm trên máy tính bảng") { onXoaNhatKyBomCucBo() }
+                    },
+                    onXoaLichSuBo = {
+                        onYeuCauPinAdmin("Xoá lịch sử lượng nước trên bo") { onXoaLichSuNuocTrenBo() }
+                    },
                 )
 
                 else -> TabKichBan(

@@ -26,6 +26,8 @@ import {
   Menu,
   Mic,
   MicOff,
+  Moon,
+  LockOpen,
   Radio,
   RefreshCw,
   Router,
@@ -491,6 +493,10 @@ export function TopBar({
   nowMs,
   onVoiceToggle,
   voiceActive,
+  onOpenScreensaver,
+  adminUnlocked = false,
+  adminLockEnabled = true,
+  onLockAdmin,
   extra,
 }: {
   title: string;
@@ -505,6 +511,10 @@ export function TopBar({
   nowMs: number;
   onVoiceToggle: () => void;
   voiceActive: boolean;
+  onOpenScreensaver?: () => void;
+  adminUnlocked?: boolean;
+  adminLockEnabled?: boolean;
+  onLockAdmin?: () => void;
   extra?: React.ReactNode;
 }) {
   return (
@@ -538,6 +548,27 @@ export function TopBar({
 
       <div className="flex items-center gap-2 shrink-0">
         {extra}
+        {adminLockEnabled && adminUnlocked && onLockAdmin && (
+          <button
+            type="button"
+            onClick={onLockAdmin}
+            title="Khu vực kỹ thuật đang mở khóa — bấm để khóa lại"
+            className="inline-flex items-center gap-1 rounded-xl border border-[#22C55E]/40 bg-[#22C55E]/15 px-2.5 py-1 text-[11px] font-semibold text-[#86EFAC] hover:brightness-110 cursor-pointer"
+          >
+            <LockOpen size={13} />
+            <span className="hidden sm:inline">Khóa PIN</span>
+          </button>
+        )}
+        {onOpenScreensaver && (
+          <button
+            type="button"
+            onClick={onOpenScreensaver}
+            title="Chế độ màn hình chờ ban đêm"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#253459] bg-[#16213A] text-[#94A3B8] hover:text-[#E6EDF7] hover:bg-[#1D2B4C] cursor-pointer"
+          >
+            <Moon size={15} />
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpenSettings}
