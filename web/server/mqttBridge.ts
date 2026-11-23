@@ -11,6 +11,7 @@ export type KetNoiStatus =
   | { state: 'loi'; moTa: string };
 
 const SUB_TOPICS = ['dien/#', 'wifi/#', 'server/#', 'congtac/#', 'cuktech/#'];
+const OPTIONAL_SENSOR_TOPICS = ['smarthome/sensor/#'];
 
 /**
  * Chi cho phep publish vao dung cac topic dieu khien.
@@ -74,6 +75,8 @@ export class MqttBridge {
   private retainedCache = new Map<string, string>();
   private readonly wss = new WebSocketServer({ noServer: true });
   private readonly clients = new Set<WebSocket>();
+  private readonly messageListeners = new Set<(topic: string, payload: string, ts: number) => void>();
+  private readonly statusListeners = new Set<(status: KetNoiStatus) => void>();
   private generation = 0;
 
   constructor(initialConfig: MqttConfig) {
@@ -103,6 +106,20 @@ export class MqttBridge {
 
   getStatus(): KetNoiStatus {
     return this.status;
+  }
+
+  onMessage(cb: (topic: string, payload: string, ts: number) => void): () => void {
+    this.messageListeners.add(cb);
+    return () => {
+      this.messageListeners.delete(cb);
+    };
+  }
+
+  onStatus(cb: (status: KetNoiStatus) => void): () => void {
+    this.statusListeners.add(cb);
+    return () => {
+      this.statusListeners.delete(cb);
+    };
   }
 
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -170,6 +187,8 @@ export class MqttBridge {
             });
           }
         }
+        // Dang ky them topic cam bien (best-effort, khong bao loi neu broker siet ACL)
+        client.subscribe(OPTIONAL_SENSOR_TOPICS, { qos: 0 }, () => {});
       });
     });
 
@@ -201,12 +220,20 @@ export class MqttBridge {
       } else {
         this.retainedCache.set(topic, payload);
       }
+      const ts = Date.now();
       this.broadcast({
         type: 'message',
         topic,
         payload,
-        ts: Date.now(),
+        ts,
       });
+      for (const cb of this.messageListeners) {
+        try {
+          cb(topic, payload, ts);
+        } catch {
+          // ignore listener error
+        }
+      }
     });
   }
 
@@ -227,6 +254,13 @@ export class MqttBridge {
   private setStatus(status: KetNoiStatus): void {
     this.status = status;
     this.broadcast({ type: 'status', status });
+    for (const cb of this.statusListeners) {
+      try {
+        cb(status);
+      } catch {
+        // ignore listener error
+      }
+    }
   }
 
   private handleClientMessage(ws: WebSocket, raw: string): void {

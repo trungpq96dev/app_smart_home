@@ -94,7 +94,7 @@ fun CameraScreen(
 
     Column(Modifier.fillMaxSize()) {
 
-        TopBar(title = "Camera an ninh", onBack = onBack) {
+        TopBar(title = "Camera an ninh", onBack = null) {
             TrangThaiCameraPill(trangThaiCam)
             Spacer(Modifier.width(8.dp))
             RoundIconButton(Icons.Filled.Refresh, { onDoLai(); lanTai++ })

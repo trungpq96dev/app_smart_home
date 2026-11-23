@@ -108,7 +108,7 @@ fun StatsScreen(
 
     Column(Modifier.fillMaxSize()) {
 
-        TopBar(title = "Thống kê & Báo cáo", onBack = onBack) {
+        TopBar(title = "Thống kê & Báo cáo", onBack = null) {
             when {
                 laDien -> TrangThaiKetNoi(ketNoi)
                 laNuoc -> TrangThaiKetNoiBomPill(ketNoiBom, kenhBom)

@@ -381,13 +381,19 @@ export function NutXacNhanHaiBuoc({
   nhanXacNhan,
   onXacNhan,
   disabled = false,
+  title,
 }: {
   nhanThuong: string;
   nhanXacNhan: string;
   onXacNhan: () => void;
   disabled?: boolean;
+  title?: string;
 }) {
   const [armed, setArmed] = useState(false);
+
+  useEffect(() => {
+    if (disabled) setArmed(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (!armed) return;
@@ -399,6 +405,7 @@ export function NutXacNhanHaiBuoc({
     <button
       type="button"
       disabled={disabled}
+      title={title}
       onClick={() => {
         if (armed) {
           setArmed(false);
@@ -407,7 +414,7 @@ export function NutXacNhanHaiBuoc({
           setArmed(true);
         }
       }}
-      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-45 cursor-pointer"
+      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
       style={{
         backgroundColor: armed ? tint(SH.Red, 0.18) : 'transparent',
         border: `1px solid ${armed ? tint(SH.Red, 0.5) : 'transparent'}`,

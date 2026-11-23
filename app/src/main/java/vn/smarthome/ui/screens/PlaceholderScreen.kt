@@ -29,7 +29,7 @@ fun PlaceholderScreen(
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        TopBar(title = title, onBack = onBack)
+        TopBar(title = title, onBack = null)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             EmptyState(
                 icon = icon,

@@ -17,11 +17,14 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import vn.smarthome.data.bomnuoc.BomNuocState
 import vn.smarthome.data.bomnuoc.CheDoBon
+import vn.smarthome.data.bomnuoc.KenhBomNuoc
 import vn.smarthome.data.bomnuoc.LoiBomNuoc
 import vn.smarthome.data.bomnuoc.LuongNuocThang
 import vn.smarthome.data.bomnuoc.NhatKyBomNuoc
 import vn.smarthome.data.bomnuoc.NhomNhatKy
 import vn.smarthome.data.bomnuoc.QuanLyBomNuoc
+import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
+import vn.smarthome.data.bomnuoc.coTheDieuKhienBom
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -179,5 +182,35 @@ class BomNuocStateTest {
         assertEquals(450.1, r.pulses, 0.001)
         assertEquals(1.26, r.minFlow, 0.0001)
         assertEquals("cfgDry=45&cfgRest=2.4&cfgRun=90&cfgPulses=450.1&cfgMinFlow=1.26", r.thanhQuery())
+    }
+
+    @Test
+    fun co_the_dieu_khien_bom_chi_true_khi_truc_tuyen_va_co_state() {
+        val st = BomNuocState(tankOn = 0, tankMode = "auto")
+        val lan = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.LAN, 0)
+        val mqtt = TrangThaiKetNoiBom.TrucTiep(KenhBomNuoc.MQTT, 3)
+
+        assertTrue(lan.trucTuyen)
+        assertTrue(mqtt.trucTuyen)
+        assertTrue(coTheDieuKhienBom(st, lan))
+        assertTrue(coTheDieuKhienBom(st, mqtt))
+
+        assertFalse(coTheDieuKhienBom(null, lan))
+        assertFalse(coTheDieuKhienBom(null, mqtt))
+
+        val offlineStates = listOf(
+            TrangThaiKetNoiBom.ChuaCauHinh,
+            TrangThaiKetNoiBom.DangNoi,
+            TrangThaiKetNoiBom.ChiCoBroker,
+            TrangThaiKetNoiBom.SoCu(45),
+            TrangThaiKetNoiBom.BoOffline,
+            TrangThaiKetNoiBom.MatBroker,
+            TrangThaiKetNoiBom.SaiTaiKhoan,
+            TrangThaiKetNoiBom.Loi("timeout"),
+        )
+        offlineStates.forEach { link ->
+            assertFalse(link.trucTuyen)
+            assertFalse(coTheDieuKhienBom(st, link))
+        }
     }
 }

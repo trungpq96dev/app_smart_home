@@ -6,6 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { BomNuocBridge } from '../server/bomNuocBridge.js';
 import {
+  bomTrucTuyen,
+  coTheDieuKhienBom,
+  type BomNuocState,
+  type TrangThaiKetNoiBom,
+} from '../client/src/data/bomnuoc.js';
+import {
   coiDangKeu,
   dinhDangQueryBaoVe,
   kiemTraBaoVe,
@@ -337,6 +343,41 @@ describe('BomNuocBridge HTTP LAN + CommandBus + WS', () => {
       bridge.destroy();
       await new Promise<void>((resolve) => wsHostServer.close(() => resolve()));
       await new Promise<void>((resolve) => mockEsp.close(() => resolve()));
+    }
+  });
+});
+
+describe('coTheDieuKhienBom & bomTrucTuyen', () => {
+  it('chi cho phep dieu khien khi da co state va link truc_tiep', () => {
+    const sampleState = parseBomNuocState(
+      JSON.stringify({ tankOn: 0, tankMode: 'auto', boostOn: 0, bstMode: 'off' }),
+    ) as unknown as BomNuocState;
+
+    const lan: TrangThaiKetNoiBom = { state: 'truc_tiep', kenh: 'LAN', tuoiGiay: 0 };
+    const mqtt: TrangThaiKetNoiBom = { state: 'truc_tiep', kenh: 'MQTT', tuoiGiay: 4 };
+
+    expect(bomTrucTuyen(lan)).toBe(true);
+    expect(bomTrucTuyen(mqtt)).toBe(true);
+    expect(coTheDieuKhienBom(sampleState, lan)).toBe(true);
+    expect(coTheDieuKhienBom(sampleState, mqtt)).toBe(true);
+
+    expect(coTheDieuKhienBom(null, lan)).toBe(false);
+    expect(coTheDieuKhienBom(null, mqtt)).toBe(false);
+
+    const offlineLinks: TrangThaiKetNoiBom[] = [
+      { state: 'chua_cau_hinh' },
+      { state: 'dang_noi' },
+      { state: 'chi_co_broker' },
+      { state: 'so_cu', tuoiGiay: 45 },
+      { state: 'bo_offline' },
+      { state: 'mat_broker' },
+      { state: 'sai_tai_khoan' },
+      { state: 'loi', lyDo: 'timeout' },
+    ];
+
+    for (const link of offlineLinks) {
+      expect(bomTrucTuyen(link)).toBe(false);
+      expect(coTheDieuKhienBom(sampleState, link)).toBe(false);
     }
   });
 });

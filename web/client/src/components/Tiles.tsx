@@ -9,12 +9,14 @@ export function SwitchToggle({
   color = SH.Blue,
   disabled = false,
   pending = false,
+  title,
 }: {
   checked: boolean;
   onChange: () => void;
   color?: string;
   disabled?: boolean;
   pending?: boolean;
+  title?: string;
 }) {
   return (
     <button
@@ -22,11 +24,12 @@ export function SwitchToggle({
       role="switch"
       aria-checked={checked}
       disabled={disabled || pending}
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         onChange();
       }}
-      className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
       style={{
         backgroundColor: checked ? color : '#253459',
         boxShadow: checked ? `0 0 12px ${tint(color, 0.45)}` : undefined,

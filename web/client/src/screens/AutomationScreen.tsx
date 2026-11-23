@@ -54,11 +54,13 @@ import {
   bomApDangChay,
   bomApDangKhoa,
   bomChinhDangChay,
+  bomTrucTuyen,
   bonDay,
   catSoThapPhan,
   coDenPhu,
   coLoiBom,
   coNhanhNuocMay,
+  coTheDieuKhienBom,
   coiDangKeu,
   daCauHinhBom,
   dangKhoaBom,
@@ -126,6 +128,8 @@ export function AutomationScreen() {
 
   const daCauHinh = daCauHinhBom(config.bomNuoc);
   const hasAquaUrl = config.aquaControlUrl.trim().length > 0;
+  const ketNoiDirect = bomTrucTuyen(ketNoiBom);
+  const canControlPump = coTheDieuKhienBom(bomNuoc, ketNoiBom);
 
   const openAquaControl = () => {
     if (!hasAquaUrl) {
@@ -165,7 +169,8 @@ export function AutomationScreen() {
           daCauHinh={daCauHinh}
           bomNuoc={bomNuoc}
           ketNoiText={nhanKetNoiBom(ketNoiBom, kenhBom)}
-          ketNoiDirect={ketNoiBom.state === 'truc_tiep'}
+          ketNoiDirect={ketNoiDirect}
+          canControl={canControlPump}
           choBomNuoc={choBomNuoc}
           hasAquaUrl={hasAquaUrl}
           onDatCheDoBon={(m) => void datCheDoBon(m)}
@@ -181,6 +186,7 @@ export function AutomationScreen() {
       {tab === 'protection' && (
         <TabBaoVeHieuChuan
           bomNuoc={bomNuoc}
+          canControl={canControlPump}
           choBomNuoc={choBomNuoc}
           onLuuBaoVeBom={(d, r, m, p, f) => void luuBaoVeBom(d, r, m, p, f)}
           onGhiMocCan={() => void ghiMocCanBom()}
@@ -195,6 +201,8 @@ export function AutomationScreen() {
         <TabNhatKyNuoc
           nhatKy={nhatKyBom}
           usage={luongNuocThang}
+          canControl={canControlPump}
+          clearingUsage={Boolean(choBomNuoc.usageClear)}
           onXoaNhatKyCucBo={() => void xoaNhatKyBomCucBo()}
           onXoaLichSuBo={() => void xoaLichSuNuocTrenBo()}
         />
@@ -204,7 +212,7 @@ export function AutomationScreen() {
         <TabKichBan
           daCauHinh={daCauHinh}
           bomNuoc={bomNuoc}
-          ketNoiDirect={ketNoiBom.state === 'truc_tiep'}
+          ketNoiDirect={ketNoiDirect}
           hasAquaUrl={hasAquaUrl}
           aquaUrl={config.aquaControlUrl}
           onOpenPumpTab={() => setTab('pump')}
@@ -231,6 +239,7 @@ function TabBomNuoc({
   bomNuoc,
   ketNoiText,
   ketNoiDirect,
+  canControl,
   choBomNuoc,
   hasAquaUrl,
   onDatCheDoBon,
@@ -245,6 +254,7 @@ function TabBomNuoc({
   bomNuoc: BomNuocState | null;
   ketNoiText: string;
   ketNoiDirect: boolean;
+  canControl: boolean;
   choBomNuoc: Record<string, boolean>;
   hasAquaUrl: boolean;
   onDatCheDoBon: (mode: 'auto' | 'on' | 'off') => void;
@@ -286,7 +296,8 @@ function TabBomNuoc({
   const buzzerOn = bomNuoc ? coiDangKeu(bomNuoc) === true : false;
   const isDanger = fault?.mucDo === 'NGUY_HIEM';
 
-  const canControl = bomNuoc !== null;
+  const isOffline = bomNuoc !== null && !canControl;
+  const offlineTitle = !canControl ? 'Bo bơm đang mất kết nối' : undefined;
   const tankBusy = Boolean(choBomNuoc.tank);
   const boosterBusy = Boolean(choBomNuoc.booster);
   const ledBusy = Boolean(choBomNuoc.led);
@@ -328,13 +339,25 @@ function TabBomNuoc({
               {fault?.noiDung ?? 'Hệ thống bơm đang khoá bảo vệ sau sự cố trước đó.'}
             </p>
             {buzzerOn && (
-              <FlatButton color={SH.Amber} variant="outline" onClick={onTatCoiBom} disabled={Boolean(choBomNuoc.coiTat)}>
+              <FlatButton
+                color={SH.Amber}
+                variant="outline"
+                onClick={onTatCoiBom}
+                disabled={!canControl || Boolean(choBomNuoc.coiTat)}
+                title={offlineTitle}
+              >
                 <VolumeOff size={14} />
                 <span>Tắt còi</span>
               </FlatButton>
             )}
             {(fault?.xoaDuoc !== false || locked) && (
-              <FlatButton color={SH.Blue} variant="solid" onClick={onXoaLoiBom} disabled={clearBusy}>
+              <FlatButton
+                color={SH.Blue}
+                variant="solid"
+                onClick={onXoaLoiBom}
+                disabled={!canControl || clearBusy}
+                title={offlineTitle}
+              >
                 <LockOpen size={14} />
                 <span>{clearBusy ? 'Đang gửi…' : 'Xoá lỗi'}</span>
               </FlatButton>
@@ -527,6 +550,7 @@ function TabBomNuoc({
                 color={SH.Green}
                 variant={bomNuoc?.tankMode === 'on' ? 'solid' : 'soft'}
                 disabled={!canControl || tankBusy}
+                title={offlineTitle}
                 onClick={() => onDatCheDoBon('on')}
               >
                 <Play size={14} />
@@ -536,6 +560,7 @@ function TabBomNuoc({
                 color={SH.Red}
                 variant={bomNuoc?.tankMode === 'off' ? 'solid' : 'soft'}
                 disabled={!canControl || tankBusy}
+                title={offlineTitle}
                 onClick={() => onDatCheDoBon('off')}
               >
                 <Square size={14} />
@@ -559,8 +584,9 @@ function TabBomNuoc({
                       key={key}
                       type="button"
                       disabled={!canControl || tankBusy}
+                      title={offlineTitle}
                       onClick={() => onDatCheDoBon(key)}
-                      className="rounded-xl py-2 text-xs font-bold transition-all disabled:opacity-45 cursor-pointer"
+                      className="rounded-xl py-2 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       style={{
                         backgroundColor: selected ? SH.Blue : SH.Card2,
                         border: `1px solid ${selected ? SH.Blue : SH.Border}`,
@@ -574,14 +600,16 @@ function TabBomNuoc({
               </div>
             </div>
 
-            <p className="text-[11px] text-[#64748B]">
-              {bomNuoc?.tankMode === 'auto'
-                ? 'Tự chạy khi chưa đầy, tự ngắt khi phao báo đầy.'
-                : bomNuoc?.tankMode === 'on'
-                  ? 'Chạy liên tục; phao đầy vẫn luôn cắt để chống tràn.'
-                  : bomNuoc?.tankMode === 'off'
-                    ? 'Ngừng chạy cho tới khi đổi chế độ.'
-                    : 'Đang chờ trạng thái từ bo…'}
+            <p className={`text-[11px] ${isOffline ? 'text-[#FBBF24]' : 'text-[#64748B]'}`}>
+              {isOffline
+                ? `Bo bơm đang mất kết nối (${ketNoiText}) — tạm khoá nút điều khiển.`
+                : bomNuoc?.tankMode === 'auto'
+                  ? 'Tự chạy khi chưa đầy, tự ngắt khi phao báo đầy.'
+                  : bomNuoc?.tankMode === 'on'
+                    ? 'Chạy liên tục; phao đầy vẫn luôn cắt để chống tràn.'
+                    : bomNuoc?.tankMode === 'off'
+                      ? 'Ngừng chạy cho tới khi đổi chế độ.'
+                      : 'Đang chờ trạng thái từ bo…'}
             </p>
 
             {tankRunning && (bomNuoc?.tankRun ?? 0) > 0 && (
@@ -626,14 +654,23 @@ function TabBomNuoc({
               <div className="flex items-center justify-between gap-3 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2.5">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-[#F1F5F9]">Bơm tăng áp</div>
-                  <p className="text-[11px] mt-0.5" style={{ color: locked ? SH.Red : SH.TextOff }}>
+                  <p
+                    className="text-[11px] mt-0.5"
+                    style={{ color: locked ? SH.Red : isOffline ? SH.Amber : SH.TextOff }}
+                  >
                     {bomNuoc === null
                       ? '—'
                       : bomApDangKhoa(bomNuoc)
-                        ? 'Khoá sau sự cố. Bấm Xoá lỗi để mở.'
+                        ? isOffline
+                          ? 'Khoá sau sự cố. Chờ bo bơm online để xoá lỗi.'
+                          : 'Khoá sau sự cố. Bấm Xoá lỗi để mở.'
                         : dangKhoaBom(bomNuoc)
-                          ? 'Bơm chính đang khoá nên bơm áp bị chặn.'
-                          : 'Chỉ có BẬT/TẮT tay; bo tự cắt nếu chạy quá 15 phút.'}
+                          ? isOffline
+                            ? 'Bơm chính đang khoá · bo bơm đang offline.'
+                            : 'Bơm chính đang khoá nên bơm áp bị chặn.'
+                          : isOffline
+                            ? 'Bo bơm đang mất kết nối — tạm khoá điều khiển.'
+                            : 'Chỉ có BẬT/TẮT tay; bo tự cắt nếu chạy quá 15 phút.'}
                   </p>
                 </div>
                 <SwitchToggle
@@ -642,6 +679,7 @@ function TabBomNuoc({
                   color={SH.Green}
                   disabled={!canControl || locked}
                   pending={boosterBusy}
+                  title={offlineTitle}
                 />
               </div>
 
@@ -664,7 +702,9 @@ function TabBomNuoc({
                     checked={denPhuBat(bomNuoc)}
                     onChange={() => onDatDenPhuBom(!denPhuBat(bomNuoc))}
                     color={SH.Amber}
+                    disabled={!canControl}
                     pending={ledBusy}
+                    title={offlineTitle}
                   />
                 </div>
               )}
@@ -700,6 +740,7 @@ function TabBomNuoc({
 
 function TabBaoVeHieuChuan({
   bomNuoc,
+  canControl,
   choBomNuoc,
   onLuuBaoVeBom,
   onGhiMocCan,
@@ -709,6 +750,7 @@ function TabBaoVeHieuChuan({
   onThuCoi,
 }: {
   bomNuoc: BomNuocState | null;
+  canControl: boolean;
   choBomNuoc: Record<string, boolean>;
   onLuuBaoVeBom: (dry: number, rest: number, run: number, pulses: number, minFlow: number) => void;
   onGhiMocCan: () => void;
@@ -738,6 +780,7 @@ function TabBaoVeHieuChuan({
   const inputCls =
     'w-full rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs text-[#E6EDF7] outline-none focus:border-[#4F8BFF] font-mono-num';
   const buzzer = bomNuoc ? coiDangKeu(bomNuoc) : null;
+  const offlineTitle = !canControl ? 'Bo bơm đang mất kết nối' : undefined;
 
   return (
     <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-stretch">
@@ -809,7 +852,8 @@ function TabBaoVeHieuChuan({
             color={SH.Blue}
             variant="solid"
             className="w-full"
-            disabled={bomNuoc === null || Boolean(choBomNuoc.protection)}
+            disabled={!canControl || Boolean(choBomNuoc.protection)}
+            title={offlineTitle}
             onClick={() => {
               const d = Number.parseInt(dry.trim(), 10);
               const f = Number.parseFloat(minFlow.trim().replace(',', '.'));
@@ -859,7 +903,8 @@ function TabBaoVeHieuChuan({
           <div className="grid grid-cols-2 gap-2 pt-1">
             <FlatButton
               color={SH.TextSecondary}
-              disabled={bomNuoc === null || Boolean(choBomNuoc.lvlSetEmpty)}
+              disabled={!canControl || Boolean(choBomNuoc.lvlSetEmpty)}
+              title={offlineTitle}
               onClick={onGhiMocCan}
             >
               <Ruler size={14} />
@@ -867,7 +912,8 @@ function TabBaoVeHieuChuan({
             </FlatButton>
             <FlatButton
               color={SH.TextSecondary}
-              disabled={bomNuoc === null || Boolean(choBomNuoc.lvlSetFull)}
+              disabled={!canControl || Boolean(choBomNuoc.lvlSetFull)}
+              title={offlineTitle}
               onClick={onGhiMocDay}
             >
               <Ruler size={14} />
@@ -901,7 +947,8 @@ function TabBaoVeHieuChuan({
           <FlatButton
             color={SH.TextSecondary}
             className="w-full"
-            disabled={bomNuoc === null || Boolean(choBomNuoc.calReset)}
+            disabled={!canControl || Boolean(choBomNuoc.calReset)}
+            title={offlineTitle}
             onClick={onDatLaiDemLuuLuong}
           >
             <SlidersHorizontal size={14} />
@@ -928,7 +975,8 @@ function TabBaoVeHieuChuan({
             <FlatButton
               color={SH.Amber}
               variant="outline"
-              disabled={bomNuoc === null || Boolean(choBomNuoc.coiTat)}
+              disabled={!canControl || Boolean(choBomNuoc.coiTat)}
+              title={offlineTitle}
               onClick={onTatCoi}
             >
               <VolumeOff size={14} />
@@ -937,7 +985,8 @@ function TabBaoVeHieuChuan({
             <FlatButton
               color={SH.TextSecondary}
               variant="outline"
-              disabled={bomNuoc === null || Boolean(choBomNuoc.coiThu)}
+              disabled={!canControl || Boolean(choBomNuoc.coiThu)}
+              title={offlineTitle}
               onClick={onThuCoi}
             >
               <Volume2 size={14} />
@@ -957,11 +1006,15 @@ function TabBaoVeHieuChuan({
 function TabNhatKyNuoc({
   nhatKy,
   usage,
+  canControl,
+  clearingUsage,
   onXoaNhatKyCucBo,
   onXoaLichSuBo,
 }: {
   nhatKy: SuKienBom[];
   usage: ReturnType<typeof useSmartHome>['luongNuocThang'];
+  canControl: boolean;
+  clearingUsage: boolean;
   onXoaNhatKyCucBo: () => void;
   onXoaLichSuBo: () => void;
 }) {
@@ -1102,6 +1155,8 @@ function TabNhatKyNuoc({
                 <NutXacNhanHaiBuoc
                   nhanThuong="Xoá lịch sử trên bo"
                   nhanXacNhan="Bấm lần nữa để xoá hẳn"
+                  disabled={!canControl || clearingUsage}
+                  title={!canControl ? 'Bo bơm đang mất kết nối' : undefined}
                   onXacNhan={onXoaLichSuBo}
                 />
               </div>

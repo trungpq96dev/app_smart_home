@@ -3,26 +3,47 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { AdminAuthService } from './adminAuth.js';
 import { BomNuocBridge } from './bomNuocBridge.js';
 import { ConfigStore } from './configStore.js';
 import { MqttBridge } from './mqttBridge.js';
 import { fetchStreamList, Go2rtcWsProxy, proxyGo2rtcHttp } from './go2rtcProxy.js';
+import { TelegramAlertService } from './telegramAlerts.js';
 
-const APP_VERSION = '0.9.0-web';
+const APP_VERSION = '0.9.2-web';
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
+const ADMIN_PROTECTED_PUMP_KINDS = new Set([
+  'protection',
+  'lvlSetEmpty',
+  'lvlSetFull',
+  'calReset',
+  'usageClear',
+]);
+
 const configStore = new ConfigStore();
+const adminAuth = new AdminAuthService(configStore);
 const mqttBridge = new MqttBridge(configStore.getConfig().mqtt);
 const bomNuocBridge = new BomNuocBridge(configStore.getConfig().bomNuoc);
 const go2rtcWsProxy = new Go2rtcWsProxy();
+const telegramAlerts = new TelegramAlertService(() => configStore.getConfig().telegram);
+
+mqttBridge.onMessage((topic, payload) => {
+  telegramAlerts.observeMqttMessage(topic, payload);
+});
+mqttBridge.onStatus((status) => {
+  telegramAlerts.observeMqttStatus(status);
+});
+bomNuocBridge.onState((state) => {
+  telegramAlerts.observeBomNuocState(state);
+});
 
 const app = express();
 app.disable('x-powered-by');
 
 // Proxy go2rtc HTTP truoc express.json() de giu nguyen raw stream/body
 app.use('/go2rtc', (req, res) => {
-  // Rewrite req.url so proxyGo2rtcHttp preserves the full /go2rtc prefix stripping
   const orig = req.originalUrl || req.url;
   req.url = orig;
   proxyGo2rtcHttp(req, res, configStore.getConfig().camera);
@@ -43,7 +64,48 @@ app.get('/api/config', (_req, res) => {
   res.json(configStore.getPublicConfig());
 });
 
-app.put('/api/config/mqtt', (req, res) => {
+// ---- Admin PIN Auth (4 digits) ----
+
+app.get('/api/admin/session', (req, res) => {
+  const enabled = adminAuth.isEnabled();
+  const unlocked = !enabled || adminAuth.isTokenValid(req.header('x-admin-token'));
+  res.json({ enabled, unlocked });
+});
+
+app.post('/api/admin/verify', (req, res) => {
+  const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+  const clientKey = req.ip || 'local';
+  const result = adminAuth.verify(pin, clientKey);
+  if (!result.ok) {
+    res.status(401).json(result);
+    return;
+  }
+  res.json(result);
+});
+
+app.post('/api/admin/lock', (req, res) => {
+  adminAuth.revokeToken(req.header('x-admin-token'));
+  res.json({ ok: true });
+});
+
+app.put('/api/admin/pin', (req, res) => {
+  const currentPin = typeof req.body?.currentPin === 'string' ? req.body.currentPin.trim() : '';
+  const newPin = typeof req.body?.newPin === 'string' && req.body.newPin.trim()
+    ? req.body.newPin.trim()
+    : undefined;
+  const enabled = typeof req.body?.enabled === 'boolean' ? req.body.enabled : undefined;
+
+  const result = adminAuth.changePin(currentPin, newPin, enabled);
+  if (!result.ok) {
+    res.status(400).json(result);
+    return;
+  }
+  res.json({ ok: true, config: configStore.getPublicConfig() });
+});
+
+// ---- Protected Service Config Endpoints ----
+
+app.put('/api/config/mqtt', adminAuth.requireAdmin, (req, res) => {
   const updated = configStore.updateMqtt(req.body || {});
   mqttBridge.connect(updated.mqtt);
   res.json({
@@ -53,7 +115,7 @@ app.put('/api/config/mqtt', (req, res) => {
   });
 });
 
-app.put('/api/config/camera', async (req, res) => {
+app.put('/api/config/camera', adminAuth.requireAdmin, async (req, res) => {
   const updated = configStore.updateCamera(req.body || {});
   const probe = await fetchStreamList(updated.camera);
   res.json({
@@ -71,7 +133,7 @@ app.put('/api/config/weather', (req, res) => {
   });
 });
 
-app.put('/api/config/aquacontrol', (req, res) => {
+app.put('/api/config/aquacontrol', adminAuth.requireAdmin, (req, res) => {
   const url = typeof req.body?.aquaControlUrl === 'string' ? req.body.aquaControlUrl : '';
   configStore.updateAquaControlUrl(url);
   res.json({
@@ -80,7 +142,7 @@ app.put('/api/config/aquacontrol', (req, res) => {
   });
 });
 
-app.put('/api/config/bomnuoc', (req, res) => {
+app.put('/api/config/bomnuoc', adminAuth.requireAdmin, (req, res) => {
   const updated = configStore.updateBomNuoc(req.body || {});
   bomNuocBridge.connect(updated.bomNuoc);
   res.json({
@@ -91,16 +153,47 @@ app.put('/api/config/bomnuoc', (req, res) => {
   });
 });
 
+// ---- Telegram Alerts ----
+
+app.get('/api/alerts/status', (_req, res) => {
+  res.json(telegramAlerts.getStatus());
+});
+
+app.put('/api/config/telegram', adminAuth.requireAdmin, (req, res) => {
+  configStore.updateTelegram(req.body || {});
+  res.json({
+    ok: true,
+    config: configStore.getPublicConfig(),
+    alertsStatus: telegramAlerts.getStatus(),
+  });
+});
+
+app.post('/api/alerts/telegram/test', adminAuth.requireAdmin, async (_req, res) => {
+  const result = await telegramAlerts.sendTestAlert();
+  res.json({ ...result, alertsStatus: telegramAlerts.getStatus() });
+});
+
+// ---- Pump Control & Logs ----
+
 app.get('/api/bomnuoc/state', (_req, res) => {
   res.json(bomNuocBridge.getSnapshot());
 });
 
-app.post('/api/bomnuoc/cmd', async (req, res) => {
+app.post('/api/bomnuoc/cmd', async (req, res, next) => {
+  const kind = typeof req.body?.kind === 'string' ? req.body.kind.trim() : '';
+  if (ADMIN_PROTECTED_PUMP_KINDS.has(kind)) {
+    adminAuth.requireAdmin(req, res, async () => {
+      const result = await bomNuocBridge.executeCommand(req.body);
+      res.json(result);
+    });
+    return;
+  }
   const result = await bomNuocBridge.executeCommand(req.body);
   res.json(result);
+  void next;
 });
 
-app.delete('/api/bomnuoc/log', (_req, res) => {
+app.delete('/api/bomnuoc/log', adminAuth.requireAdmin, (_req, res) => {
   bomNuocBridge.clearLog();
   res.json({ ok: true });
 });
@@ -159,4 +252,3 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   console.log(`SmartHome Web Gateway đang chạy tại http://${HOST}:${PORT}`);
 });
-

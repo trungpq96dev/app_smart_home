@@ -268,6 +268,17 @@ export function nhanThangNgan(m: LuongNuocThang): string {
   return m.thang;
 }
 
+export function bomTrucTuyen(link: TrangThaiKetNoiBom): boolean {
+  return link.state === 'truc_tiep';
+}
+
+export function coTheDieuKhienBom(
+  bomNuoc: BomNuocState | null,
+  link: TrangThaiKetNoiBom,
+): boolean {
+  return bomNuoc !== null && bomTrucTuyen(link);
+}
+
 export function nhanKetNoiBom(link: TrangThaiKetNoiBom, kenh: KenhBomNuoc): string {
   switch (link.state) {
     case 'chua_cau_hinh': return 'Chưa cấu hình';

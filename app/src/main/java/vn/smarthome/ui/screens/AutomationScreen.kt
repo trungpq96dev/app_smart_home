@@ -81,6 +81,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,6 +105,7 @@ import vn.smarthome.data.bomnuoc.NhomNhatKy
 import vn.smarthome.data.bomnuoc.QuanLyBomNuoc
 import vn.smarthome.data.bomnuoc.SuKienBom
 import vn.smarthome.data.bomnuoc.TrangThaiKetNoiBom
+import vn.smarthome.data.bomnuoc.coTheDieuKhienBom
 import vn.smarthome.ui.components.BieuDoNuocThang
 import vn.smarthome.ui.components.BoChonCheDo
 import vn.smarthome.ui.components.CongTacBom
@@ -168,7 +170,7 @@ fun AutomationScreen(
     var showConfigDialog by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(title = "Tự động hóa", onBack = onBack) {
+        TopBar(title = "Tự động hóa", onBack = null) {
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
@@ -202,6 +204,8 @@ fun AutomationScreen(
             }
         }
 
+        val canControlBom = coTheDieuKhienBom(bomNuoc, ketNoiBom)
+
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (selectedTab) {
                 0 -> TabBomNuoc(
@@ -221,6 +225,7 @@ fun AutomationScreen(
 
                 1 -> TabBaoVeHieuChuan(
                     bomNuoc = bomNuoc,
+                    ketNoiBom = ketNoiBom,
                     choBomNuoc = choBomNuoc,
                     onLuuBaoVeBom = onLuuBaoVeBom,
                     onGhiMocCanBom = onGhiMocCanBom,
@@ -233,6 +238,8 @@ fun AutomationScreen(
                 2 -> TabNhatKyNuoc(
                     nhatKy = nhatKyBom,
                     usage = luongNuocThang,
+                    canControl = canControlBom,
+                    choBomNuoc = choBomNuoc,
                     onXoaNhatKyCucBo = onXoaNhatKyBomCucBo,
                     onXoaLichSuBo = onXoaLichSuNuocTrenBo,
                 )
@@ -342,6 +349,7 @@ private fun TabBomNuoc(
 
     val fault = LoiBomNuoc.phanTich(bomNuoc?.fault)
     val locked = bomNuoc?.dangKhoa == true || bomNuoc?.bomApDangKhoa == true
+    val canControl = coTheDieuKhienBom(bomNuoc, ketNoiBom)
 
     Column(
         Modifier.fillMaxSize(),
@@ -353,6 +361,8 @@ private fun TabBomNuoc(
                 locked = locked,
                 buzzerOn = bomNuoc?.coiDangKeu == true,
                 clearing = "clear" in choBomNuoc,
+                enabled = canControl,
+                mutingBuzzer = "coiTat" in choBomNuoc,
                 onXoaLoi = onXoaLoiBom,
                 onTatCoi = onTatCoiBom,
             )
@@ -395,6 +405,7 @@ private fun TabBomNuoc(
             ) {
                 TheDieuKhienBomChinh(
                     bomNuoc = bomNuoc,
+                    ketNoiBom = ketNoiBom,
                     busy = "tank" in choBomNuoc,
                     onDatCheDo = onDatCheDoBon,
                     modifier = Modifier.fillMaxWidth(),
@@ -402,6 +413,7 @@ private fun TabBomNuoc(
 
                 TheBomTangApVaPhu(
                     bomNuoc = bomNuoc,
+                    canControl = canControl,
                     choBomNuoc = choBomNuoc,
                     onDatBomTangAp = onDatBomTangAp,
                     onDatDenPhuBom = onDatDenPhuBom,
@@ -418,6 +430,8 @@ private fun BangCanhBaoBom(
     locked: Boolean,
     buzzerOn: Boolean,
     clearing: Boolean,
+    enabled: Boolean,
+    mutingBuzzer: Boolean,
     onXoaLoi: () -> Unit,
     onTatCoi: () -> Unit,
 ) {
@@ -448,7 +462,16 @@ private fun BangCanhBaoBom(
                 Spacer(Modifier.width(6.dp))
                 OutlinedButton(
                     onClick = onTatCoi,
-                    modifier = Modifier.height(34.dp),
+                    enabled = enabled && !mutingBuzzer,
+                    modifier = Modifier
+                        .height(34.dp)
+                        .alpha(
+                            when {
+                                !enabled -> 0.40f
+                                mutingBuzzer -> 0.75f
+                                else -> 1f
+                            }
+                        ),
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Icon(Icons.AutoMirrored.Filled.VolumeOff, null, tint = SH.Amber, modifier = Modifier.size(15.dp))
@@ -463,6 +486,7 @@ private fun BangCanhBaoBom(
                     icon = Icons.Filled.LockOpen,
                     color = SH.Blue,
                     onClick = onXoaLoi,
+                    enabled = enabled,
                     loading = clearing,
                     height = 34.dp,
                 )
@@ -676,11 +700,13 @@ private fun TheThongSoCamBien(bomNuoc: BomNuocState?, modifier: Modifier = Modif
 @Composable
 private fun TheDieuKhienBomChinh(
     bomNuoc: BomNuocState?,
+    ketNoiBom: TrangThaiKetNoiBom,
     busy: Boolean,
     onDatCheDo: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val canControl = bomNuoc != null
+    val canControl = coTheDieuKhienBom(bomNuoc, ketNoiBom)
+    val offline = bomNuoc != null && !canControl
     SmartCard(modifier, padding = 10.dp) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconBadge(Icons.Filled.Power, SH.Blue, size = 24.dp, iconSize = 14.dp)
@@ -731,14 +757,15 @@ private fun TheDieuKhienBomChinh(
 
         Spacer(Modifier.height(6.dp))
         Text(
-            when (bomNuoc?.tankMode) {
-                "auto" -> "Tự chạy khi chưa đầy, tự ngắt khi phao báo đầy."
-                "on" -> "Chạy liên tục; phao đầy vẫn luôn cắt để chống tràn."
-                "off" -> "Ngừng chạy cho tới khi đổi chế độ."
+            when {
+                offline -> "Bo bơm đang mất kết nối (${ketNoiBom.nhan}) — tạm khoá nút điều khiển."
+                bomNuoc?.tankMode == "auto" -> "Tự chạy khi chưa đầy, tự ngắt khi phao báo đầy."
+                bomNuoc?.tankMode == "on" -> "Chạy liên tục; phao đầy vẫn luôn cắt để chống tràn."
+                bomNuoc?.tankMode == "off" -> "Ngừng chạy cho tới khi đổi chế độ."
                 else -> "Đang chờ trạng thái từ bo…"
             },
             style = SHType.Caption,
-            color = SH.TextOff,
+            color = if (offline) SH.Amber else SH.TextOff,
             maxLines = 2,
         )
         if (bomNuoc?.bomChinhDangChay == true && (bomNuoc.tankRun ?: 0L) > 0L) {
@@ -755,13 +782,14 @@ private fun TheDieuKhienBomChinh(
 @Composable
 private fun TheBomTangApVaPhu(
     bomNuoc: BomNuocState?,
+    canControl: Boolean,
     choBomNuoc: Set<String>,
     onDatBomTangAp: (Boolean) -> Unit,
     onDatDenPhuBom: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val locked = bomNuoc?.bomApDangKhoa == true || bomNuoc?.dangKhoa == true
-    val canControl = bomNuoc != null
+    val offline = bomNuoc != null && !canControl
 
     SmartCard(modifier, padding = 10.dp) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -790,12 +818,21 @@ private fun TheBomTangApVaPhu(
                 Text(
                     when {
                         bomNuoc == null -> "—"
-                        bomNuoc.bomApDangKhoa -> "Khoá sau sự cố. Bấm Xoá lỗi để mở."
-                        bomNuoc.dangKhoa -> "Bơm chính đang khoá nên bơm áp bị chặn."
+                        bomNuoc.bomApDangKhoa ->
+                            if (offline) "Khoá sau sự cố. Chờ bo bơm online để xoá lỗi."
+                            else "Khoá sau sự cố. Bấm Xoá lỗi để mở."
+                        bomNuoc.dangKhoa ->
+                            if (offline) "Bơm chính đang khoá · bo bơm đang offline."
+                            else "Bơm chính đang khoá nên bơm áp bị chặn."
+                        offline -> "Bo bơm đang mất kết nối — tạm khoá điều khiển."
                         else -> "Chỉ có BẬT/TẮT tay; bo tự cắt nếu chạy quá 15 phút."
                     },
                     style = SHType.Caption,
-                    color = if (locked) SH.Red else SH.TextOff,
+                    color = when {
+                        locked -> SH.Red
+                        offline -> SH.Amber
+                        else -> SH.TextOff
+                    },
                     maxLines = 2,
                 )
             }
@@ -805,6 +842,7 @@ private fun TheBomTangApVaPhu(
                 onToggle = onDatBomTangAp,
                 enabled = canControl && !locked,
                 loading = "booster" in choBomNuoc,
+                contentDescription = "Bơm tăng áp",
             )
         }
 
@@ -827,9 +865,10 @@ private fun TheBomTangApVaPhu(
                 CongTacBom(
                     checked = bomNuoc.denPhuBat,
                     onToggle = onDatDenPhuBom,
-                    enabled = true,
+                    enabled = canControl,
                     loading = "led" in choBomNuoc,
                     activeColor = SH.Amber,
+                    contentDescription = "Đèn phụ hộp điện",
                 )
             }
         }
@@ -866,6 +905,7 @@ private fun TheBomTangApVaPhu(
 @Composable
 private fun TabBaoVeHieuChuan(
     bomNuoc: BomNuocState?,
+    ketNoiBom: TrangThaiKetNoiBom,
     choBomNuoc: Set<String>,
     onLuuBaoVeBom: (Int, Double, Int, Double, Double) -> Unit,
     onGhiMocCanBom: () -> Unit,
@@ -874,6 +914,7 @@ private fun TabBaoVeHieuChuan(
     onTatCoiBom: () -> Unit,
     onThuCoiBom: () -> Unit,
 ) {
+    val canControl = coTheDieuKhienBom(bomNuoc, ketNoiBom)
     Row(
         Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
@@ -940,7 +981,7 @@ private fun TabBaoVeHieuChuan(
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = bomNuoc != null,
+                    enabled = canControl,
                     loading = "protection" in choBomNuoc,
                 )
 
@@ -983,7 +1024,7 @@ private fun TabBaoVeHieuChuan(
                         "Ghi mốc CẠN", Icons.Filled.Straighten, SH.Card2,
                         onClick = onGhiMocCanBom,
                         modifier = Modifier.weight(1f),
-                        enabled = bomNuoc != null,
+                        enabled = canControl,
                         loading = "lvlSetEmpty" in choBomNuoc,
                         height = 38.dp,
                     )
@@ -991,7 +1032,7 @@ private fun TabBaoVeHieuChuan(
                         "Ghi mốc ĐẦY", Icons.Filled.Straighten, SH.Card2,
                         onClick = onGhiMocDayBom,
                         modifier = Modifier.weight(1f),
-                        enabled = bomNuoc != null,
+                        enabled = canControl,
                         loading = "lvlSetFull" in choBomNuoc,
                         height = 38.dp,
                     )
@@ -1018,7 +1059,7 @@ private fun TabBaoVeHieuChuan(
                     "Đặt lại bộ đếm", Icons.Filled.Tune, SH.Card2,
                     onClick = onDatLaiDemLuuLuong,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = bomNuoc != null,
+                    enabled = canControl,
                     loading = "calReset" in choBomNuoc,
                     height = 38.dp,
                 )
@@ -1040,18 +1081,36 @@ private fun TabBaoVeHieuChuan(
                     )
                 }
                 Spacer(Modifier.height(6.dp))
+                val mutingBuzzer = "coiTat" in choBomNuoc
+                val testingBuzzer = "coiThu" in choBomNuoc
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onTatCoiBom,
-                        enabled = bomNuoc != null,
-                        modifier = Modifier.weight(1f),
+                        enabled = canControl && !mutingBuzzer,
+                        modifier = Modifier
+                            .weight(1f)
+                            .alpha(
+                                when {
+                                    !canControl -> 0.40f
+                                    mutingBuzzer -> 0.75f
+                                    else -> 1f
+                                }
+                            ),
                     ) {
                         Text("Tắt còi", style = SHType.Button, color = SH.Amber)
                     }
                     OutlinedButton(
                         onClick = onThuCoiBom,
-                        enabled = bomNuoc != null,
-                        modifier = Modifier.weight(1f),
+                        enabled = canControl && !testingBuzzer,
+                        modifier = Modifier
+                            .weight(1f)
+                            .alpha(
+                                when {
+                                    !canControl -> 0.40f
+                                    testingBuzzer -> 0.75f
+                                    else -> 1f
+                                }
+                            ),
                     ) {
                         Text("Kêu thử", style = SHType.Button, color = SH.TextDim)
                     }
@@ -1094,6 +1153,8 @@ private fun ONhapSo(label: String, value: String, onChange: (String) -> Unit) {
 private fun TabNhatKyNuoc(
     nhatKy: List<SuKienBom>,
     usage: List<LuongNuocThang>,
+    canControl: Boolean,
+    choBomNuoc: Set<String>,
     onXoaNhatKyCucBo: () -> Unit,
     onXoaLichSuBo: () -> Unit,
 ) {
@@ -1221,6 +1282,7 @@ private fun TabNhatKyNuoc(
                 NutXacNhanHaiBuoc(
                     nhanThuong = "Xoá lịch sử trên bo",
                     nhanXacNhan = "Bấm lần nữa để xoá hẳn",
+                    enabled = canControl && "usageClear" !in choBomNuoc,
                     onXacNhan = onXoaLichSuBo,
                 )
             }
@@ -1274,9 +1336,14 @@ private fun NutXacNhanHaiBuoc(
     nhanThuong: String,
     nhanXacNhan: String,
     onXacNhan: () -> Unit,
+    enabled: Boolean = true,
 ) {
     var armed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(enabled) {
+        if (!enabled) armed = false
+    }
 
     TextButton(
         onClick = {
@@ -1288,6 +1355,8 @@ private fun NutXacNhanHaiBuoc(
                 scope.launch { delay(5_000L); armed = false }
             }
         },
+        enabled = enabled,
+        modifier = Modifier.alpha(if (enabled) 1f else 0.40f),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
     ) {
         Icon(
