@@ -39,7 +39,6 @@ import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatusPill
-import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SHType
@@ -64,32 +63,52 @@ fun ServerScreen(
 
     Column(Modifier.fillMaxSize()) {
 
-        // ---- Top bar ----
-        TopBar(title = "", onBack = onBack) {
-            if (!server.isRealData) {
-                DemoBadge()
-                Spacer(Modifier.width(6.dp))
-            }
-            StatusPill(info.hostname, SH.Green)
-            Spacer(Modifier.width(6.dp))
-            Text(
-                info.os,
-                style = SHType.Caption, color = SH.TextDim, maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // Tieu de phu
+        // ---- Header ----
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            Modifier.fillMaxWidth().height(Dim.HeaderHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(Icons.Filled.Dns, SH.Blue, size = 34.dp, iconSize = 19.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Máy chủ serverubuntu", style = SHType.PageTitle, color = SH.Text, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            server.capNhat?.let {
-                Text("Cập nhật: $it", style = SHType.Caption, color = SH.TextOff, maxLines = 1)
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBadge(Icons.Filled.Dns, SH.Blue, size = 34.dp, iconSize = 19.dp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Máy chủ serverubuntu",
+                        style = SHType.PageTitle,
+                        color = SH.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    server.capNhat?.let {
+                        Text(
+                            "Cập nhật: $it",
+                            style = SHType.Caption,
+                            color = SH.TextOff,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!server.isRealData) {
+                    DemoBadge()
+                }
+                StatusPill(info.hostname, SH.Green)
+                Text(
+                    info.os,
+                    style = SHType.Caption,
+                    color = SH.TextDim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 

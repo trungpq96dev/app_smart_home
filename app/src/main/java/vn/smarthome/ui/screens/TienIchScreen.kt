@@ -83,7 +83,7 @@ fun TienIchScreen(
 
     Column(Modifier.fillMaxSize()) {
 
-        TopBar(title = "Tiện ích · Lịch vạn niên", onBack = onBack) {
+        TopBar(title = "Tiện ích · Lịch vạn niên", onBack = null) {
             StatusPill("Âm lịch Việt Nam (GMT+7)", SH.Green)
         }
 

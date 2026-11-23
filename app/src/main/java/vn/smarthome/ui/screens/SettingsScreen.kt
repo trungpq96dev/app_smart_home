@@ -121,7 +121,7 @@ fun SettingsScreen(
     val coBanMoi = otaStatus is OtaStatus.UpdateAvailable
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(title = "Cài đặt", onBack = onBack) {
+        TopBar(title = "Cài đặt", onBack = null) {
             // Tab chuyen doi giua Dich vu va Cap nhat
             Row(
                 modifier = Modifier

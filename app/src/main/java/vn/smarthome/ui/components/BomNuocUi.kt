@@ -37,7 +37,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -463,6 +467,11 @@ fun BoChonCheDo(
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
+    val chipAlpha = when {
+        !enabled -> 0.40f
+        loading -> 0.75f
+        else -> 1f
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -473,6 +482,7 @@ fun BoChonCheDo(
                 Modifier
                     .weight(1f)
                     .height(38.dp)
+                    .alpha(chipAlpha)
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (isOn) SH.Blue else SH.Card2)
                     .then(
@@ -491,11 +501,7 @@ fun BoChonCheDo(
                     Text(
                         label,
                         style = SHType.Button,
-                        color = when {
-                            !enabled -> SH.TextOff
-                            isOn -> Color.White
-                            else -> SH.TextDim
-                        },
+                        color = if (isOn) Color.White else SH.TextDim,
                         maxLines = 1,
                     )
                 }
@@ -516,16 +522,25 @@ fun NutHanhDongBom(
     active: Boolean = false,
     height: Dp = Dim.ButtonH,
 ) {
+    val container = if (active) color else color.copy(alpha = 0.90f)
     Button(
         onClick = onClick,
-        modifier = modifier.height(height),
+        modifier = modifier
+            .height(height)
+            .alpha(
+                when {
+                    !enabled -> 0.40f
+                    loading -> 0.75f
+                    else -> 1f
+                }
+            ),
         enabled = enabled && !loading,
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (active) color else color.copy(alpha = 0.90f),
+            containerColor = container,
             contentColor = Color.White,
-            disabledContainerColor = SH.Card2,
-            disabledContentColor = SH.TextOff,
+            disabledContainerColor = container,
+            disabledContentColor = Color.White,
         ),
         contentPadding = PaddingValues(horizontal = 10.dp),
     ) {
@@ -549,6 +564,7 @@ fun CongTacBom(
     enabled: Boolean = true,
     loading: Boolean = false,
     activeColor: Color = SH.Green,
+    contentDescription: String? = null,
 ) {
     val target = if (checked) 1f else 0f
     val t by animateFloatAsState(
@@ -557,18 +573,26 @@ fun CongTacBom(
         label = "congTacBom",
     )
 
-    val track = when {
-        !enabled -> SH.Card2
-        checked -> activeColor
-        else -> SH.Border
-    }
+    val track = if (checked) activeColor else SH.Border
 
     Box(
         modifier
             .size(width = 48.dp, height = 28.dp)
+            .alpha(
+                when {
+                    !enabled -> 0.40f
+                    loading -> 0.75f
+                    else -> 1f
+                }
+            )
             .clip(RoundedCornerShape(14.dp))
             .background(track)
-            .clickable(enabled = enabled && !loading) { onToggle(!checked) },
+            .semantics {
+                if (contentDescription != null) {
+                    this.contentDescription = contentDescription
+                }
+            }
+            .clickable(enabled = enabled && !loading, role = Role.Switch) { onToggle(!checked) },
         contentAlignment = Alignment.CenterStart,
     ) {
         if (loading) {
@@ -582,7 +606,7 @@ fun CongTacBom(
                     .padding(start = 20.dp * t)
                     .size(22.dp)
                     .clip(CircleShape)
-                    .background(if (enabled) Color.White else SH.TextOff)
+                    .background(Color.White)
             )
         }
     }

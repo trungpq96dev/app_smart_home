@@ -12,6 +12,7 @@ import {
   bomApDangChay,
   bomApDangKhoa,
   bomChinhDangChay,
+  bomTrucTuyen,
   bonDay,
   daCauHinhBom,
   dangKhoaBom,
@@ -147,8 +148,8 @@ export type UpdateCheckState =
   | { status: 'available'; release: GithubReleaseInfo }
   | { status: 'error'; message: string };
 
-export const APP_WEB_VERSION = '0.9.1-web';
-export const ANDROID_BASE_VERSION = '0.9.1';
+export const APP_WEB_VERSION = '0.9.2-web';
+export const ANDROID_BASE_VERSION = '0.9.2';
 
 const GIAY_CHO_CUKTECH = 25;
 const GIAY_CHO_NOI_LAI = 90;
@@ -1678,6 +1679,11 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         const s = bomNuocRef.current;
         if (!s) {
           throw new LoiLenh('Chưa nhận được dữ liệu từ bo bơm nước.');
+        }
+        if (!bomTrucTuyen(ketNoiBomRef.current)) {
+          throw new LoiLenh(
+            `Bo bơm nước hiện không trực tuyến (${nhanKetNoiBom(ketNoiBomRef.current, kenhBomRef.current)}).`,
+          );
         }
         switch (thietBi) {
           case CongCuNha.BOM_CHINH: {

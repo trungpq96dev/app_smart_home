@@ -55,7 +55,6 @@ import vn.smarthome.ui.components.EmptyState
 import vn.smarthome.ui.components.IconBadge
 import vn.smarthome.ui.components.SmartCard
 import vn.smarthome.ui.components.StatusPill
-import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.theme.Dim
 import vn.smarthome.ui.theme.SH
 import vn.smarthome.ui.theme.SHType
@@ -89,37 +88,60 @@ fun CamBienScreen(
 
     Column(Modifier.fillMaxSize()) {
 
-        TopBar(title = "", onBack = onBack) {
-            val (chu, mau) = when {
-                !cuktech.coSoThat -> "CHƯA CÓ SỐ" to SH.TextOff
-                dangNoiLai -> "ĐANG NỐI LẠI" to SH.Amber
-                cuktech.matKetNoiThat() -> "MẤT KẾT NỐI" to SH.Red
-                cuktech.coMauThuan() -> "TRẠNG THÁI CŨ" to SH.Amber
-                !cuktech.xacThuc -> "CHƯA XÁC THỰC" to SH.Amber
-                else -> "ĐANG NỐI" to SH.Green
-            }
-            StatusPill(chu, mau)
-            PillSong(cuktech.songTotNhat())
-            cuktech.firmware?.let {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "FW $it",
-                    style = SHType.Caption, color = SH.TextDim,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
+        val (chu, mau) = when {
+            !cuktech.coSoThat -> "CHƯA CÓ SỐ" to SH.TextOff
+            dangNoiLai -> "ĐANG NỐI LẠI" to SH.Amber
+            cuktech.matKetNoiThat() -> "MẤT KẾT NỐI" to SH.Red
+            cuktech.coMauThuan() -> "TRẠNG THÁI CŨ" to SH.Amber
+            !cuktech.xacThuc -> "CHƯA XÁC THỰC" to SH.Amber
+            else -> "ĐANG NỐI" to SH.Green
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            Modifier.fillMaxWidth().height(Dim.HeaderHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBadge(Icons.Filled.Sensors, SH.Cyan, size = 34.dp, iconSize = 19.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Củ sạc CUKTECH 10 Ultra", style = SHType.PageTitle, color = SH.Text, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            cuktech.model?.let {
-                Text(it, style = SHType.Caption, color = SH.TextOff, maxLines = 1)
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBadge(Icons.Filled.Sensors, SH.Cyan, size = 34.dp, iconSize = 19.dp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Củ sạc CUKTECH 10 Ultra",
+                        style = SHType.PageTitle,
+                        color = SH.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    cuktech.model?.let {
+                        Text(
+                            it,
+                            style = SHType.Caption,
+                            color = SH.TextOff,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatusPill(chu, mau)
+                PillSong(cuktech.songTotNhat())
+                cuktech.firmware?.let {
+                    Text(
+                        "FW $it",
+                        style = SHType.Caption,
+                        color = SH.TextDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
 

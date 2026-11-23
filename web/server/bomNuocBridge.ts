@@ -274,6 +274,8 @@ export class BomNuocBridge {
   // CommandBus
   private readonly pendingKhoa = new Set<string>();
   private readonly waiters = new Set<CommandWaiter>();
+  private readonly stateListeners = new Set<(state: BomNuocState) => void>();
+  private readonly linkListeners = new Set<(link: TrangThaiKetNoiBom, kenh: KenhBomNuoc) => void>();
 
   constructor(initialConfig: BomNuocConfig, options: BomNuocBridgeOptions = {}) {
     this.config = initialConfig;
@@ -323,6 +325,20 @@ export class BomNuocBridge {
 
   getKenh(): KenhBomNuoc {
     return this.kenh;
+  }
+
+  onState(cb: (state: BomNuocState) => void): () => void {
+    this.stateListeners.add(cb);
+    return () => {
+      this.stateListeners.delete(cb);
+    };
+  }
+
+  onLink(cb: (link: TrangThaiKetNoiBom, kenh: KenhBomNuoc) => void): () => void {
+    this.linkListeners.add(cb);
+    return () => {
+      this.linkListeners.delete(cb);
+    };
   }
 
   getSnapshot(): BomNuocSnapshot {
@@ -852,6 +868,13 @@ export class BomNuocBridge {
         w.resolve(true);
       }
     }
+    for (const cb of this.stateListeners) {
+      try {
+        cb(s);
+      } catch {
+        // ignore listener error
+      }
+    }
   }
 
   private applyUsage(u: LuongNuocThang[]): void {
@@ -865,6 +888,13 @@ export class BomNuocBridge {
     this.link = next;
     if (prevKey !== nextKey) {
       this.broadcast({ type: 'link', link: next, kenh: this.kenh });
+      for (const cb of this.linkListeners) {
+        try {
+          cb(next, this.kenh);
+        } catch {
+          // ignore listener error
+        }
+      }
     }
   }
 

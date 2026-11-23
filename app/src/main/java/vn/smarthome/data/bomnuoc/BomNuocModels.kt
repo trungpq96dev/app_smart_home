@@ -269,6 +269,7 @@ enum class KenhBomNuoc(val nhanNgan: String) {
 
 sealed interface TrangThaiKetNoiBom {
     val nhan: String
+    val trucTuyen: Boolean get() = this is TrucTiep
 
     data object ChuaCauHinh : TrangThaiKetNoiBom {
         override val nhan = "Chưa cấu hình"
@@ -307,6 +308,9 @@ sealed interface TrangThaiKetNoiBom {
         override val nhan = "Lỗi: ${lyDo.ifBlank { "không nối được" }}"
     }
 }
+
+fun coTheDieuKhienBom(bomNuoc: BomNuocState?, ketNoi: TrangThaiKetNoiBom): Boolean =
+    bomNuoc != null && ketNoi.trucTuyen
 
 sealed interface KetQuaLenhBom {
     data object DaXacNhan : KetQuaLenhBom
