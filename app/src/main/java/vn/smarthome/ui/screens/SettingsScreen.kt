@@ -395,6 +395,7 @@ private fun FormCamera(
 ) {
     var host by remember(cauHinh.host) { mutableStateOf(cauHinh.host) }
     var cong by remember(cauHinh.cong) { mutableStateOf(cauHinh.cong.toString()) }
+    var congGhiHinh by remember(cauHinh.congGhiHinh) { mutableStateOf(cauHinh.congGhiHinh.toString()) }
     var tls by remember(cauHinh.tls) { mutableStateOf(cauHinh.tls) }
     var taiKhoan by remember(cauHinh.taiKhoan) { mutableStateOf(cauHinh.taiKhoan) }
     var matKhau by remember(cauHinh.matKhau) { mutableStateOf(cauHinh.matKhau) }
@@ -402,23 +403,26 @@ private fun FormCamera(
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Text("go2rtc — hình camera", style = SHType.CardTitle, color = SH.Text)
         Text(
-            "Máy chạy go2rtc trong nhà. Camera Tuya không nối thẳng với app.",
+            "Máy chạy go2rtc & đầu ghi 24/24 trong nhà. Camera Tuya không nối thẳng với app.",
             style = SHType.Caption, color = SH.TextDim,
         )
         Spacer(Modifier.height(10.dp))
 
-        O("Địa chỉ máy chạy go2rtc", host, { host = it }, "vd: 192.168.0.105")
+        O("Địa chỉ máy chạy go2rtc", host, { host = it }, "vd: 192.168.0.50")
         Spacer(Modifier.height(8.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.width(110.dp)) {
-                O("Cổng", cong, { cong = it.filter { c -> c.isDigit() }.take(5) }, "1984", soThoi = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.width(86.dp)) {
+                O("Cổng xem", cong, { cong = it.filter { c -> c.isDigit() }.take(5) }, "1984", soThoi = true)
+            }
+            Box(Modifier.width(92.dp)) {
+                O("Cổng ghi", congGhiHinh, { congGhiHinh = it.filter { c -> c.isDigit() }.take(5) }, "1985", soThoi = true)
             }
             CongTac(
                 bat = tls,
                 onDoi = { tls = it },
                 ten = "HTTPS",
-                phu = if (tls) "khi đi qua tailscale" else "http — chỉ trong mạng nhà",
+                phu = if (tls) "tailscale" else "http LAN",
                 modifier = Modifier.weight(1f),
             )
         }
@@ -443,6 +447,7 @@ private fun FormCamera(
                     CauHinhCamera(
                         host = host,
                         cong = cong.toIntOrNull() ?: 1984,
+                        congGhiHinh = congGhiHinh.toIntOrNull() ?: 1985,
                         tls = tls,
                         taiKhoan = taiKhoan,
                         matKhau = matKhau,

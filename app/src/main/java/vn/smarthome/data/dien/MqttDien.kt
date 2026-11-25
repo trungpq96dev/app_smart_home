@@ -17,6 +17,8 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import vn.smarthome.data.camera.CameraRecorderState
+import vn.smarthome.data.camera.CameraTopic
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.congtac.CongTacTopic
 import vn.smarthome.data.congtac.LenhCongTac
@@ -87,6 +89,9 @@ class MqttDien {
 
     private val _cuktech = MutableStateFlow(CuktechState())
     val cuktech: StateFlow<CuktechState> = _cuktech.asStateFlow()
+
+    private val _cameraRec = MutableStateFlow(CameraRecorderState())
+    val cameraRec: StateFlow<CameraRecorderState> = _cameraRec.asStateFlow()
 
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
@@ -172,6 +177,11 @@ class MqttDien {
                     _congTac.update { CongTacState.gop(it, topic, payload) }
                 } else if (topic.startsWith("cuktech/")) {
                     _cuktech.update { CuktechState.gop(it, topic, payload) }
+                } else if (topic.startsWith("camera/")) {
+                    _cameraRec.update { CameraRecorderState.gop(it, topic, payload) }
+                    if (topic == CameraTopic.PERSON && !message.isRetained) {
+                        _pirMotion.tryEmit(System.currentTimeMillis())
+                    }
                 }
             }
 
@@ -219,8 +229,9 @@ class MqttDien {
                                 ". Cần cấp quyền subscribe cho tài khoản này trên Mosquitto."
                         )
                     }
-                    // Dang ky them topic cam bien (best-effort, khong bao loi neu broker siet ACL)
+                    // Dang ky them topic cam bien & dau ghi camera (best-effort, khong bao loi neu broker siet ACL)
                     runCatching { c.subscribe("smarthome/sensor/#", 0) }
+                    runCatching { c.subscribe(CameraTopic.GOC, 1) }
                 }
 
                 override fun onFailure(token: IMqttToken?, e: Throwable?) {
@@ -229,6 +240,32 @@ class MqttDien {
             })
         } catch (e: MqttException) {
             _ketNoi.value = KetNoi.Loi("Không đăng ký được topic: " + (e.message ?: ""))
+        }
+    }
+
+    /** Gui lenh dieu khien dau ghi camera 24/24 (`camera/cmd`). */
+    fun guiLenhCamera(
+        action: String,
+        value: Boolean? = null,
+        camera: String? = null,
+    ): KetQuaGui {
+        val c = client ?: return KetQuaGui.ChuaNoiBroker
+        if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
+        val id = LenhCongTac.maLenh()
+        val json = org.json.JSONObject()
+            .put("action", action)
+            .put("id", id)
+            .apply {
+                if (value != null) put("value", value)
+                if (!camera.isNullOrBlank()) put("camera", camera)
+            }
+            .toString()
+        return try {
+            val msg = MqttMessage(json.toByteArray(Charsets.UTF_8)).apply { qos = 1; isRetained = false }
+            c.publish(CameraTopic.CMD, msg)
+            KetQuaGui.DaGui(id)
+        } catch (e: Exception) {
+            KetQuaGui.Loi(e.message ?: "không gửi được lệnh camera")
         }
     }
 

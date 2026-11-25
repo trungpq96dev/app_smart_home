@@ -1,0 +1,12 @@
+.env
+*.env
+!cau_hinh.mau.env
+rclone.conf
+*.conf
+data/
+*.db
+*.db-shm
+*.db-wal
+*.onnx
+__pycache__/
+*.pyc

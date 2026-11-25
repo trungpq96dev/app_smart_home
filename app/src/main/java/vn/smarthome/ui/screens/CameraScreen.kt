@@ -1,10 +1,12 @@
 package vn.smarthome.ui.screens
 
+import android.graphics.Bitmap
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,39 +23,74 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import vn.smarthome.data.CameraFeed
+import vn.smarthome.data.camera.CameraPlaybackApi
+import vn.smarthome.data.camera.CameraRecorderState
 import vn.smarthome.data.camera.CauHinhCamera
+import vn.smarthome.data.camera.DoanVideo
+import vn.smarthome.data.camera.DongThoiGianNgay
+import vn.smarthome.data.camera.NgayCoVideo
+import vn.smarthome.data.camera.SuKienCamera
 import vn.smarthome.data.camera.TrangThaiCam
+import vn.smarthome.data.camera.dinhDangGioVn
 import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.FlatButton
 import vn.smarthome.ui.components.ImagePlaceholder
 import vn.smarthome.ui.components.LuongCamera
+import vn.smarthome.ui.components.MucZoomTimeline
 import vn.smarthome.ui.components.RoundIconButton
 import vn.smarthome.ui.components.StatusPill
+import vn.smarthome.ui.components.ThanhThoiGianCamera
+import vn.smarthome.ui.components.TrinhPhatXemLai
 import vn.smarthome.ui.shell.TopBar
 import vn.smarthome.ui.shell.rememberCameraStamp
 import vn.smarthome.ui.theme.Dim
@@ -62,17 +99,21 @@ import vn.smarthome.ui.theme.SHType
 import vn.smarthome.ui.theme.SmartHomeTheme
 import vn.smarthome.ui.theme.tint
 import vn.smarthome.vm.HomeState
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.Locale
+
+private val ZONA_VN: ZoneId = ZoneId.of("Asia/Ho_Chi_Minh")
+
+private enum class CheDoManCam { TRUC_TIEP, XEM_LAI }
 
 /**
- * Man camera an ninh.
+ * Man camera an ninh & Dau ghi thong minh 24/24 (Imou / EZVIZ style):
  *
- * Hai che do, tuy theo da khai bao go2rtc chua:
- *
- *  - CHUA khai bao: khung xem la o giu cho, y nhu truoc. Ba nut noi thang
- *    rang chua co camera that thay vi gia vo da chup / da quay.
- *  - DA khai bao: khung xem la luong that tu go2rtc (xem [LuongCamera]).
- *    Camera Tuya khong noi thang voi app - go2rtc dang nhap Tuya, keo hinh
- *    ve, roi phat lai trong mang nha.
+ *  - Che do `Trực tiếp`: xem luong WebRTC tu go2rtc (len hinh tuc thi vi server
+ *    giu san ket noi 24/24), chup anh that va bat/tat AI canh nguoi + Telegram.
+ *  - Che do `Xem lại`: xem lai dong thoi gian 24/24 (Hot Cache 10 GB + Google Drive 5TB),
+ *    keo thuoc thoi gian co vach cam phat hien nguoi, va bam nhay thang toi tung su kien co nguoi.
  */
 @Composable
 fun CameraScreen(
@@ -83,24 +124,33 @@ fun CameraScreen(
     onSelectCamera: (Int) -> Unit,
     onNotice: (String) -> Unit,
     onDoLai: () -> Unit,
+    cameraRecorder: CameraRecorderState = CameraRecorderState(),
+    dangChupAnh: Boolean = false,
+    onChupAnh: (String) -> Unit = {},
+    onDatCanhNguoi: (Boolean) -> Unit = {},
 ) {
     val cam = state.cameras.getOrNull(state.selectedCamera) ?: state.cameras.firstOrNull()
     val stamp = rememberCameraStamp()
     val luongThat = cam?.luong?.takeIf { cauHinhCamera.dayDu() }
 
-    // Tang len mot la khung hinh duoc dung lai tu dau. Re hon nhieu so voi
-    // tat mo lai app khi luong treo.
     var lanTai by remember { mutableIntStateOf(0) }
+    var cheDo by rememberSaveable { mutableStateOf(CheDoManCam.TRUC_TIEP) }
 
     Column(Modifier.fillMaxSize()) {
 
         TopBar(title = "Camera an ninh", onBack = null) {
-            TrangThaiCameraPill(trangThaiCam)
+            // Cong tac chuyen nhanh Trực tiếp | Xem lại
+            NutChuyenCheDoCam(
+                cheDo = cheDo,
+                onChon = { cheDo = it },
+            )
             Spacer(Modifier.width(8.dp))
+            Rec247StatusPill(cameraRecorder, luongThat, trangThaiCam)
+            Spacer(Modifier.width(6.dp))
             RoundIconButton(Icons.Filled.Refresh, { onDoLai(); lanTai++ })
             RoundIconButton(
                 Icons.Filled.Settings,
-                { onNotice("Khai báo go2rtc ở màn Cài đặt.") },
+                { onNotice("Khai báo go2rtc và cổng đầu ghi ở màn Cài đặt.") },
             )
         }
 
@@ -108,100 +158,540 @@ fun CameraScreen(
             Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
         ) {
-            // ---------- Danh sach camera ----------
+            // ---------- Cot trai: Danh sach camera + Thong ke dau ghi 24/24 ----------
             Column(
-                Modifier.width(168.dp).fillMaxHeight(),
+                Modifier.width(158.dp).fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (state.cameras.isEmpty()) {
                     KhongCoCamera(trangThaiCam, Modifier.fillMaxWidth())
                 } else {
-                    // Chieu cao co dinh 62dp cho tung dong - de weight(1f) thi
-                    // mot camera se keo cao het cot, nhin khong giong thiet ke.
                     state.cameras.forEachIndexed { i, c ->
                         CameraRow(
                             feed = c,
                             selected = i == state.selectedCamera,
+                            dangGhi = cameraRecorder.camDangGhi(c.luong),
                             onClick = { onSelectCamera(i) },
-                            modifier = Modifier.fillMaxWidth().height(62.dp),
+                            modifier = Modifier.fillMaxWidth().height(58.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                TheThongKeDauGhi(
+                    rec = cameraRecorder,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // ---------- Vung chinh ben phai ----------
+            if (cheDo == CheDoManCam.TRUC_TIEP) {
+                KhungCheDoTrucTiep(
+                    cam = cam,
+                    luongThat = luongThat,
+                    cauHinhCamera = cauHinhCamera,
+                    trangThaiCam = trangThaiCam,
+                    cameraRecorder = cameraRecorder,
+                    stamp = stamp,
+                    lanTai = lanTai,
+                    dangChupAnh = dangChupAnh,
+                    onTaiLai = { lanTai++ },
+                    onChupAnh = {
+                        if (luongThat != null) onChupAnh(luongThat)
+                        else onNotice(CHUA_NOI)
+                    },
+                    onDaoCanhNguoi = {
+                        val hienTai = cameraRecorder.detectPersonEnabled ?: true
+                        onDatCanhNguoi(!hienTai)
+                    },
+                    onMoXemLai = { cheDo = CheDoManCam.XEM_LAI },
+                    onNotice = onNotice,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            } else {
+                KhungCheDoXemLai(
+                    tenCamHienThi = cam?.name ?: "Camera",
+                    luongThat = luongThat,
+                    cauHinhCamera = cauHinhCamera,
+                    cameraRecorder = cameraRecorder,
+                    lanTai = lanTai,
+                    onNotice = onNotice,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            }
+        }
+    }
+}
+
+private const val CHUA_NOI =
+    "Chưa khai báo go2rtc — vào màn Cài đặt điền địa chỉ máy chạy go2rtc."
+
+// ============================================================ CHE DO TRUC TIEP
+
+@Composable
+private fun KhungCheDoTrucTiep(
+    cam: CameraFeed?,
+    luongThat: String?,
+    cauHinhCamera: CauHinhCamera,
+    trangThaiCam: TrangThaiCam,
+    cameraRecorder: CameraRecorderState,
+    stamp: String,
+    lanTai: Int,
+    dangChupAnh: Boolean,
+    onTaiLai: () -> Unit,
+    onChupAnh: () -> Unit,
+    onDaoCanhNguoi: () -> Unit,
+    onMoXemLai: () -> Unit,
+    onNotice: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dangCanhNguoi = cameraRecorder.detectPersonEnabled
+    val nhanCanhNguoi = when (dangCanhNguoi) {
+        true -> "Canh người: Bật"
+        false -> "Canh người: Tắt"
+        null -> "Canh người"
+    }
+
+    Column(modifier) {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            if (luongThat != null) {
+                key(luongThat, lanTai) {
+                    LuongCamera(
+                        url = cauHinhCamera.urlTrangPhat(luongThat),
+                        taiKhoan = cauHinhCamera.taiKhoan,
+                        matKhau = cauHinhCamera.matKhau,
+                        onLoi = onNotice,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(Dim.CardRadius)),
+                    )
+                }
+                val phuText = buildString {
+                    append("go2rtc · ").append(cauHinhCamera.host)
+                    if (cameraRecorder.camDangGhi(luongThat)) {
+                        append(" · Đang ghi 24/24 lên Drive")
+                    }
+                }
+                PhuDe(
+                    ten = cam?.name ?: luongThat,
+                    phu = phuText,
+                    stamp = stamp,
+                    trucTiep = true,
+                    suKienGanNhat = cameraRecorder.nguoiGanNhat
+                        ?.takeIf { it.camera == luongThat }
+                        ?.let { "Người gần nhất: ${it.thoiGian.takeLast(8)}" },
+                )
+            } else if (cam != null) {
+                ImagePlaceholder(
+                    icon = cam.icon,
+                    label = cam.name,
+                    accent = cam.accent,
+                    iconSize = 54.dp,
+                    cornerRadius = Dim.CardRadius,
+                    showLabel = false,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    PhuDe(
+                        ten = cam.name,
+                        phu = "chưa nối luồng hình",
+                        stamp = stamp,
+                        trucTiep = false,
+                    )
+                }
+            } else {
+                KhungTrong(trangThaiCam, Modifier.fillMaxSize())
+            }
+        }
+
+        Spacer(Modifier.height(Dim.CardGap))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FlatButton(
+                Icons.Filled.PhotoCamera,
+                if (dangChupAnh) "Đang chụp..." else "Chụp ảnh",
+                onChupAnh,
+                Modifier.weight(1f),
+            )
+            FlatButton(
+                if (dangCanhNguoi == false) Icons.Filled.NotificationsOff else Icons.Filled.NotificationsActive,
+                nhanCanhNguoi,
+                onDaoCanhNguoi,
+                Modifier.weight(1f),
+            )
+            FlatButton(
+                Icons.Filled.History,
+                "Xem lại 24/24",
+                onMoXemLai,
+                Modifier.weight(1f),
+            )
+            FlatButton(
+                Icons.Filled.Refresh,
+                "Tải lại hình",
+                onTaiLai,
+                Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+// ============================================================ CHE DO XEM LAI (IMOU / EZVIZ)
+
+@Composable
+private fun KhungCheDoXemLai(
+    tenCamHienThi: String,
+    luongThat: String?,
+    cauHinhCamera: CauHinhCamera,
+    cameraRecorder: CameraRecorderState,
+    lanTai: Int,
+    onNotice: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val congApi = cameraRecorder.apiPort
+    val homNayStr = remember { LocalDate.now(ZONA_VN).toString() }
+
+    var ngayChon by rememberSaveable(luongThat) { mutableStateOf(homNayStr) }
+    var dsNgay by remember(luongThat) { mutableStateOf<List<NgayCoVideo>>(emptyList()) }
+    var timeline by remember(luongThat, ngayChon) { mutableStateOf<DongThoiGianNgay?>(null) }
+    var dangTaiTl by remember(luongThat, ngayChon) { mutableStateOf(false) }
+    var loiTl by remember(luongThat, ngayChon) { mutableStateOf<String?>(null) }
+    var nhipTaiLai by remember { mutableIntStateOf(0) }
+
+    var doanDangPhat by remember(luongThat, ngayChon) { mutableStateOf<DoanVideo?>(null) }
+    var seekOffsetMs by remember { mutableLongStateOf(0L) }
+    var seekVersion by remember { mutableIntStateOf(0) }
+    var currentTs by remember(luongThat, ngayChon) { mutableLongStateOf(0L) }
+
+    var dangPhat by remember { mutableStateOf(true) }
+    var tocDo by remember { mutableFloatStateOf(1.0f) }
+    var zoom by remember { mutableStateOf(MucZoomTimeline.GIO_6) }
+    var chiTuaNguoi by remember { mutableStateOf(false) }
+
+    fun nhayToiMoc(tl: DongThoiGianNgay, dichTs: Long) {
+        val viTri = tl.timViTriPhat(dichTs)
+        if (viTri == null) {
+            onNotice("Chưa có đoạn ghi hình nào tại mốc này.")
+            return
+        }
+        currentTs = viTri.targetEpochSec
+        seekOffsetMs = viTri.offsetMs
+        if (doanDangPhat?.id != viTri.segment.id) {
+            doanDangPhat = viTri.segment
+        }
+        seekVersion++
+        dangPhat = true
+    }
+
+    // Tai danh sach ngay + dong thoi gian tu serverubuntu
+    LaunchedEffect(luongThat, ngayChon, lanTai, nhipTaiLai, congApi) {
+        if (luongThat == null) {
+            timeline = null
+            loiTl = CHUA_NOI
+            return@LaunchedEffect
+        }
+        dangTaiTl = true
+        loiTl = null
+
+        CameraPlaybackApi.danhSachNgay(cauHinhCamera, luongThat, congApi)
+            .onSuccess { dsNgay = it }
+
+        CameraPlaybackApi.taiDongThoiGian(cauHinhCamera, luongThat, ngayChon, congApi)
+            .onSuccess { tl ->
+                timeline = tl
+                if (tl.segments.isNotEmpty()) {
+                    // Mac dinh mo su kien nguoi moi nhat, neu khong co thi mo doan ghi moi nhat
+                    val suKienCuoi = tl.suKienNguoi.lastOrNull()
+                    val mocMoDau = suKienCuoi?.let { tl.mocNhaySuKien(it) }
+                        ?: maxOf(tl.segments.last().startTs, tl.segments.last().endTs - 30L)
+                    if (doanDangPhat == null) {
+                        nhayToiMoc(tl, mocMoDau)
+                    }
+                } else {
+                    doanDangPhat = null
+                    currentTs = tl.dayStartTs + 12 * 3600L
+                }
+            }
+            .onFailure { e ->
+                timeline = null
+                doanDangPhat = null
+                loiTl = CameraPlaybackApi.dienGiaiLoi(e, congApi ?: cauHinhCamera.congGhiHinh)
+            }
+        dangTaiTl = false
+    }
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+    ) {
+        // ---------- Cot giua: Thanh chon ngay + Video MP4 + Dieu khien + Timeline ----------
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            // 1. Thanh chon ngay & muc zoom Timeline
+            ThanhChonNgayVaZoom(
+                ngayChon = ngayChon,
+                homNay = homNayStr,
+                dsNgay = dsNgay,
+                zoom = zoom,
+                onDoiNgay = { ngayMoi ->
+                    doanDangPhat = null
+                    ngayChon = ngayMoi
+                },
+                onDoiZoom = { zoom = it },
+                onLamMoi = { nhipTaiLai++ },
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            // 2. Khung phat video MP4
+            val seg = doanDangPhat
+            val tl = timeline
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(Dim.CardRadius))
+                    .background(SH.Card)
+                    .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(Dim.CardRadius))
+            ) {
+                when {
+                    dangTaiTl && tl == null -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = SH.Blue, modifier = Modifier.size(28.dp))
+                        }
+                    }
+
+                    loiTl != null -> {
+                        KhungThongBaoXemLai(
+                            tieuDe = "Chưa tải được lịch sử ghi hình",
+                            chiTiet = loiTl ?: "",
+                        )
+                    }
+
+                    tl == null || tl.segments.isEmpty() || seg == null -> {
+                        KhungThongBaoXemLai(
+                            tieuDe = "Chưa có video ngày $ngayChon",
+                            chiTiet = "Đầu ghi trên serverubuntu tự lưu 24/24 theo từng đoạn 10 phút — đoạn đầu tiên sẽ xuất hiện ngay khi chốt xong.",
+                        )
+                    }
+
+                    else -> {
+                        TrinhPhatXemLai(
+                            url = cauHinhCamera.urlVideoSegment(seg.id, congApi),
+                            headers = cauHinhCamera.headerBasicAuth(),
+                            seekOffsetMs = seekOffsetMs,
+                            seekVersion = seekVersion,
+                            dangPhat = dangPhat,
+                            tocDo = tocDo,
+                            laTuDrive = !seg.laCucBo,
+                            onTienTrinh = { posMs ->
+                                val mocMoi = seg.startTs + posMs / 1000L
+                                currentTs = mocMoi
+                                // Neu bat che do "Chi tua moc co nguoi": het vung co nguoi thi nhay sang su kien tiep!
+                                if (chiTuaNguoi) {
+                                    val dangTrongSuKien = tl.suKienNguoi.any {
+                                        mocMoi >= (it.startTs - 4L) && mocMoi <= (it.endTs + 3L)
+                                    }
+                                    if (!dangTrongSuKien) {
+                                        tl.suKienNguoiTiep(mocMoi)?.let { ke ->
+                                            nhayToiMoc(tl, tl.mocNhaySuKien(ke))
+                                        }
+                                    }
+                                }
+                            },
+                            onHetDoan = {
+                                val tiep = tl.doanTiepTheo(seg.id)
+                                if (tiep != null) {
+                                    seekOffsetMs = 0L
+                                    currentTs = tiep.startTs
+                                    doanDangPhat = tiep
+                                    seekVersion++
+                                } else {
+                                    dangPhat = false
+                                }
+                            },
+                            onLoi = onNotice,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        // Nhan goc tren trai: Xem lai + Nguon luu tru (Hot Cache 10GB vs Google Drive 5TB)
+                        Row(
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            StatusPill(
+                                text = "Xem lại · ${dinhDangGioVn(currentTs)}",
+                                color = SH.Amber,
+                            )
+                            StatusPill(
+                                text = if (seg.laCucBo) "Bộ đệm 10GB" else "Google Drive 5TB",
+                                color = if (seg.laCucBo) SH.Green else SH.Blue,
+                                showDot = false,
+                            )
+                        }
+
+                        Text(
+                            "$tenCamHienThi · $ngayChon",
+                            style = SHType.Caption,
+                            color = SH.TextDim,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(SH.Bg.copy(alpha = 0.7f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
                         )
                     }
                 }
             }
 
-            // ---------- Khung xem ----------
-            Column(Modifier.weight(1f).fillMaxHeight()) {
+            Spacer(Modifier.height(6.dp))
 
-                Box(Modifier.fillMaxWidth().weight(1f)) {
-                    if (luongThat != null) {
-                        // key(): doi camera hoac bam Tai lai thi dung khung moi
-                        // han, khong co gang tai su dung WebView cu - WebRTC
-                        // doi nguon giua chung hay treo o khung den.
-                        key(luongThat, lanTai) {
-                            LuongCamera(
-                                url = cauHinhCamera.urlTrangPhat(luongThat),
-                                taiKhoan = cauHinhCamera.taiKhoan,
-                                matKhau = cauHinhCamera.matKhau,
-                                onLoi = onNotice,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(Dim.CardRadius)),
-                            )
-                        }
-                        PhuDe(
-                            ten = cam?.name ?: luongThat,
-                            phu = "go2rtc · " + cauHinhCamera.host,
-                            stamp = stamp,
-                            trucTiep = true,
-                        )
-                    } else if (cam != null) {
-                        ImagePlaceholder(
-                            icon = cam.icon,
-                            label = cam.name,
-                            accent = cam.accent,
-                            iconSize = 54.dp,
-                            cornerRadius = Dim.CardRadius,
-                            // Ten camera da nam o goc duoi trai roi - bat
-                            // showLabel nua thi ten hien hai lan tren cung
-                            // mot khung.
-                            showLabel = false,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            // trucTiep = false: o giu cho thi KHONG duoc deo
-                            // huy hieu "Truc tiep". Khong co hinh nao dang
-                            // chay ca - deo vao la noi doi ngay tren man hinh.
-                            PhuDe(
-                                ten = cam.name,
-                                phu = "chưa nối luồng hình",
-                                stamp = stamp,
-                                trucTiep = false,
-                            )
-                        }
-                    } else {
-                        KhungTrong(trangThaiCam, Modifier.fillMaxSize())
+            // 3. Hang nut dieu khien tua video + nhay su kien nguoi + toc do 1x/2x/4x
+            ThanhDieuKhienXemLai(
+                dangPhat = dangPhat,
+                tocDo = tocDo,
+                chiTuaNguoi = chiTuaNguoi,
+                coDuLieu = timeline?.segments?.isNotEmpty() == true,
+                onPlayPause = { dangPhat = !dangPhat },
+                onLui10s = { timeline?.let { nhayToiMoc(it, currentTs - 10L) } },
+                onTien10s = { timeline?.let { nhayToiMoc(it, currentTs + 10L) } },
+                onNguoiTruoc = {
+                    val t = timeline ?: return@ThanhDieuKhienXemLai
+                    val ev = t.suKienNguoiTruoc(currentTs)
+                    if (ev != null) nhayToiMoc(t, t.mocNhaySuKien(ev))
+                    else onNotice("Không còn sự kiện có người nào trước mốc này trong ngày.")
+                },
+                onNguoiTiep = {
+                    val t = timeline ?: return@ThanhDieuKhienXemLai
+                    val ev = t.suKienNguoiTiep(currentTs)
+                    if (ev != null) nhayToiMoc(t, t.mocNhaySuKien(ev))
+                    else onNotice("Đã ở sự kiện có người cuối cùng trong ngày.")
+                },
+                onDoiTocDo = {
+                    tocDo = when (tocDo) {
+                        1.0f -> 2.0f
+                        2.0f -> 4.0f
+                        else -> 1.0f
                     }
+                },
+                onDaoChiTuaNguoi = { chiTuaNguoi = !chiTuaNguoi },
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            // 4. Thanh thuoc dong thoi gian 24/24 keo muot bang ngon tay
+            val dayStart = timeline?.dayStartTs ?: 0L
+            val dayEnd = timeline?.dayEndTs ?: 86_400L
+            ThanhThoiGianCamera(
+                dayStartTs = dayStart,
+                dayEndTs = dayEnd,
+                currentTs = currentTs.takeIf { it > 0L } ?: (dayStart + 43_200L),
+                zoom = zoom,
+                segments = timeline?.segments.orEmpty(),
+                events = timeline?.events.orEmpty(),
+                onChonMoc = { moc -> timeline?.let { nhayToiMoc(it, moc) } },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+            )
+        }
+
+        // ---------- Cot phai: Danh sach su kien "Phat hien nguoi" kem thumbnail ----------
+        CotSuKienNguoi(
+            suKienNguoi = timeline?.suKienNguoi.orEmpty(),
+            currentTs = currentTs,
+            cauHinhCamera = cauHinhCamera,
+            congApi = congApi,
+            onChonSuKien = { ev ->
+                timeline?.let { tl -> nhayToiMoc(tl, tl.mocNhaySuKien(ev)) }
+            },
+            modifier = Modifier.width(214.dp).fillMaxHeight(),
+        )
+    }
+}
+
+@Composable
+private fun ThanhChonNgayVaZoom(
+    ngayChon: String,
+    homNay: String,
+    dsNgay: List<NgayCoVideo>,
+    zoom: MucZoomTimeline,
+    onDoiNgay: (String) -> Unit,
+    onDoiZoom: (MucZoomTimeline) -> Unit,
+    onLamMoi: () -> Unit,
+) {
+    val ngayParsed = remember(ngayChon) { runCatching { LocalDate.parse(ngayChon) }.getOrNull() }
+    val coNguoiHomDo = dsNgay.firstOrNull { it.ngay == ngayChon }?.soSuKienNguoi ?: 0
+
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        // Cụm lịch ngày bên trái
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            NutNho(Icons.Filled.ChevronLeft, "Ngày trước") {
+                ngayParsed?.minusDays(1)?.toString()?.let(onDoiNgay)
+            }
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SH.Card)
+                    .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(8.dp))
+                    .clickable { onDoiNgay(homNay) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    if (ngayChon == homNay) "Hôm nay ($ngayChon)" else ngayChon,
+                    style = SHType.Label,
+                    color = SH.Text,
+                )
+                if (coNguoiHomDo > 0) {
+                    Dot(SH.Orange, 6.dp)
+                    Text("$coNguoiHomDo", style = SHType.Caption, color = SH.Orange)
                 }
+            }
+            NutNho(
+                icon = Icons.Filled.ChevronRight,
+                moTa = "Ngày sau",
+                bat = ngayChon < homNay,
+            ) {
+                ngayParsed?.plusDays(1)?.toString()?.takeIf { it <= homNay }?.let(onDoiNgay)
+            }
+            NutNho(Icons.Filled.Refresh, "Làm mới dòng thời gian", onClick = onLamMoi)
+        }
 
-                Spacer(Modifier.height(Dim.CardGap))
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // Cụm chọn mức phóng to thước thời gian (24h / 6h / 1h)
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(SH.Card)
+                .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(8.dp))
+                .padding(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            MucZoomTimeline.entries.forEach { muc ->
+                val chon = muc == zoom
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (chon) SH.Blue else Color.Transparent)
+                        .clickable { onDoiZoom(muc) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
-                    FlatButton(
-                        Icons.Filled.PhotoCamera, "Chụp ảnh",
-                        { onNotice(if (luongThat != null) CAN_FFMPEG else CHUA_NOI) },
-                        Modifier.weight(1f),
-                    )
-                    FlatButton(
-                        Icons.Filled.Videocam, "Quay video",
-                        { onNotice(if (luongThat != null) CHUA_LAM_QUAY else CHUA_NOI) },
-                        Modifier.weight(1f),
-                    )
-                    FlatButton(
-                        Icons.Filled.Refresh, "Tải lại hình",
-                        { lanTai++ },
-                        Modifier.weight(1f),
+                    Text(
+                        muc.nhan,
+                        style = SHType.Caption,
+                        color = if (chon) Color.White else SH.TextDim,
+                        fontWeight = if (chon) FontWeight.Bold else FontWeight.Normal,
                     )
                 }
             }
@@ -209,14 +699,397 @@ fun CameraScreen(
     }
 }
 
-private const val CHUA_NOI =
-    "Chưa khai báo go2rtc - vào màn Cài đặt điền địa chỉ máy chạy go2rtc."
+@Composable
+private fun ThanhDieuKhienXemLai(
+    dangPhat: Boolean,
+    tocDo: Float,
+    chiTuaNguoi: Boolean,
+    coDuLieu: Boolean,
+    onPlayPause: () -> Unit,
+    onLui10s: () -> Unit,
+    onTien10s: () -> Unit,
+    onNguoiTruoc: () -> Unit,
+    onNguoiTiep: () -> Unit,
+    onDoiTocDo: () -> Unit,
+    onDaoChiTuaNguoi: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            NutNho(Icons.Filled.SkipPrevious, "Sự kiện người trước", bat = coDuLieu, onClick = onNguoiTruoc)
+            NutNho(Icons.Filled.FastRewind, "Lùi 10 giây", bat = coDuLieu, onClick = onLui10s)
+            NutNho(
+                icon = if (dangPhat) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                moTa = if (dangPhat) "Tạm dừng" else "Phát",
+                bat = coDuLieu,
+                noiBat = coDuLieu,
+                onClick = onPlayPause,
+            )
+            NutNho(Icons.Filled.FastForward, "Tiến 10 giây", bat = coDuLieu, onClick = onTien10s)
+            NutNho(Icons.Filled.SkipNext, "Sự kiện người tiếp", bat = coDuLieu, onClick = onNguoiTiep)
+        }
 
-private const val CAN_FFMPEG =
-    "Ảnh tĩnh cần ffmpeg trên máy chạy go2rtc. Hình trực tiếp thì không cần, " +
-        "nên khung hình vẫn chạy bình thường."
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Chip tốc độ 1x / 2x / 4x
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(SH.Card)
+                    .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(7.dp))
+                    .clickable(enabled = coDuLieu, onClick = onDoiTocDo)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    "${tocDo.toInt()}x",
+                    style = SHType.Label,
+                    color = if (tocDo > 1f) SH.Amber else SH.Text,
+                )
+            }
 
-private const val CHUA_LAM_QUAY = "Quay video chưa làm."
+            // Công tắc tự nhảy qua khoảng trống không có người
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (chiTuaNguoi) SH.Orange.tint(0.18f) else SH.Card)
+                    .border(
+                        Dim.BorderWidth,
+                        if (chiTuaNguoi) SH.Orange else SH.Border,
+                        RoundedCornerShape(7.dp),
+                    )
+                    .clickable(onClick = onDaoChiTuaNguoi)
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.DirectionsWalk,
+                    contentDescription = null,
+                    tint = if (chiTuaNguoi) SH.Orange else SH.TextDim,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    "Chỉ mốc người",
+                    style = SHType.Caption,
+                    color = if (chiTuaNguoi) SH.Orange else SH.TextDim,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CotSuKienNguoi(
+    suKienNguoi: List<SuKienCamera>,
+    currentTs: Long,
+    cauHinhCamera: CauHinhCamera,
+    congApi: Int?,
+    onChonSuKien: (SuKienCamera) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(Dim.CardRadius))
+            .background(SH.Card)
+            .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(Dim.CardRadius))
+            .padding(10.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.DirectionsWalk,
+                    contentDescription = null,
+                    tint = SH.Orange,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text("Có người", style = SHType.CardTitle, color = SH.Text)
+            }
+            Text(
+                "${suKienNguoi.size} mốc",
+                style = SHType.Caption,
+                color = SH.Orange,
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        if (suKienNguoi.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Chưa ghi nhận người nào trong ngày này.",
+                    style = SHType.Caption,
+                    color = SH.TextOff,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+        } else {
+            val daoNguoc = remember(suKienNguoi) { suKienNguoi.asReversed() }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                items(daoNguoc, key = { it.id }) { ev ->
+                    val dangXem = currentTs >= (ev.startTs - 4L) && currentTs <= (ev.endTs + 2L)
+                    TheSuKienNguoi(
+                        ev = ev,
+                        dangXem = dangXem,
+                        cauHinhCamera = cauHinhCamera,
+                        congApi = congApi,
+                        onClick = { onChonSuKien(ev) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TheSuKienNguoi(
+    ev: SuKienCamera,
+    dangXem: Boolean,
+    cauHinhCamera: CauHinhCamera,
+    congApi: Int?,
+    onClick: () -> Unit,
+) {
+    var bmp by remember(ev.id) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(ev.id, ev.hasThumb) {
+        if (ev.hasThumb) {
+            bmp = CameraPlaybackApi.taiThumbnail(cauHinhCamera, ev.id, congApi)
+        }
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (dangXem) SH.Orange.tint(0.16f) else SH.Card2)
+            .border(
+                Dim.BorderWidth,
+                if (dangXem) SH.Orange else SH.Border,
+                RoundedCornerShape(9.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .size(width = 64.dp, height = 40.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(SH.Bg),
+            contentAlignment = Alignment.Center,
+        ) {
+            val hinh = bmp
+            if (hinh != null) {
+                Image(
+                    bitmap = hinh.asImageBitmap(),
+                    contentDescription = "Ảnh phát hiện người",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    Icons.AutoMirrored.Filled.DirectionsWalk,
+                    contentDescription = null,
+                    tint = SH.Orange,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                ev.gioBatDau(),
+                style = SHType.BodyMed,
+                color = if (dangXem) SH.Orange else SH.Text,
+                maxLines = 1,
+            )
+            Text(
+                "${ev.personCount} người · ${ev.thoiLuongGiay}s · ${(ev.maxConf * 100).toInt()}%",
+                style = SHType.Caption,
+                color = SH.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ============================================================ THANH PHAN PHU
+
+@Composable
+private fun NutChuyenCheDoCam(
+    cheDo: CheDoManCam,
+    onChon: (CheDoManCam) -> Unit,
+) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(SH.Bg)
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        NutTabNho("Trực tiếp", cheDo == CheDoManCam.TRUC_TIEP) { onChon(CheDoManCam.TRUC_TIEP) }
+        NutTabNho("Xem lại", cheDo == CheDoManCam.XEM_LAI) { onChon(CheDoManCam.XEM_LAI) }
+    }
+}
+
+@Composable
+private fun NutTabNho(nhan: String, chon: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (chon) SH.Blue else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        Text(
+            nhan,
+            style = SHType.Caption,
+            color = if (chon) Color.White else SH.TextDim,
+            fontWeight = if (chon) FontWeight.Bold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+private fun NutNho(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    moTa: String,
+    bat: Boolean = true,
+    noiBat: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (noiBat) SH.Blue else SH.Card)
+            .border(Dim.BorderWidth, if (noiBat) SH.Blue else SH.Border, RoundedCornerShape(7.dp))
+            .alpha(if (bat) 1f else 0.4f)
+            .clickable(enabled = bat, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = moTa,
+            tint = if (noiBat) Color.White else SH.Text,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun TheThongKeDauGhi(
+    rec: CameraRecorderState,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(11.dp))
+            .background(SH.Card)
+            .border(Dim.BorderWidth, SH.Border, RoundedCornerShape(11.dp))
+            .padding(9.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                if (rec.driveEnabled) Icons.Filled.CloudDone else Icons.Filled.Storage,
+                contentDescription = null,
+                tint = if (rec.dangSong) SH.Green else SH.TextOff,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                "Đầu ghi 24/24",
+                style = SHType.Label,
+                color = SH.Text,
+                maxLines = 1,
+            )
+        }
+
+        if (rec.online == null) {
+            Text(
+                "Chưa nhận MQTT camera/#",
+                style = SHType.Caption,
+                color = SH.TextOff,
+            )
+        } else if (!rec.dangSong) {
+            Text(
+                "Đầu ghi đang tắt (offline)",
+                style = SHType.Caption,
+                color = SH.Red,
+            )
+        } else {
+            val cacheStr = String.format(Locale.US, "%.1f/%.0f GB", rec.cacheUsedGb, rec.cacheMaxGb)
+            Text("Đệm: $cacheStr", style = SHType.Caption, color = SH.TextDim, maxLines = 1)
+            Text(
+                "Drive hôm nay: ${rec.uploadedToday} đoạn",
+                style = SHType.Caption,
+                color = SH.TextDim,
+                maxLines = 1,
+            )
+            Text(
+                "Người hôm nay: ${rec.personToday} lần",
+                style = SHType.Caption,
+                color = if (rec.personToday > 0) SH.Orange else SH.TextDim,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Rec247StatusPill(
+    rec: CameraRecorderState,
+    luongDangChon: String?,
+    trangThaiCam: TrangThaiCam,
+) {
+    when {
+        rec.camDangGhi(luongDangChon) -> StatusPill("REC 24/24 · Drive", SH.Green)
+        rec.online == false -> StatusPill("Đầu ghi tắt", SH.Red)
+        else -> TrangThaiCameraPill(trangThaiCam)
+    }
+}
+
+@Composable
+private fun KhungThongBaoXemLai(tieuDe: String, chiTiet: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 28.dp),
+        ) {
+            Icon(
+                Icons.Filled.History,
+                contentDescription = null,
+                tint = SH.TextOff,
+                modifier = Modifier.size(30.dp),
+            )
+            Text(tieuDe, style = SHType.CardTitle, color = SH.TextDim, textAlign = TextAlign.Center)
+            Text(chiTiet, style = SHType.Caption, color = SH.TextOff, textAlign = TextAlign.Center)
+        }
+    }
+}
 
 /** Lop chu de len khung hinh: huy hieu Truc tiep, gio, ten camera. */
 @Composable
@@ -225,6 +1098,7 @@ private fun BoxScope.PhuDe(
     phu: String,
     stamp: String,
     trucTiep: Boolean,
+    suKienGanNhat: String? = null,
 ) {
     if (trucTiep) {
         LiveBadge(Modifier.align(Alignment.TopStart).padding(10.dp))
@@ -241,6 +1115,20 @@ private fun BoxScope.PhuDe(
             .background(SH.Bg.copy(alpha = 0.72f))
             .padding(horizontal = 7.dp, vertical = 3.dp),
     )
+    if (suKienGanNhat != null) {
+        Text(
+            suKienGanNhat,
+            style = SHType.Caption,
+            color = SH.Orange,
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(10.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(SH.Bg.copy(alpha = 0.75f))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+    }
     Column(
         Modifier
             .align(Alignment.BottomStart)
@@ -323,6 +1211,7 @@ private fun KhongCoCamera(trangThai: TrangThaiCam, modifier: Modifier = Modifier
 private fun CameraRow(
     feed: CameraFeed,
     selected: Boolean,
+    dangGhi: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -344,18 +1233,23 @@ private fun CameraRow(
             label = feed.name,
             accent = feed.accent,
             showLabel = false,
-            iconSize = 17.dp,
+            iconSize = 16.dp,
             cornerRadius = 8.dp,
-            modifier = Modifier.size(width = 46.dp, height = 34.dp),
+            modifier = Modifier.size(width = 40.dp, height = 32.dp),
         )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            feed.name,
-            style = SHType.BodyMed,
-            color = if (selected) SH.Text else SH.TextDim,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Spacer(Modifier.width(7.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                feed.name,
+                style = SHType.BodyMed,
+                color = if (selected) SH.Text else SH.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (dangGhi) {
+                Text("● 24/24", style = SHType.Caption, color = SH.Green, maxLines = 1)
+            }
+        }
     }
 }
 
@@ -392,7 +1286,7 @@ fun TrangThaiCameraPill(trangThai: TrangThaiCam) {
     }
 }
 
-@Preview(widthDp = 705, heightDp = 509, showBackground = true)
+@Preview(widthDp = 818, heightDp = 577, showBackground = true)
 @Composable
 private fun CameraPreview() {
     SmartHomeTheme {

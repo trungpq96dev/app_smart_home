@@ -1,0 +1,31 @@
+name: camera-recorder
+
+services:
+  camera-recorder:
+    build: .
+    image: smarthome-camera-recorder:1.0
+    container_name: camera-recorder
+    restart: unless-stopped
+    network_mode: host
+
+    env_file:
+      - .env
+
+    volumes:
+      # Hot Cache 10 GB + chỉ mục SQLite + thumbnail sự kiện người + model ONNX
+      - ./data:/data
+      # Chứa rclone.conf (chmod 600) — rclone có thể cập nhật refresh_token tại chỗ
+      - ./rclone.conf:/config/rclone.conf
+
+    # Giới hạn tài nguyên để AI không bao giờ chiếm hết CPU/RAM của serverubuntu
+    mem_limit: 768m
+    cpus: 1.5
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

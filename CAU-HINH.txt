@@ -164,6 +164,14 @@ Tắt tiếng camera: thêm &media=video vào CauHinhCamera.urlTrangPhat()
 
 File mã nguồn: app/src/main/java/vn/smarthome/data/camera/CauHinhCamera.kt
 
+--- Đầu ghi 24/24 + AI Phát hiện người (scripts/camera_recorder/) ---
+Cổng HTTP Playback  1985  (dùng chung tài khoản/mật khẩu Basic Auth của go2rtc)
+Hot Cache cục bộ    10 GB trên ổ serverubuntu (/data/hot, tự dọn file cũ đã đẩy)
+Kho lưu trữ dài hạn Google Drive 5TB cá nhân qua rclone (rclone.conf chmod 600)
+AI nhận diện người  2 tầng nhẹ trên CPU (Motion Gate -> YOLOv8n ONNX) + Telegram
+MQTT nhánh          camera/trangthai, camera/state, camera/person, camera/cmd
+Hướng dẫn cài đặt   scripts/camera_recorder/README.md
+
 
 -------------------------------------------------------------------------------
 5. THỜI TIẾT - OPEN-METEO  (màn Cài đặt > tab Thời tiết)
@@ -239,7 +247,7 @@ File mã nguồn: app/src/main/java/vn/smarthome/ui/theme/Dimens.kt
 9. BUILD & KÝ
 -------------------------------------------------------------------------------
 applicationId   vn.smarthome        (debug: vn.smarthome.debug)
-versionName     0.9.3       versionCode 25
+versionName     0.9.4       versionCode 26
 minSdk 26  /  targetSdk 35  /  compileSdk 35  /  Java 17
 Khóa ký         keystore.properties + smarthome-release.jks ở thư mục gốc
                 (CẢ HAI ĐỀU KHÔNG NẰM TRONG GIT)

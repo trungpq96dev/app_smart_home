@@ -34,6 +34,8 @@ import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.congtac.HangChoCongTac
 import vn.smarthome.data.congtac.LenhCongTac
 import vn.smarthome.data.congtac.OThietBi
+import vn.smarthome.data.camera.CameraPlaybackApi
+import vn.smarthome.data.camera.CameraRecorderState
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.CauHinhCameraStore
 import vn.smarthome.data.camera.Go2rtc
@@ -348,6 +350,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val _trangThaiCam = MutableStateFlow<TrangThaiCam>(TrangThaiCam.ChuaCauHinh)
     val trangThaiCam: StateFlow<TrangThaiCam> = _trangThaiCam.asStateFlow()
 
+    /** Trang thai dau ghi camera 24/24 + AI phat hien nguoi tren serverubuntu (`camera/#`). */
+    val cameraRecorder: StateFlow<CameraRecorderState> = mqtt.cameraRec
+
+    private val _dangChupAnh = MutableStateFlow(false)
+    val dangChupAnh: StateFlow<Boolean> = _dangChupAnh.asStateFlow()
+
     /** Thoi tiet that o Trang chu. Rong (DangTai) cho toi khi Open-Meteo tra ve. */
     private val _thoiTiet = MutableStateFlow<ThoiTietUi>(ThoiTietUi.DangTai)
     val thoiTiet: StateFlow<ThoiTietUi> = _thoiTiet.asStateFlow()
@@ -645,6 +653,34 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Hoi lai go2rtc - dung khi vua bat go2rtc len hoac vua them luong. */
     fun doLaiCamera() {
         viewModelScope.launch { doCamera(cauHinhCamera.value) }
+    }
+
+    /** Chup anh tuc thi tu luong camera qua dich vu camera_recorder (luu Drive & gui Telegram). */
+    fun chupAnhCamera(tenLuong: String) {
+        if (_dangChupAnh.value) return
+        _dangChupAnh.value = true
+        viewModelScope.launch {
+            val c = cauHinhCamera.value
+            val cong = cameraRecorder.value.apiPort
+            CameraPlaybackApi.chupAnhNgay(c, tenLuong, cong)
+                .onSuccess { msg -> _thongBao.tryEmit(msg) }
+                .onFailure { e ->
+                    _thongBao.tryEmit(CameraPlaybackApi.dienGiaiLoi(e, cong ?: c.congGhiHinh))
+                }
+            _dangChupAnh.value = false
+        }
+    }
+
+    /** Bat/tat AI canh nguoi + thong bao Telegram tren dau ghi serverubuntu qua MQTT. */
+    fun datCanhNguoiCamera(bat: Boolean) {
+        when (val kq = mqtt.guiLenhCamera("SET_DETECT_PERSON", value = bat)) {
+            is KetQuaGui.ChuaNoiBroker ->
+                _thongBao.tryEmit("Chưa nối MQTT tới serverubuntu nên chưa đổi được chế độ canh người.")
+            is KetQuaGui.Loi ->
+                _thongBao.tryEmit("Không gửi được lệnh: " + kq.moTa)
+            is KetQuaGui.DaGui ->
+                _thongBao.tryEmit(if (bat) "Đã gửi lệnh bật AI phát hiện người." else "Đã gửi lệnh tắt AI phát hiện người.")
+        }
     }
 
     /**

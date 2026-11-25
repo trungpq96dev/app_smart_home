@@ -78,6 +78,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val cauHinh by vm.cauHinh.collectAsStateWithLifecycle()
     val cauHinhCamera by vm.cauHinhCamera.collectAsStateWithLifecycle()
     val trangThaiCam by vm.trangThaiCam.collectAsStateWithLifecycle()
+    val cameraRecorder by vm.cameraRecorder.collectAsStateWithLifecycle()
+    val dangChupAnh by vm.dangChupAnh.collectAsStateWithLifecycle()
     val thoiTiet by vm.thoiTiet.collectAsStateWithLifecycle()
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
@@ -474,6 +476,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onSelectCamera = vm::selectCamera,
                         onNotice = toast,
                         onDoLai = vm::doLaiCamera,
+                        cameraRecorder = cameraRecorder,
+                        dangChupAnh = dangChupAnh,
+                        onChupAnh = vm::chupAnhCamera,
+                        onDatCanhNguoi = vm::datCanhNguoiCamera,
                     )
 
                     dest == Dest.DEVICES -> DevicesScreen(

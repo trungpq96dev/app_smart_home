@@ -139,6 +139,12 @@ class ShellSmokeTest {
         rule.mainClock.advanceTimeByFrame()
         rule.onNodeWithText("Camera an ninh").assertIsDisplayed()
         rule.onNodeWithText("Chụp ảnh").assertIsDisplayed()
+        rule.onNodeWithText("Xem lại").assertIsDisplayed()
+
+        rule.onNodeWithText("Xem lại").performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Có người").assertIsDisplayed()
+        rule.onNodeWithText("Chỉ mốc người").assertIsDisplayed()
         // KHONG kiem ten camera mau ("Sân vườn", "Cửa chính") o day nua.
         // Tu khi go2rtc co dia chi mac dinh 192.168.0.50, AppShell do go2rtc
         // ngay luc mo app: do xong la danh sach mau bi thay bang danh sach

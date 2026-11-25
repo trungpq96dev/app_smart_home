@@ -2,6 +2,7 @@ package vn.smarthome.data.camera
 
 import android.content.Context
 import android.net.Uri
+import android.util.Base64
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -11,20 +12,20 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * Cho app biet tim go2rtc o dau.
+ * Cho app biet tim go2rtc va dich vu dau ghi 24/24 (camera_recorder) o dau.
  *
  * go2rtc la cai cau: no dang nhap tai khoan Tuya, keo luong camera ve, roi
  * phat lai thanh WebRTC cho ai hoi. App chi noi toi go2rtc, KHONG bao gio
  * dang nhap Tuya truc tiep - tai khoan Tuya chi nam trong go2rtc.yaml tren
  * may chay go2rtc.
  *
- * Mac dinh cong 1984 (cong web + api cua go2rtc) va KHONG TLS, vi hien tai
- * go2rtc chay trong mang LAN. Khi chuyen sang duong `tailscale serve` thi
- * bat [tls] va doi cong sang 443.
+ * Cung tren may serverubuntu do, dich vu `camera_recorder` mo cong 1985 de
+ * phuc vu Xem lai Timeline 24/24 + danh sach su kien phat hien nguoi.
  */
 data class CauHinhCamera(
     val host: String = "192.168.0.50",
     val cong: Int = 1984,
+    val congGhiHinh: Int = 1985,
     val tls: Boolean = false,
     val taiKhoan: String = "",
     val matKhau: String = "",
@@ -33,6 +34,18 @@ data class CauHinhCamera(
 
     fun goc(): String =
         (if (tls) "https://" else "http://") + host.trim().trimEnd('/') + ":" + cong
+
+    fun gocGhiHinh(congOverride: Int? = null): String {
+        val p = (congOverride ?: congGhiHinh).takeIf { it in 1..65535 } ?: 1985
+        return (if (tls) "https://" else "http://") + host.trim().trimEnd('/') + ":" + p
+    }
+
+    fun headerBasicAuth(): Map<String, String> {
+        if (taiKhoan.isBlank()) return emptyMap()
+        val tho = "$taiKhoan:$matKhau".toByteArray(Charsets.UTF_8)
+        val ma = Base64.encodeToString(tho, Base64.NO_WRAP)
+        return mapOf("Authorization" to "Basic $ma")
+    }
 
     /**
      * Trang phat san co cua go2rtc. No tu chon duong truyen: thu WebRTC
@@ -46,6 +59,21 @@ data class CauHinhCamera(
         goc() + "/stream.html?src=" + Uri.encode(tenLuong) + "&width=100%25"
 
     fun urlDanhSach(): String = goc() + "/api/streams"
+
+    fun urlDanhSachNgay(tenLuong: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/days?cam=" + Uri.encode(tenLuong)
+
+    fun urlDongThoiGian(tenLuong: String, ngay: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/timeline?cam=" + Uri.encode(tenLuong) + "&date=" + Uri.encode(ngay)
+
+    fun urlVideoSegment(segId: Int, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/video/" + segId
+
+    fun urlThumbnail(eventId: Int, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/thumb/" + eventId + ".jpg"
+
+    fun urlChupAnh(tenLuong: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/snapshot?cam=" + Uri.encode(tenLuong)
 }
 
 private val Context.dsCamera by preferencesDataStore(name = "cau_hinh_camera")
@@ -63,6 +91,7 @@ class CauHinhCameraStore(private val ctx: Context) {
 
     private val kHost = stringPreferencesKey("cam_host")
     private val kCong = intPreferencesKey("cam_cong")
+    private val kCongGhiHinh = intPreferencesKey("cam_cong_ghi_hinh")
     private val kTls = booleanPreferencesKey("cam_tls")
     private val kTaiKhoan = stringPreferencesKey("cam_tai_khoan")
     private val kMatKhau = stringPreferencesKey("cam_mat_khau")
@@ -71,6 +100,7 @@ class CauHinhCameraStore(private val ctx: Context) {
         CauHinhCamera(
             host = p[kHost] ?: "192.168.0.50",
             cong = p[kCong] ?: 1984,
+            congGhiHinh = p[kCongGhiHinh] ?: 1985,
             tls = p[kTls] ?: false,
             taiKhoan = p[kTaiKhoan] ?: "",
             matKhau = p[kMatKhau] ?: "",
@@ -81,6 +111,7 @@ class CauHinhCameraStore(private val ctx: Context) {
         ctx.dsCamera.edit { p ->
             p[kHost] = c.host.trim()
             p[kCong] = c.cong
+            p[kCongGhiHinh] = c.congGhiHinh
             p[kTls] = c.tls
             p[kTaiKhoan] = c.taiKhoan.trim()
             p[kMatKhau] = c.matKhau
