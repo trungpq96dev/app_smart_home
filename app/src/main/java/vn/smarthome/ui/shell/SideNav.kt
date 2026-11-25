@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -61,6 +63,7 @@ fun SideNav(
     phienGiongNoi: PhienGiongNoi = PhienGiongNoi(),
     onBamTroLy: () -> Unit = {},
     canhBaoMuc: Map<Dest, Color> = emptyMap(),
+    onBamManCho: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -70,17 +73,41 @@ fun SideNav(
             .background(SH.Sidebar)
             .padding(horizontal = 9.dp, vertical = 8.dp),
     ) {
-        // ---- Logo ----
-        Image(
-            painter = painterResource(vn.smarthome.R.drawable.logo_sh),
-            contentDescription = "SmartHome",
-            contentScale = ContentScale.Fit,
+        // ---- Logo + nut Man hinh cho ban dem ----
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 52.dp)
-                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .padding(horizontal = 4.dp, vertical = 2.dp)
                 .padding(bottom = 4.dp),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(vn.smarthome.R.drawable.logo_sh),
+                contentDescription = "SmartHome",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(max = 48.dp)
+                    .padding(horizontal = 4.dp),
+            )
+            if (onBamManCho != null) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(SH.Card2)
+                        .clickable(onClick = onBamManCho),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Nightlight,
+                        contentDescription = "Màn hình chờ ban đêm",
+                        tint = SH.Amber,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
 
         // ---- Cum 1: Su dung hang ngay ----
         GroupHeader(NavGroup.DAILY.title)

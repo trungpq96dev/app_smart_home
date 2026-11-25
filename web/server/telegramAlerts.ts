@@ -544,3 +544,4 @@ export class TelegramAlertService {
     this.history = [entry, ...this.history].slice(0, 30);
   }
 }
+

@@ -7,9 +7,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import vn.smarthome.data.baomat.ManChoLogic
+import vn.smarthome.ui.components.BangCanhBaoKhanCap
+import vn.smarthome.ui.components.HopThoaiPinAdmin
+import vn.smarthome.ui.components.ManHinhCho
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
@@ -28,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import vn.smarthome.data.giongnoi.TrangThaiGiongNoi
@@ -89,11 +100,19 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val kenhBom by vm.kenhBom.collectAsStateWithLifecycle()
     val choBomNuoc by vm.choBomNuoc.collectAsStateWithLifecycle()
     val nhatKyBomNuoc by vm.nhatKyBomNuoc.collectAsStateWithLifecycle()
+    val cauHinhBaoMat by vm.cauHinhBaoMat.collectAsStateWithLifecycle()
+    val gasMqtt by vm.gasMqtt.collectAsStateWithLifecycle()
+    val adminUnlocked by vm.adminUnlocked.collectAsStateWithLifecycle()
 
     var current by rememberSaveable { mutableStateOf(Dest.HOME.route) }
     var openRoom by rememberSaveable { mutableStateOf<String?>(null) }
     var showChiTietDien by rememberSaveable { mutableStateOf(false) }
     var showWifi by rememberSaveable { mutableStateOf(false) }
+    var showManCho by rememberSaveable { mutableStateOf(false) }
+    var lastTouchMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var dismissedAlertKey by remember { mutableStateOf<String?>(null) }
+    var pendingPinAction by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    var pinError by remember { mutableStateOf<String?>(null) }
 
     val dest = Dest.from(current)
     val snackbar = remember { SnackbarHostState() }
@@ -166,6 +185,79 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         )
     }
 
+    val kitchenGasAlert = state.rooms.firstOrNull { it.id == "kitchen" }?.gasAlert == true
+    val rawSuCo = remember(kitchenGasAlert, gasMqtt, bomNuoc, ketNoiBom, ketNoi) {
+        ManChoLogic.kiemTraSuCoKhanCap(
+            kitchenGasAlert = kitchenGasAlert,
+            gasMqtt = gasMqtt,
+            bomNuoc = bomNuoc,
+            ketNoiBom = ketNoiBom,
+            ketNoiMqtt = ketNoi,
+        )
+    }
+    val suCoKhanCap = rawSuCo?.takeIf { it.key != dismissedAlertKey }
+
+    LaunchedEffect(rawSuCo) {
+        if (rawSuCo == null) dismissedAlertKey = null
+    }
+
+    LaunchedEffect(suCoKhanCap) {
+        if (suCoKhanCap != null && showManCho) {
+            showManCho = false
+        }
+    }
+
+    // Tu dong vao man hinh cho ban dem sau N phut khong cham
+    LaunchedEffect(cauHinhBaoMat.manChoBat, cauHinhBaoMat.phutChoTuDong, showManCho, suCoKhanCap) {
+        if (!cauHinhBaoMat.manChoBat || showManCho || suCoKhanCap != null) return@LaunchedEffect
+        val idleLimitMs = cauHinhBaoMat.phutChoTuDong.coerceAtLeast(1) * 60_000L
+        while (true) {
+            delay(5_000L)
+            if (System.currentTimeMillis() - lastTouchMs >= idleLimitMs) {
+                showManCho = true
+                break
+            }
+        }
+    }
+
+    // Danh thuc thong minh tu cam bien PIR hanh lang
+    LaunchedEffect(Unit) {
+        vm.pirMotion.collect {
+            if (cauHinhBaoMat.danhThucPir) {
+                lastTouchMs = System.currentTimeMillis()
+                if (showManCho) {
+                    showManCho = false
+                    openRoom = null
+                    showChiTietDien = false
+                    showWifi = false
+                    current = Dest.HOME.route
+                }
+            }
+        }
+    }
+
+    val danhThucManHinh: () -> Unit = {
+        lastTouchMs = System.currentTimeMillis()
+        showManCho = false
+        openRoom = null
+        showChiTietDien = false
+        showWifi = false
+        current = Dest.HOME.route
+    }
+
+    val yeuCauPinAdmin: (String, () -> Unit) -> Unit = { moTa, hanhDong ->
+        if (!cauHinhBaoMat.khoaPinBat || adminUnlocked) {
+            hanhDong()
+        } else {
+            pinError = null
+            pendingPinAction = moTa to hanhDong
+        }
+    }
+
+    BackHandler(enabled = showManCho) {
+        danhThucManHinh()
+    }
+
     val onBamTroLy: () -> Unit = {
         when {
             phienGiongNoi.trangThai is TrangThaiGiongNoi.DangTraLoi -> vm.ngatLoiGiongNoi()
@@ -184,7 +276,21 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(SH.Bg)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(SH.Bg)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        if (ev.changes.any { it.pressed }) {
+                            lastTouchMs = System.currentTimeMillis()
+                        }
+                    }
+                }
+            },
+    ) {
         Row(Modifier.fillMaxSize()) {
             SideNav(
                 current = dest,
@@ -197,14 +303,35 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                 phienGiongNoi = phienGiongNoi,
                 onBamTroLy = onBamTroLy,
                 canhBaoMuc = canhBaoMuc,
+                onBamManCho = { showManCho = true },
             )
 
-            Box(
+            Column(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .padding(Dim.MainPadding)
+                    .padding(Dim.MainPadding),
             ) {
+                if (suCoKhanCap != null) {
+                    BangCanhBaoKhanCap(
+                        suCo = suCoKhanCap,
+                        onXem = {
+                            openRoom = null
+                            showChiTietDien = false
+                            showWifi = false
+                            current = when (suCoKhanCap.routeDich) {
+                                "sensors" -> Dest.SENSORS.route
+                                "automation" -> Dest.AUTOMATION.route
+                                "server" -> Dest.SERVER.route
+                                else -> Dest.HOME.route
+                            }
+                        },
+                        onAn = { dismissedAlertKey = suCoKhanCap.key },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                Box(Modifier.weight(1f).fillMaxSize()) {
                 val room = state.rooms.firstOrNull { it.id == openRoom }
 
                 when {
@@ -255,6 +382,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                             vm.rebootWifi()
                             toast("Đã gửi lệnh khởi động lại modem TP-Link!")
                         },
+                        onYeuCauPinAdmin = yeuCauPinAdmin,
                     )
 
                     dest == Dest.SERVER -> ServerScreen(
@@ -313,10 +441,10 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         mucDungGiongNoi = mucDungGiongNoi,
                         otaStatus = otaStatus,
                         currentVersion = vm.currentVersionName,
-                        onLuu = vm::luuCauHinh,
-                        onLuuCamera = vm::luuCauHinhCamera,
+                        onLuu = { c -> yeuCauPinAdmin("Lưu cấu hình Broker MQTT") { vm.luuCauHinh(c) } },
+                        onLuuCamera = { c -> yeuCauPinAdmin("Lưu cấu hình Camera go2rtc") { vm.luuCauHinhCamera(c) } },
                         onLuuThoiTiet = vm::luuCauHinhThoiTiet,
-                        onLuuGiongNoi = vm::luuCauHinhGiongNoi,
+                        onLuuGiongNoi = { c -> yeuCauPinAdmin("Lưu khóa API Trợ lý giọng nói") { vm.luuCauHinhGiongNoi(c) } },
                         onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
                         onBatDauCapNhat = vm::batDauCapNhat,
                         onBack = { current = Dest.HOME.route },
@@ -324,7 +452,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         ketNoiBom = ketNoiBom,
                         kenhBom = kenhBom,
                         bomNuoc = bomNuoc,
-                        onLuuBomNuoc = vm::luuCauHinhBomNuoc,
+                        onLuuBomNuoc = { c -> yeuCauPinAdmin("Lưu cấu hình bo bơm nước") { vm.luuCauHinhBomNuoc(c) } },
+                        cauHinhBaoMat = cauHinhBaoMat,
+                        adminUnlocked = adminUnlocked,
+                        onLuuBaoMat = vm::luuCauHinhBaoMat,
+                        onDoiPinAdmin = vm::doiPinAdmin,
+                        onDatBatTatPin = vm::datBatTatKhoaPin,
+                        onKhoaAdminNgay = vm::lockAdminNow,
+                        onXemThuManCho = { showManCho = true },
                     )
 
                     dest == Dest.UTILITIES -> TienIchScreen(
@@ -371,6 +506,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onXoaLichSuNuocTrenBo = vm::xoaLichSuNuocTrenBo,
                         onXoaNhatKyBomCucBo = vm::xoaNhatKyBomCucBo,
                         onLuuCauHinhBom = vm::luuCauHinhBomNuoc,
+                        onYeuCauPinAdmin = yeuCauPinAdmin,
                     )
 
                     else -> PlaceholderScreen(
@@ -383,6 +519,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         },
                         onBack = { current = Dest.HOME.route },
                     )
+                }
                 }
             }
         }
@@ -405,6 +542,43 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                 status = otaStatus,
                 onDismiss = vm::dongHopThoaiCapNhat,
                 onStartUpdate = vm::batDauCapNhat,
+            )
+        }
+
+        // Hop thoai nhap PIN 4 so cho khu vuc Ky thuat
+        val pinReq = pendingPinAction
+        if (pinReq != null) {
+            HopThoaiPinAdmin(
+                moTaHanhDong = pinReq.first,
+                loi = pinError,
+                onXacNhan = { pin ->
+                    val err = vm.verifyAdminPin(pin)
+                    if (err == null) {
+                        pinError = null
+                        val action = pinReq.second
+                        pendingPinAction = null
+                        action()
+                    } else {
+                        pinError = err
+                    }
+                },
+                onDong = {
+                    pendingPinAction = null
+                    pinError = null
+                },
+            )
+        }
+
+        // Che do Man hinh cho ban dem (Ambient Night Clock)
+        if (showManCho) {
+            ManHinhCho(
+                thoiTiet = thoiTiet,
+                dien = dien,
+                bomNuoc = bomNuoc,
+                ketNoiBom = ketNoiBom,
+                cauHinhBom = cauHinhBomNuoc,
+                cauHinhBaoMat = cauHinhBaoMat,
+                onDanhThuc = danhThucManHinh,
             )
         }
     }

@@ -2,6 +2,7 @@ package vn.smarthome.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import vn.smarthome.data.baomat.CauHinhBaoMat
 import vn.smarthome.data.bomnuoc.BomNuocState
 import vn.smarthome.data.bomnuoc.CauHinhBomNuoc
 import vn.smarthome.data.bomnuoc.KenhBomNuoc
@@ -116,15 +118,24 @@ fun SettingsScreen(
     kenhBom: KenhBomNuoc = KenhBomNuoc.KHONG,
     bomNuoc: BomNuocState? = null,
     onLuuBomNuoc: (CauHinhBomNuoc) -> Unit = {},
+    cauHinhBaoMat: CauHinhBaoMat = CauHinhBaoMat(),
+    adminUnlocked: Boolean = false,
+    onLuuBaoMat: (CauHinhBaoMat) -> Unit = {},
+    onDoiPinAdmin: (String, String) -> String? = { _, _ -> null },
+    onDatBatTatPin: (String, Boolean) -> String? = { _, _ -> null },
+    onKhoaAdminNgay: () -> Unit = {},
+    onXemThuManCho: () -> Unit = {},
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val coBanMoi = otaStatus is OtaStatus.UpdateAvailable
 
     Column(Modifier.fillMaxSize()) {
         TopBar(title = "Cài đặt", onBack = null) {
-            // Tab chuyen doi giua Dich vu va Cap nhat
+            // Tab chuyen doi giua Dich vu, Giong noi, Bom nuoc, Man cho & PIN, Cap nhat
             Row(
                 modifier = Modifier
+                    .weight(1f, fill = false)
+                    .horizontalScroll(rememberScrollState())
                     .clip(RoundedCornerShape(8.dp))
                     .background(SH.Bg)
                     .padding(3.dp),
@@ -144,6 +155,11 @@ fun SettingsScreen(
                     text = "Bơm nước",
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
+                )
+                TabButton(
+                    text = "Màn chờ & PIN",
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
                 )
                 TabButton(
                     text = if (coBanMoi) "Cập nhật (Mới!)" else "Cập nhật",
@@ -207,6 +223,28 @@ fun SettingsScreen(
                     TrangThaiBomNuocCard(cauHinhBomNuoc, ketNoiBom, kenhBom, bomNuoc)
                 }
             }
+        } else if (selectedTab == 4) {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
+            ) {
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                    FormManChoBanDem(
+                        cauHinh = cauHinhBaoMat,
+                        onLuu = onLuuBaoMat,
+                        onXemThu = onXemThuManCho,
+                    )
+                }
+                SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
+                    FormKhoaPinKyThuat(
+                        cauHinh = cauHinhBaoMat,
+                        adminUnlocked = adminUnlocked,
+                        onDoiPin = onDoiPinAdmin,
+                        onDatBatTatPin = onDatBatTatPin,
+                        onKhoaNgay = onKhoaAdminNgay,
+                    )
+                }
+            }
         } else {
             Row(
                 Modifier.fillMaxWidth().weight(1f),
@@ -249,7 +287,7 @@ private fun TabButton(
                 }
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 9.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -937,6 +975,223 @@ private fun TrangThaiBomNuocCard(
             "Topic cố định",
             "App đọc bomnuoc/state, bomnuoc/status, bomnuoc/usage và gửi lệnh qua bomnuoc/cmd hoặc /api/cmd.",
         )
+    }
+}
+
+// ---------------------------------------------------------------- Man cho & PIN
+
+@Composable
+private fun FormManChoBanDem(
+    cauHinh: CauHinhBaoMat,
+    onLuu: (CauHinhBaoMat) -> Unit,
+    onXemThu: () -> Unit,
+) {
+    var manChoBat by remember(cauHinh.manChoBat) { mutableStateOf(cauHinh.manChoBat) }
+    var phutCho by remember(cauHinh.phutChoTuDong) { mutableStateOf(cauHinh.phutChoTuDong) }
+    var giamSangDem by remember(cauHinh.giamSangDem) { mutableStateOf(cauHinh.giamSangDem) }
+    var doSangDem by remember(cauHinh.doSangDem) { mutableStateOf(cauHinh.doSangDem) }
+    var danhThucPir by remember(cauHinh.danhThucPir) { mutableStateOf(cauHinh.danhThucPir) }
+    var topicPir by remember(cauHinh.topicPir) { mutableStateOf(cauHinh.topicPir) }
+    var topicGas by remember(cauHinh.topicGas) { mutableStateOf(cauHinh.topicGas) }
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Text("Màn hình chờ ban đêm (Ambient Clock)", style = SHType.CardTitle, color = SH.Text)
+        Text(
+            "Nền đen #000000, dịch điểm ảnh chống lưu ảnh & tự giảm sáng sau 22:00.",
+            style = SHType.Caption,
+            color = SH.TextDim,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        CongTac(
+            bat = manChoBat,
+            onDoi = { manChoBat = it },
+            ten = "Tự vào màn hình chờ khi không chạm",
+            phu = "Thoát ngay khi chạm hoặc có sự cố khẩn cấp",
+        )
+
+        Spacer(Modifier.height(6.dp))
+        Text("Thời gian chờ tự động", style = SHType.Caption, color = SH.TextDim)
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(1, 3, 5, 10).forEach { m ->
+                ChipGiong("$m phút", phutCho == m) { phutCho = m }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        CongTac(
+            bat = giamSangDem,
+            onDoi = { giamSangDem = it },
+            ten = "Hạ độ sáng màn hình sau 22:00 – 06:00",
+            phu = "Hạ screenBrightness còn ${(doSangDem * 100).toInt()}% khi chờ ban đêm",
+        )
+
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(0.05f to "5%", 0.07f to "7%", 0.10f to "10%", 0.15f to "15%").forEach { (v, lbl) ->
+                ChipGiong(lbl, kotlin.math.abs(doSangDem - v) < 0.01f) { doSangDem = v }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        CongTac(
+            bat = danhThucPir,
+            onDoi = { danhThucPir = it },
+            ten = "Đánh thức khi có chuyển động PIR",
+            phu = "Nghe bản tin MQTT từ cảm biến hành lang",
+        )
+        Spacer(Modifier.height(6.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                O("Topic PIR", topicPir, { topicPir = it }, "smarthome/sensor/pir")
+            }
+            Box(Modifier.weight(1f)) {
+                O("Topic Gas", topicGas, { topicGas = it }, "smarthome/sensor/gas")
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    onLuu(
+                        cauHinh.copy(
+                            manChoBat = manChoBat,
+                            phutChoTuDong = phutCho,
+                            giamSangDem = giamSangDem,
+                            doSangDem = doSangDem,
+                            danhThucPir = danhThucPir,
+                            topicPir = topicPir.trim().ifBlank { "smarthome/sensor/pir" },
+                            topicGas = topicGas.trim().ifBlank { "smarthome/sensor/gas" },
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+                modifier = Modifier.weight(1f).height(Dim.ButtonH),
+            ) {
+                Text("Lưu cài đặt", style = SHType.Button, color = Color.White)
+            }
+            OutlinedButton(
+                onClick = onXemThu,
+                modifier = Modifier.height(Dim.ButtonH),
+            ) {
+                Text("Bật ngay", style = SHType.Button, color = SH.Amber)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FormKhoaPinKyThuat(
+    cauHinh: CauHinhBaoMat,
+    adminUnlocked: Boolean,
+    onDoiPin: (String, String) -> String?,
+    onDatBatTatPin: (String, Boolean) -> String?,
+    onKhoaNgay: () -> Unit,
+) {
+    var pinCu by remember { mutableStateOf("") }
+    var pinMoi by remember { mutableStateOf("") }
+    var xacNhan by remember { mutableStateOf("") }
+    var thongBao by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Khóa PIN 4 số Kỹ thuật", style = SHType.CardTitle, color = SH.Text, modifier = Modifier.weight(1f))
+            StatusPill(
+                when {
+                    !cauHinh.khoaPinBat -> "Đang tắt"
+                    adminUnlocked -> "Đã mở khóa"
+                    else -> "Đang khóa"
+                },
+                when {
+                    !cauHinh.khoaPinBat -> SH.TextOff
+                    adminUnlocked -> SH.Green
+                    else -> SH.Amber
+                },
+            )
+        }
+        Text(
+            "Bảo vệ hiệu chuẩn bơm, ngưỡng bảo vệ, reboot Router, xóa log và đổi cấu hình MQTT/Camera/API.",
+            style = SHType.Caption,
+            color = SH.TextDim,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        if (cauHinh.khoaPinBat && adminUnlocked) {
+            OutlinedButton(
+                onClick = onKhoaNgay,
+                modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+            ) {
+                Text("Khóa khu vực kỹ thuật ngay", style = SHType.Button, color = SH.Amber)
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        OMatKhau("PIN hiện tại (mặc định 1234)", pinCu, { pinCu = it.filter(Char::isDigit).take(4) }, "4 chữ số")
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) {
+                OMatKhau("PIN mới", pinMoi, { pinMoi = it.filter(Char::isDigit).take(4) }, "4 chữ số")
+            }
+            Box(Modifier.weight(1f)) {
+                OMatKhau("Nhập lại PIN", xacNhan, { xacNhan = it.filter(Char::isDigit).take(4) }, "4 chữ số")
+            }
+        }
+
+        thongBao?.let { (ok, msg) ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                msg,
+                style = SHType.Caption,
+                color = if (ok) SH.Green else SH.Red,
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = {
+                if (pinMoi.length != 4 || pinMoi != xacNhan) {
+                    thongBao = false to "PIN mới phải đúng 4 chữ số và khớp nhau."
+                    return@Button
+                }
+                val err = onDoiPin(pinCu, pinMoi)
+                if (err == null) {
+                    pinCu = ""
+                    pinMoi = ""
+                    xacNhan = ""
+                    thongBao = true to "Đã đổi mã PIN thành công."
+                } else {
+                    thongBao = false to err
+                }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = SH.Blue),
+            modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+        ) {
+            Text("Cập nhật mã PIN mới", style = SHType.Button, color = Color.White)
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                val next = !cauHinh.khoaPinBat
+                val err = onDatBatTatPin(pinCu, next)
+                if (err == null) {
+                    pinCu = ""
+                    thongBao = true to if (next) "Đã bật khóa PIN kỹ thuật." else "Đã tạm tắt khóa PIN."
+                } else {
+                    thongBao = false to err
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(Dim.ButtonH),
+        ) {
+            Text(
+                if (cauHinh.khoaPinBat) "Tạm tắt khóa PIN (cần PIN hiện tại)" else "Bật lại khóa PIN",
+                style = SHType.Button,
+                color = if (cauHinh.khoaPinBat) SH.Red else SH.Green,
+            )
+        }
     }
 }
 

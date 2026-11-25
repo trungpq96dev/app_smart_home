@@ -120,6 +120,9 @@ export function AutomationScreen() {
     datLaiDemLuuLuong,
     xoaLichSuNuocTrenBo,
     xoaNhatKyBomCucBo,
+    requireAdminPin,
+    adminLockEnabled,
+    adminUnlocked,
     showToast,
   } = useSmartHome();
 
@@ -154,11 +157,11 @@ export function AutomationScreen() {
           <TrangThaiKetNoiBomPill ketNoi={ketNoiBom} kenh={kenhBom} />
           <button
             type="button"
-            onClick={() => setConfigModalOpen(true)}
+            onClick={() => requireAdminPin('Cấu hình kết nối bo bơm nước', () => setConfigModalOpen(true))}
             title="Cấu hình kết nối bo bơm nước"
             className="inline-flex items-center gap-1.5 rounded-xl border border-[#253459] bg-[#16213A] px-2.5 py-1.5 text-xs font-semibold text-[#94A3B8] hover:text-white hover:bg-[#1C2946] cursor-pointer"
           >
-            <Settings size={14} />
+            {adminLockEnabled && !adminUnlocked ? <Lock size={13} className="text-[#F59E0B]" /> : <Settings size={14} />}
             <span className="hidden sm:inline">Cấu hình bơm</span>
           </button>
         </div>
@@ -178,7 +181,7 @@ export function AutomationScreen() {
           onDatDenPhuBom={(b) => void datDenPhuBom(b)}
           onXoaLoiBom={() => void xoaLoiBom()}
           onTatCoiBom={() => void tatCoiBom()}
-          onOpenConfig={() => setConfigModalOpen(true)}
+          onOpenConfig={() => requireAdminPin('Cấu hình kết nối bo bơm nước', () => setConfigModalOpen(true))}
           onOpenAquaWeb={openAquaControl}
         />
       )}
@@ -188,10 +191,18 @@ export function AutomationScreen() {
           bomNuoc={bomNuoc}
           canControl={canControlPump}
           choBomNuoc={choBomNuoc}
-          onLuuBaoVeBom={(d, r, m, p, f) => void luuBaoVeBom(d, r, m, p, f)}
-          onGhiMocCan={() => void ghiMocCanBom()}
-          onGhiMocDay={() => void ghiMocDayBom()}
-          onDatLaiDemLuuLuong={() => void datLaiDemLuuLuong()}
+          onLuuBaoVeBom={(d, r, m, p, f) =>
+            requireAdminPin('Lưu ngưỡng bảo vệ bơm', () => void luuBaoVeBom(d, r, m, p, f))
+          }
+          onGhiMocCan={() =>
+            requireAdminPin('Hiệu chuẩn mốc CẠN mức nước', () => void ghiMocCanBom())
+          }
+          onGhiMocDay={() =>
+            requireAdminPin('Hiệu chuẩn mốc ĐẦY mức nước', () => void ghiMocDayBom())
+          }
+          onDatLaiDemLuuLuong={() =>
+            requireAdminPin('Đặt lại bộ đếm hiệu chuẩn lưu lượng', () => void datLaiDemLuuLuong())
+          }
           onTatCoi={() => void tatCoiBom()}
           onThuCoi={() => void thuCoiBom()}
         />
@@ -203,8 +214,12 @@ export function AutomationScreen() {
           usage={luongNuocThang}
           canControl={canControlPump}
           clearingUsage={Boolean(choBomNuoc.usageClear)}
-          onXoaNhatKyCucBo={() => void xoaNhatKyBomCucBo()}
-          onXoaLichSuBo={() => void xoaLichSuNuocTrenBo()}
+          onXoaNhatKyCucBo={() =>
+            requireAdminPin('Xóa nhật ký bơm trên Gateway', () => void xoaNhatKyBomCucBo())
+          }
+          onXoaLichSuBo={() =>
+            requireAdminPin('Xóa lịch sử lượng nước trên bo', () => void xoaLichSuNuocTrenBo())
+          }
         />
       )}
 

@@ -1,15 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import {
+  BellRing,
   Check,
   CloudSun,
   Droplets,
   ExternalLink,
   Eye,
   EyeOff,
+  Lock,
+  LockOpen,
   Mic,
+  Moon,
   RefreshCw,
   Save,
+  Send,
   Server,
+  Shield,
   Trash2,
   Video,
   Wifi,
@@ -45,7 +51,7 @@ import {
 } from '../store/SmartHomeContext.js';
 import { SH } from '../theme/colors.js';
 
-type SettingsTab = 'services' | 'bom_nuoc' | 'voice' | 'system';
+type SettingsTab = 'services' | 'bom_nuoc' | 'voice' | 'security' | 'system';
 
 const WEATHER_PRESETS = [
   { ten: 'Hà Nội', lat: 21.0278, lon: 105.8342 },
@@ -75,6 +81,17 @@ export function SettingsScreen() {
     clearVoiceUsage,
     updateCheck,
     checkGithubUpdate,
+    screensaverConfig,
+    updateScreensaverConfig,
+    enterScreensaver,
+    telegramStatus,
+    luuTelegramConfig,
+    testTelegramAlert,
+    adminLockEnabled,
+    adminUnlocked,
+    requireAdminPin,
+    lockAdmin,
+    updateAdminPin,
   } = useSmartHome();
 
   const [tab, setTab] = useState<SettingsTab>('services');
@@ -131,6 +148,27 @@ export function SettingsScreen() {
   const [vPhutNgay, setVPhutNgay] = useState(String(voiceConfig.phutMoiNgay));
   const [voiceSavedFlag, setVoiceSavedFlag] = useState(false);
 
+  // Telegram form
+  const [tgEnabled, setTgEnabled] = useState(config.telegram.enabled);
+  const [tgToken, setTgToken] = useState('');
+  const [tgClearToken, setTgClearToken] = useState(false);
+  const [tgChatId, setTgChatId] = useState(config.telegram.chatId);
+  const [tgOfflineMin, setTgOfflineMin] = useState(String(config.telegram.offlineMinutes));
+  const [tgSpikePct, setTgSpikePct] = useState(String(config.telegram.electricSpikePct));
+  const [tgGasPpm, setTgGasPpm] = useState(String(config.telegram.gasThresholdPpm));
+  const [tgCooldownMin, setTgCooldownMin] = useState(String(config.telegram.cooldownMinutes));
+  const [tgPirTopic, setTgPirTopic] = useState(config.telegram.pirTopic);
+  const [tgGasTopic, setTgGasTopic] = useState(config.telegram.gasTopic);
+  const [savingTg, setSavingTg] = useState(false);
+  const [testingTg, setTestingTg] = useState(false);
+
+  // Admin PIN form
+  const [pinCur, setPinCur] = useState('');
+  const [pinNew, setPinNew] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [pinMsg, setPinMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingPin, setSavingPin] = useState(false);
+
   // Sync form defaults once config loads from server
   useEffect(() => {
     setMqttHost(config.mqtt.host);
@@ -156,6 +194,15 @@ export function SettingsScreen() {
     setBomBrokerPort(String(config.bomNuoc.brokerPort || 8883));
     setBomBrokerTls(config.bomNuoc.brokerTls);
     setBomBrokerUser(config.bomNuoc.brokerUser);
+
+    setTgEnabled(config.telegram.enabled);
+    setTgChatId(config.telegram.chatId);
+    setTgOfflineMin(String(config.telegram.offlineMinutes || 5));
+    setTgSpikePct(String(config.telegram.electricSpikePct || 40));
+    setTgGasPpm(String(config.telegram.gasThresholdPpm || 200));
+    setTgCooldownMin(String(config.telegram.cooldownMinutes || 30));
+    setTgPirTopic(config.telegram.pirTopic || 'smarthome/sensor/pir');
+    setTgGasTopic(config.telegram.gasTopic || 'smarthome/sensor/gas');
   }, [config]);
 
   const inputCls =
@@ -170,6 +217,7 @@ export function SettingsScreen() {
         <ChoiceChip label="Dịch vụ & Kết nối" selected={tab === 'services'} color={SH.Blue} onClick={() => setTab('services')} />
         <ChoiceChip label="Bơm nước" selected={tab === 'bom_nuoc'} color={SH.Cyan} onClick={() => setTab('bom_nuoc')} />
         <ChoiceChip label="Trợ lý giọng nói" selected={tab === 'voice'} color={SH.Purple} onClick={() => setTab('voice')} />
+        <ChoiceChip label="An toàn & Màn chờ" selected={tab === 'security'} color={SH.Amber} onClick={() => setTab('security')} />
         <ChoiceChip label="Thông tin & Hệ thống" selected={tab === 'system'} color={SH.Teal} onClick={() => setTab('system')} />
       </div>
 
@@ -235,21 +283,23 @@ export function SettingsScreen() {
               color={SH.Blue}
               variant="solid"
               disabled={savingMqtt}
-              onClick={async () => {
-                setSavingMqtt(true);
-                await luuMqttConfig({
-                  host: mqttHost,
-                  cong: Number(mqttPort) || 1883,
-                  tls: mqttTls,
-                  taiKhoan: mqttUser,
-                  matKhau: mqttPass || undefined,
-                  xoaMatKhau: mqttClearPass,
-                  clientId: mqttClientId,
-                });
-                setMqttPass('');
-                setMqttClearPass(false);
-                setSavingMqtt(false);
-              }}
+              onClick={() =>
+                requireAdminPin('Lưu cấu hình máy chủ MQTT', async () => {
+                  setSavingMqtt(true);
+                  await luuMqttConfig({
+                    host: mqttHost,
+                    cong: Number(mqttPort) || 1883,
+                    tls: mqttTls,
+                    taiKhoan: mqttUser,
+                    matKhau: mqttPass || undefined,
+                    xoaMatKhau: mqttClearPass,
+                    clientId: mqttClientId,
+                  });
+                  setMqttPass('');
+                  setMqttClearPass(false);
+                  setSavingMqtt(false);
+                })
+              }
             >
               <Save size={14} />
               <span>{savingMqtt ? 'Đang lưu…' : 'Lưu & kết nối lại MQTT'}</span>
@@ -309,20 +359,22 @@ export function SettingsScreen() {
               color={SH.Green}
               variant="solid"
               disabled={savingCam}
-              onClick={async () => {
-                setSavingCam(true);
-                await luuCameraConfig({
-                  host: camHost,
-                  cong: Number(camPort) || 1984,
-                  tls: camTls,
-                  taiKhoan: camUser,
-                  matKhau: camPass || undefined,
-                  xoaMatKhau: camClearPass,
-                });
-                setCamPass('');
-                setCamClearPass(false);
-                setSavingCam(false);
-              }}
+              onClick={() =>
+                requireAdminPin('Lưu cấu hình Camera go2rtc', async () => {
+                  setSavingCam(true);
+                  await luuCameraConfig({
+                    host: camHost,
+                    cong: Number(camPort) || 1984,
+                    tls: camTls,
+                    taiKhoan: camUser,
+                    matKhau: camPass || undefined,
+                    xoaMatKhau: camClearPass,
+                  });
+                  setCamPass('');
+                  setCamClearPass(false);
+                  setSavingCam(false);
+                })
+              }
             >
               <Video size={14} />
               <span>{savingCam ? 'Đang dò luồng…' : 'Lưu & dò go2rtc'}</span>
@@ -481,22 +533,24 @@ export function SettingsScreen() {
               color={SH.Cyan}
               variant="solid"
               disabled={savingBom}
-              onClick={async () => {
-                setSavingBom(true);
-                await luuBomNuocConfig({
-                  espHost: bomEspHost,
-                  uuTienLan: bomUuTienLan,
-                  brokerHost: bomBrokerHost,
-                  brokerPort: Number(bomBrokerPort) || 8883,
-                  brokerTls: bomBrokerTls,
-                  brokerUser: bomBrokerUser,
-                  brokerPass: bomBrokerPass || undefined,
-                  xoaMatKhau: bomClearPass,
-                });
-                setBomBrokerPass('');
-                setBomClearPass(false);
-                setSavingBom(false);
-              }}
+              onClick={() =>
+                requireAdminPin('Lưu cấu hình kết nối bo bơm nước', async () => {
+                  setSavingBom(true);
+                  await luuBomNuocConfig({
+                    espHost: bomEspHost,
+                    uuTienLan: bomUuTienLan,
+                    brokerHost: bomBrokerHost,
+                    brokerPort: Number(bomBrokerPort) || 8883,
+                    brokerTls: bomBrokerTls,
+                    brokerUser: bomBrokerUser,
+                    brokerPass: bomBrokerPass || undefined,
+                    xoaMatKhau: bomClearPass,
+                  });
+                  setBomBrokerPass('');
+                  setBomClearPass(false);
+                  setSavingBom(false);
+                })
+              }
             >
               <Droplets size={14} />
               <span>{savingBom ? 'Đang lưu…' : 'Lưu & kết nối lại bo bơm'}</span>
@@ -670,18 +724,20 @@ export function SettingsScreen() {
                 color={SH.Purple}
                 variant="solid"
                 onClick={() => {
-                  updateVoiceConfig({
-                    khoaApi: vKey.trim(),
-                    model: vModel.trim() || MODEL_MAC_DINH,
-                    giongDoc: vVoice,
-                    guiMqtt: vMqtt,
-                    banSongCong: vBanSongCong,
-                    giayImLangTuDong: Math.max(0, Number(vImLang) || 45),
-                    giayToiDaPhien: Math.max(30, Number(vToiDaPhien) || 600),
-                    phutMoiNgay: Math.max(0, Number(vPhutNgay) || 30),
+                  requireAdminPin('Lưu khóa API & cấu hình Trợ lý giọng nói', () => {
+                    updateVoiceConfig({
+                      khoaApi: vKey.trim(),
+                      model: vModel.trim() || MODEL_MAC_DINH,
+                      giongDoc: vVoice,
+                      guiMqtt: vMqtt,
+                      banSongCong: vBanSongCong,
+                      giayImLangTuDong: Math.max(0, Number(vImLang) || 45),
+                      giayToiDaPhien: Math.max(30, Number(vToiDaPhien) || 600),
+                      phutMoiNgay: Math.max(0, Number(vPhutNgay) || 30),
+                    });
+                    setVoiceSavedFlag(true);
+                    window.setTimeout(() => setVoiceSavedFlag(false), 2500);
                   });
-                  setVoiceSavedFlag(true);
-                  window.setTimeout(() => setVoiceSavedFlag(false), 2500);
                 }}
               >
                 <Save size={14} />
@@ -700,7 +756,10 @@ export function SettingsScreen() {
               title="Thống kê sử dụng 30 ngày"
               subtitle={`Hôm nay: ${Math.floor(homNayGiay / 60)}p ${homNayGiay % 60}s · 7 ngày: ${Math.floor(bayNgayGiay / 60)}p`}
               action={
-                <FlatButton color={SH.Red} onClick={clearVoiceUsage}>
+                <FlatButton
+                  color={SH.Red}
+                  onClick={() => requireAdminPin('Xóa nhật ký sử dụng giọng nói', clearVoiceUsage)}
+                >
                   <Trash2 size={13} />
                   <span>Xóa nhật ký</span>
                 </FlatButton>
@@ -718,6 +777,441 @@ export function SettingsScreen() {
                 unit="p"
               />
             )}
+          </SmartCard>
+        </div>
+      )}
+
+      {/* TAB 2.5: AN TOAN, MAN HINH CHO, TELEGRAM & KHOA PIN */}
+      {tab === 'security' && (
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
+          {/* Card 1: Telegram Emergency Alerts */}
+          <SmartCard className="flex flex-col justify-between gap-2.5 p-3 lg:overflow-y-auto">
+            <div className="space-y-2.5">
+              <SectionHeader
+                title="Cảnh báo Telegram (Gateway)"
+                subtitle="Báo khẩn bơm khóa, rò gas, mất mạng >5p, điện tăng vọt"
+                action={
+                  <StatusPill
+                    label={telegramStatus?.enabled ? 'Đang bật' : 'Đang tắt'}
+                    color={telegramStatus?.enabled ? SH.Green : SH.TextDim}
+                  />
+                }
+              />
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <span className="font-semibold text-[#E6EDF7]">Bật đẩy cảnh báo Telegram 24/7</span>
+                <input
+                  type="checkbox"
+                  checked={tgEnabled}
+                  onChange={(e) => setTgEnabled(e.target.checked)}
+                />
+              </label>
+
+              <div>
+                <label className="block text-xs text-[#8A9BB8] mb-1">Bot Token (lưu trên Gateway)</label>
+                <input
+                  type="password"
+                  value={tgToken}
+                  onChange={(e) => setTgToken(e.target.value)}
+                  placeholder={config.telegram.coBotToken ? 'Đã lưu — để trống giữ nguyên' : '123456:ABC-DEF...'}
+                  className={inputCls}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-[#8A9BB8] mb-1">Chat ID</label>
+                  <input
+                    type="text"
+                    value={tgChatId}
+                    onChange={(e) => setTgChatId(e.target.value)}
+                    placeholder="-100... hoặc ID cá nhân"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#8A9BB8] mb-1">Rớt mạng (phút)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={tgOfflineMin}
+                    onChange={(e) => setTgOfflineMin(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[11px] text-[#8A9BB8] mb-1">Điện vọt (%)</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={500}
+                    value={tgSpikePct}
+                    onChange={(e) => setTgSpikePct(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#8A9BB8] mb-1">Gas (ppm)</label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={5000}
+                    value={tgGasPpm}
+                    onChange={(e) => setTgGasPpm(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#8A9BB8] mb-1">Chống lặp (p)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={tgCooldownMin}
+                    onChange={(e) => setTgCooldownMin(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              {config.telegram.coBotToken && (
+                <label className="inline-flex items-center gap-1.5 text-xs text-[#FCA5A5] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tgClearToken}
+                    onChange={(e) => setTgClearToken(e.target.checked)}
+                  />
+                  <span>Xóa Bot Token đã lưu</span>
+                </label>
+              )}
+
+              {telegramStatus && telegramStatus.history.length > 0 && (
+                <div className="rounded-xl border border-[#253459] bg-[#0E1627] p-2 space-y-1 max-h-24 overflow-y-auto">
+                  <div className="text-[10px] font-semibold text-[#8A9BB8] uppercase">Tin nhắn gần đây</div>
+                  {telegramStatus.history.slice(0, 4).map((h) => (
+                    <div key={h.id} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="truncate text-[#E6EDF7]">{h.title}</span>
+                      <span className={h.ok ? 'text-[#22C55E] shrink-0' : 'text-[#EF4444] shrink-0'}>
+                        {h.ok ? 'Đã gửi' : 'Lỗi'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <FlatButton
+                color={SH.Blue}
+                variant="solid"
+                disabled={savingTg}
+                className="flex-1"
+                onClick={() =>
+                  requireAdminPin('Lưu cấu hình cảnh báo Telegram', async () => {
+                    setSavingTg(true);
+                    await luuTelegramConfig({
+                      enabled: tgEnabled,
+                      botToken: tgToken || undefined,
+                      xoaBotToken: tgClearToken,
+                      chatId: tgChatId,
+                      offlineMinutes: Math.max(1, Number(tgOfflineMin) || 5),
+                      electricSpikePct: Math.max(10, Number(tgSpikePct) || 40),
+                      electricSpikeMinKwh: config.telegram.electricSpikeMinKwh || 3,
+                      gasThresholdPpm: Math.max(50, Number(tgGasPpm) || 200),
+                      cooldownMinutes: Math.max(1, Number(tgCooldownMin) || 30),
+                      pirTopic: tgPirTopic.trim() || 'smarthome/sensor/pir',
+                      gasTopic: tgGasTopic.trim() || 'smarthome/sensor/gas',
+                    });
+                    setTgToken('');
+                    setTgClearToken(false);
+                    setSavingTg(false);
+                  })
+                }
+              >
+                <BellRing size={14} />
+                <span>{savingTg ? 'Đang lưu…' : 'Lưu Telegram'}</span>
+              </FlatButton>
+              <FlatButton
+                color={SH.Teal}
+                disabled={testingTg}
+                onClick={() =>
+                  requireAdminPin('Gửi thử tin nhắn Telegram', async () => {
+                    setTestingTg(true);
+                    await testTelegramAlert();
+                    setTestingTg(false);
+                  })
+                }
+              >
+                <Send size={14} />
+                <span>{testingTg ? 'Đang gửi…' : 'Gửi thử'}</span>
+              </FlatButton>
+            </div>
+          </SmartCard>
+
+          {/* Card 2: Ambient Night Screensaver */}
+          <SmartCard className="flex flex-col justify-between gap-2.5 p-3 lg:overflow-y-auto">
+            <div className="space-y-2.5">
+              <SectionHeader
+                title="Màn hình chờ ban đêm"
+                subtitle="Nền đen #000000 · Pixel Shift · Giảm sáng sau 22:00"
+                action={<Moon size={18} className="text-[#9E7238]" />}
+              />
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <span className="font-semibold text-[#E6EDF7]">Tự động vào màn hình chờ khi rỗi</span>
+                <input
+                  type="checkbox"
+                  checked={screensaverConfig.enabled}
+                  onChange={(e) =>
+                    updateScreensaverConfig({ ...screensaverConfig, enabled: e.target.checked })
+                  }
+                />
+              </label>
+
+              <div>
+                <div className="text-xs text-[#8A9BB8] mb-1.5">Thời gian không chạm để vào màn chờ</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[1, 3, 5, 10].map((m) => (
+                    <ChoiceChip
+                      key={m}
+                      label={`${m} phút`}
+                      selected={screensaverConfig.idleMinutes === m}
+                      color={SH.Amber}
+                      onClick={() =>
+                        updateScreensaverConfig({ ...screensaverConfig, idleMinutes: m })
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <div>
+                  <div className="font-semibold text-[#E6EDF7]">Giảm sáng ban đêm (22:00 – 06:00)</div>
+                  <div className="text-[11px] text-[#8A9BB8]">
+                    Phủ lớp đen mờ {Math.round(screensaverConfig.webDimOpacity * 100)}% chống chói
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={screensaverConfig.nightDimEnabled}
+                  onChange={(e) =>
+                    updateScreensaverConfig({
+                      ...screensaverConfig,
+                      nightDimEnabled: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+
+              <div>
+                <div className="flex justify-between text-xs text-[#8A9BB8] mb-1">
+                  <span>Độ mờ lớp phủ đêm (Web)</span>
+                  <span className="font-mono-num text-[#E6EDF7]">
+                    {Math.round(screensaverConfig.webDimOpacity * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={70}
+                  step={5}
+                  value={Math.round(screensaverConfig.webDimOpacity * 100)}
+                  onChange={(e) =>
+                    updateScreensaverConfig({
+                      ...screensaverConfig,
+                      webDimOpacity: Number(e.target.value) / 100,
+                    })
+                  }
+                  className="w-full sh-slider"
+                />
+              </div>
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <div>
+                  <div className="font-semibold text-[#E6EDF7]">Đánh thức khi PIR phát hiện người</div>
+                  <div className="text-[11px] text-[#8A9BB8] font-mono-num">
+                    {screensaverConfig.pirTopic}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={screensaverConfig.pirWakeEnabled}
+                  onChange={(e) =>
+                    updateScreensaverConfig({
+                      ...screensaverConfig,
+                      pirWakeEnabled: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+
+              <div>
+                <label className="block text-[11px] text-[#8A9BB8] mb-1">Topic MQTT cảm biến PIR / Gas</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={tgPirTopic}
+                    onChange={(e) => {
+                      setTgPirTopic(e.target.value);
+                      updateScreensaverConfig({ ...screensaverConfig, pirTopic: e.target.value });
+                    }}
+                    placeholder="smarthome/sensor/pir"
+                    className={inputCls}
+                  />
+                  <input
+                    type="text"
+                    value={tgGasTopic}
+                    onChange={(e) => {
+                      setTgGasTopic(e.target.value);
+                      updateScreensaverConfig({ ...screensaverConfig, gasTopic: e.target.value });
+                    }}
+                    placeholder="smarthome/sensor/gas"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <FlatButton color={SH.Amber} variant="solid" onClick={enterScreensaver}>
+              <Moon size={14} />
+              <span>Bật màn hình chờ ngay</span>
+            </FlatButton>
+          </SmartCard>
+
+          {/* Card 3: 4-digit Admin PIN Lock */}
+          <SmartCard className="flex flex-col justify-between gap-2.5 p-3 lg:overflow-y-auto">
+            <div className="space-y-2.5">
+              <SectionHeader
+                title="Khóa PIN 4 số Kỹ thuật"
+                subtitle="Chặn bấm nhầm cấu hình MQTT, WiFi, hiệu chuẩn bơm & xóa log"
+                action={
+                  <StatusPill
+                    label={!adminLockEnabled ? 'Đang tắt' : adminUnlocked ? 'Đã mở' : 'Đang khóa'}
+                    color={!adminLockEnabled ? SH.TextDim : adminUnlocked ? SH.Green : SH.Amber}
+                  />
+                }
+              />
+
+              <div className="rounded-xl border border-[#253459] bg-[#0E1627] p-2.5 text-[11px] text-[#94A3B8] space-y-1">
+                <div className="font-semibold text-[#E6EDF7] flex items-center gap-1.5">
+                  <Shield size={13} className="text-[#F59E0B]" />
+                  <span>Các thao tác được bảo vệ:</span>
+                </div>
+                <p>Hiệu chuẩn mức nước & ngưỡng bảo vệ bơm, Cấu hình bo bơm, Reboot Router / Đổi mật khẩu WiFi, Xóa nhật ký, Đổi MQTT / Camera / API Key / Telegram.</p>
+              </div>
+
+              {adminLockEnabled && adminUnlocked && (
+                <FlatButton color={SH.Amber} onClick={() => void lockAdmin()} className="w-full">
+                  <Lock size={14} />
+                  <span>Khóa khu vực kỹ thuật ngay</span>
+                </FlatButton>
+              )}
+
+              <div className="border-t border-[#253459] pt-2 space-y-2">
+                <div className="text-xs font-semibold text-[#E6EDF7]">Đổi mã PIN (4 chữ số)</div>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={pinCur}
+                  onChange={(e) => setPinCur(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="PIN hiện tại (mặc định 1234)"
+                  className={inputCls}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={pinNew}
+                    onChange={(e) => setPinNew(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="PIN mới (4 số)"
+                    className={inputCls}
+                  />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={pinConfirm}
+                    onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="Nhập lại PIN mới"
+                    className={inputCls}
+                  />
+                </div>
+                {pinMsg && (
+                  <div
+                    className={`rounded-xl px-2.5 py-1.5 text-[11px] ${
+                      pinMsg.ok
+                        ? 'bg-[#22C55E]/15 text-[#86EFAC] border border-[#22C55E]/40'
+                        : 'bg-[#EF4444]/15 text-[#FCA5A5] border border-[#EF4444]/40'
+                    }`}
+                  >
+                    {pinMsg.text}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <FlatButton
+                color={SH.Blue}
+                variant="solid"
+                disabled={savingPin}
+                onClick={async () => {
+                  if (pinNew.length !== 4 || pinNew !== pinConfirm) {
+                    setPinMsg({ ok: false, text: 'PIN mới phải đúng 4 chữ số và khớp nhau.' });
+                    return;
+                  }
+                  setSavingPin(true);
+                  const res = await updateAdminPin({ currentPin: pinCur, newPin: pinNew });
+                  setSavingPin(false);
+                  if (res.ok) {
+                    setPinCur('');
+                    setPinNew('');
+                    setPinConfirm('');
+                    setPinMsg({ ok: true, text: 'Đã đổi mã PIN thành công.' });
+                  } else {
+                    setPinMsg({ ok: false, text: res.error || 'Không đổi được mã PIN.' });
+                  }
+                }}
+              >
+                <LockOpen size={14} />
+                <span>{savingPin ? 'Đang lưu…' : 'Cập nhật mã PIN mới'}</span>
+              </FlatButton>
+
+              <FlatButton
+                color={adminLockEnabled ? SH.Red : SH.Green}
+                onClick={async () => {
+                  if (pinCur.length !== 4) {
+                    setPinMsg({ ok: false, text: 'Nhập mã PIN hiện tại ở trên để bật/tắt khóa.' });
+                    return;
+                  }
+                  setSavingPin(true);
+                  const res = await updateAdminPin({
+                    currentPin: pinCur,
+                    enabled: !adminLockEnabled,
+                  });
+                  setSavingPin(false);
+                  if (res.ok) {
+                    setPinCur('');
+                    setPinMsg({
+                      ok: true,
+                      text: !adminLockEnabled ? 'Đã bật khóa PIN kỹ thuật.' : 'Đã tạm tắt khóa PIN.',
+                    });
+                  } else {
+                    setPinMsg({ ok: false, text: res.error || 'Sai mã PIN hiện tại.' });
+                  }
+                }}
+              >
+                <Lock size={14} />
+                <span>{adminLockEnabled ? 'Tạm tắt khóa PIN (cần PIN)' : 'Bật lại khóa PIN'}</span>
+              </FlatButton>
+            </div>
           </SmartCard>
         </div>
       )}
@@ -757,11 +1251,13 @@ export function SettingsScreen() {
                 <FlatButton
                   color={SH.Teal}
                   disabled={savingAqua}
-                  onClick={async () => {
-                    setSavingAqua(true);
-                    await luuAquaControlUrl(aquaUrl.trim());
-                    setSavingAqua(false);
-                  }}
+                  onClick={() =>
+                    requireAdminPin('Lưu địa chỉ AquaControl Web', async () => {
+                      setSavingAqua(true);
+                      await luuAquaControlUrl(aquaUrl.trim());
+                      setSavingAqua(false);
+                    })
+                  }
                 >
                   <Save size={14} />
                   <span>Lưu</span>

@@ -33,6 +33,7 @@ export function WifiScreen() {
     toggleWifiSecurity,
     toggleWifiTrusted,
     toggleWifiBlocked,
+    requireAdminPin,
   } = useSmartHome();
 
   const [tab, setTab] = useState<WifiTab>('overview');
@@ -381,10 +382,12 @@ export function WifiScreen() {
               color={SH.Teal}
               variant="solid"
               onClick={() =>
-                guiLenhWifi(
-                  { action: 'set_wifi', ssid: ssidInput, password: wifiPass || undefined },
-                  'Đã gửi lệnh cập nhật cấu hình WiFi.',
-                )
+                requireAdminPin('Đổi tên WiFi / mật khẩu Router', () => {
+                  guiLenhWifi(
+                    { action: 'set_wifi', ssid: ssidInput, password: wifiPass || undefined },
+                    'Đã gửi lệnh cập nhật cấu hình WiFi.',
+                  );
+                })
               }
             >
               <Wifi size={14} />
@@ -408,8 +411,10 @@ export function WifiScreen() {
                     selected={selectedDns === ip}
                     color={SH.Blue}
                     onClick={() => {
-                      setSelectedDns(ip);
-                      guiLenhWifi({ action: 'set_dns', dns: ip }, `Đã gửi lệnh đổi DNS thành ${ip}`);
+                      requireAdminPin(`Đổi DNS Router thành ${ip}`, () => {
+                        setSelectedDns(ip);
+                        guiLenhWifi({ action: 'set_dns', dns: ip }, `Đã gửi lệnh đổi DNS thành ${ip}`);
+                      });
                     }}
                   />
                 ))}
@@ -431,8 +436,10 @@ export function WifiScreen() {
                     color={SH.Red}
                     variant="solid"
                     onClick={() => {
-                      setConfirmReboot(false);
-                      guiLenhWifi({ action: 'reboot' }, 'Đã gửi lệnh khởi động lại Router.');
+                      requireAdminPin('Khởi động lại Router WiFi', () => {
+                        setConfirmReboot(false);
+                        guiLenhWifi({ action: 'reboot' }, 'Đã gửi lệnh khởi động lại Router.');
+                      });
                     }}
                   >
                     Xác nhận Reboot ngay

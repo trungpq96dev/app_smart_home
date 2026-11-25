@@ -63,6 +63,10 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import vn.smarthome.data.baomat.CauHinhBaoMat
+import vn.smarthome.data.baomat.CauHinhBaoMatStore
+import vn.smarthome.data.baomat.GasMqttState
+import vn.smarthome.data.baomat.PinHasher
 import vn.smarthome.data.bomnuoc.BomNuocState
 import vn.smarthome.data.bomnuoc.CauHinhBomNuoc
 import vn.smarthome.data.bomnuoc.CauHinhBomNuocStore
@@ -118,6 +122,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val storeCam = CauHinhCameraStore(app)
     private val storeThoiTiet = CauHinhThoiTietStore(app)
     private val storeBomNuoc = CauHinhBomNuocStore(app)
+    private val storeBaoMat = CauHinhBaoMatStore(app)
     private val nhatKyBom = NhatKyBomNuoc(File(app.filesDir, "bom_nuoc_nhat_ky.json"), viewModelScope)
     private val quanLyBom = QuanLyBomNuoc(viewModelScope)
     private val mqtt = MqttDien()
@@ -362,6 +367,89 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val kenhBom: StateFlow<KenhBomNuoc> = quanLyBom.kenh
     val choBomNuoc: StateFlow<Set<String>> = quanLyBom.choLenh
     val nhatKyBomNuoc: StateFlow<List<SuKienBom>> = nhatKyBom.danhSach
+
+    // ---- Man hinh cho ban dem & Khoa PIN Ky thuat ----
+
+    val cauHinhBaoMat: StateFlow<CauHinhBaoMat> = storeBaoMat.cauHinh
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CauHinhBaoMat())
+
+    val pirMotion: SharedFlow<Long> = mqtt.pirMotion
+    val gasMqtt: StateFlow<GasMqttState> = mqtt.gasMqtt
+
+    private val _adminUnlocked = MutableStateFlow(false)
+    val adminUnlocked: StateFlow<Boolean> = _adminUnlocked.asStateFlow()
+
+    private val _pinLockoutUntilMs = MutableStateFlow(0L)
+    val pinLockoutUntilMs: StateFlow<Long> = _pinLockoutUntilMs.asStateFlow()
+
+    private var pinFailCount = 0
+    private var adminUnlockJob: Job? = null
+
+    fun verifyAdminPin(pin: String): String? {
+        val now = System.currentTimeMillis()
+        val lockUntil = _pinLockoutUntilMs.value
+        if (lockUntil > now) {
+            val sec = ((lockUntil - now) / 1000L).coerceAtLeast(1L)
+            return "Nhập sai quá nhiều lần. Vui lòng thử lại sau ${sec}s."
+        }
+        val cfg = cauHinhBaoMat.value
+        if (!PinHasher.kiemTra(pin, cfg.pinSalt, cfg.pinHash)) {
+            pinFailCount++
+            if (pinFailCount >= 5) {
+                pinFailCount = 0
+                _pinLockoutUntilMs.value = now + 30_000L
+                return "Sai PIN 5 lần liên tiếp. Tạm khóa xác thực trong 30 giây."
+            }
+            return "Mã PIN không đúng (còn ${5 - pinFailCount} lần thử)."
+        }
+        pinFailCount = 0
+        _pinLockoutUntilMs.value = 0L
+        _adminUnlocked.value = true
+        adminUnlockJob?.cancel()
+        adminUnlockJob = viewModelScope.launch {
+            delay(5 * 60_000L)
+            _adminUnlocked.value = false
+        }
+        return null
+    }
+
+    fun lockAdminNow() {
+        adminUnlockJob?.cancel()
+        _adminUnlocked.value = false
+    }
+
+    fun luuCauHinhBaoMat(c: CauHinhBaoMat) {
+        viewModelScope.launch { storeBaoMat.luu(c) }
+    }
+
+    fun doiPinAdmin(pinCu: String, pinMoi: String): String? {
+        val cfg = cauHinhBaoMat.value
+        if (!PinHasher.kiemTra(pinCu, cfg.pinSalt, cfg.pinHash)) {
+            return "Mã PIN hiện tại không đúng."
+        }
+        if (!PinHasher.hopLe4So(pinMoi)) {
+            return "Mã PIN mới phải gồm đúng 4 chữ số."
+        }
+        val saltMoi = PinHasher.taoMuoi()
+        val hashMoi = PinHasher.hash(pinMoi, saltMoi)
+        viewModelScope.launch {
+            storeBaoMat.luu(cfg.copy(pinSalt = saltMoi, pinHash = hashMoi))
+        }
+        lockAdminNow()
+        return null
+    }
+
+    fun datBatTatKhoaPin(pinHienTai: String, bat: Boolean): String? {
+        val cfg = cauHinhBaoMat.value
+        if (!PinHasher.kiemTra(pinHienTai, cfg.pinSalt, cfg.pinHash)) {
+            return "Mã PIN hiện tại không đúng."
+        }
+        viewModelScope.launch {
+            storeBaoMat.luu(cfg.copy(khoaPinBat = bat))
+        }
+        if (!bat) lockAdminNow()
+        return null
+    }
 
     // ---- Tro ly giong noi ----
 
