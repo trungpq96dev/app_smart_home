@@ -526,7 +526,7 @@ class BoNhanDienKhuonMatYuNetSFace:
             return ""
         muc: list[str] = []
         for sub in sorted(self.faces_dir.iterdir()):
-            if not sub.is_dir() or sub.name.lower() == "unknown":
+            if not sub.is_dir() or sub.name.lower() in ("unknown", "_snapshots"):
                 continue
             for img_p in sorted(sub.iterdir()):
                 if img_p.is_file() and img_p.suffix.lower() in ANH_DUOI_HOP_LE:
@@ -550,7 +550,7 @@ class BoNhanDienKhuonMatYuNetSFace:
             return
 
         for sub in sorted(self.faces_dir.iterdir()):
-            if not sub.is_dir() or sub.name.lower() == "unknown":
+            if not sub.is_dir() or sub.name.lower() in ("unknown", "_snapshots"):
                 continue
             vecs: list[Any] = []
             for img_p in sorted(sub.iterdir()):
