@@ -25,8 +25,8 @@ android {
         applicationId = "vn.smarthome"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.9.7"
+        versionCode = 30
+        versionName = "0.9.8"
         resourceConfigurations += listOf("vi", "en")
     }
 

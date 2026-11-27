@@ -81,6 +81,7 @@ class MayChuPlayback:
         face_enroll_camera_cb: Callable[[str, str], dict[str, Any]] | None = None,
         face_enroll_upload_cb: Callable[[str, bytes], dict[str, Any]] | None = None,
         face_delete_cb: Callable[[str], dict[str, Any]] | None = None,
+        tts_cb: Callable[[str], Path | None] | None = None,
     ) -> None:
         self.cfg = cfg
         self.db = db
@@ -97,6 +98,7 @@ class MayChuPlayback:
         self.face_enroll_camera_cb = face_enroll_camera_cb
         self.face_enroll_upload_cb = face_enroll_upload_cb
         self.face_delete_cb = face_delete_cb
+        self.tts_cb = tts_cb
         self._httpd: ThreadingHTTPServer | None = None
         self._luong: threading.Thread | None = None
 
@@ -339,6 +341,25 @@ class MayChuPlayback:
                     cam = qs.get("cam", [""])[0].strip()
                     ds_p = parent.ptz_presets_list_cb(cam) if parent.ptz_presets_list_cb else []
                     self._tra_json(HTTPStatus.OK, {"camera": cam, "presets": ds_p})
+                    return
+
+                if path == "/api/tts":
+                    text = qs.get("text", [""])[0].strip()
+                    if not text or not parent.tts_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Thiếu tham số text cho TTS"})
+                        return
+                    mp3_p = parent.tts_cb(text)
+                    if not mp3_p or not mp3_p.exists():
+                        self._tra_json(HTTPStatus.BAD_GATEWAY, {"error": "Không tạo được âm thanh TTS tiếng Việt"})
+                        return
+                    du_lieu = mp3_p.read_bytes()
+                    self.send_response(HTTPStatus.OK)
+                    self._them_cors()
+                    self.send_header("Content-Type", "audio/mpeg")
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.send_header("Content-Length", str(len(du_lieu)))
+                    self.end_headers()
+                    self.wfile.write(du_lieu)
                     return
 
                 self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không có đường dẫn này"})

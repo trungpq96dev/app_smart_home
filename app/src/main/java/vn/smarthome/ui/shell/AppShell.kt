@@ -628,6 +628,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onPtzPreset = vm::goiPresetCamera,
                         onDatRiengTu = vm::datCheDoRiengTuCamera,
                         onDatCheDoNha = vm::datCheDoNhaCamera,
+                        onDocThuChao = vm::docThuGiongChao,
                     )
 
                     dest == Dest.DEVICES -> DevicesScreen(

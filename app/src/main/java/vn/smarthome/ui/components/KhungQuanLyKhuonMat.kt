@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
@@ -89,6 +90,7 @@ fun KhungQuanLyKhuonMat(
     cauHinhCamera: CauHinhCamera,
     cameraRecorder: CameraRecorderState,
     lanTai: Int,
+    onDocThuChao: (String) -> Unit = {},
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -231,11 +233,30 @@ fun KhungQuanLyKhuonMat(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
+                Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Icon(Icons.Filled.PersonAdd, contentDescription = null, tint = SH.Blue, modifier = Modifier.size(19.dp))
-                Text("Thêm / Cập nhật khuôn mặt người quen", style = SHType.CardTitle, color = SH.Text)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Icon(Icons.Filled.PersonAdd, contentDescription = null, tint = SH.Blue, modifier = Modifier.size(19.dp))
+                    Text("Thêm khuôn mặt người quen", style = SHType.CardTitle, color = SH.Text)
+                }
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Green.tint(0.16f))
+                        .border(Dim.BorderWidth, SH.Green, RoundedCornerShape(8.dp))
+                        .clickable { onDocThuChao(tenNguoi.ifBlank { dsNguoiQuen.firstOrNull()?.name ?: "Trung" }) }
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(Icons.Filled.RecordVoiceOver, contentDescription = null, tint = SH.Green, modifier = Modifier.size(14.dp))
+                    Text("Nghe thử giọng", style = SHType.Caption, color = SH.Green, fontWeight = FontWeight.Bold)
+                }
             }
             Text(
                 "Nhập tên rồi đứng nhìn thẳng vào camera an ninh hoặc chụp trực tiếp bằng camera tablet. Nên lưu 2–3 ảnh (cả ban ngày và ban đêm) để AI nhận chuẩn nhất.",

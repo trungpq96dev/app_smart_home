@@ -2,6 +2,8 @@ package vn.smarthome.data.camera
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.util.Base64
 import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
@@ -287,31 +289,65 @@ object CameraPlaybackApi {
             }
     }
 
-    /** Thu gon anh chup tu camera tablet ve toi da 960px JPEG (~80-150KB) de gui nhanh len serverubuntu. */
+    /**
+     * Thu gon anh chup tu camera tablet ve toi da 960px JPEG (~80-150KB) de gui nhanh len serverubuntu.
+     * QUAN TRONG: Doc EXIF Orientation tu camera Samsung/Android va xoay dung dung chieu truoc khi nen,
+     * neu khong anh bi xoay ngang 90/270 do khien YuNet khong nhan dien duoc khuon mat!
+     */
     suspend fun nenAnhChupTablet(file: File): ByteArray? = withContext(Dispatchers.IO) {
         if (!file.exists() || file.length() <= 0L) return@withContext null
         try {
+            val exifOrientation = runCatching {
+                ExifInterface(file.absolutePath).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL,
+                )
+            }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, bounds)
             val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
             var sample = 1
             while (maxDim / sample > 1400) sample *= 2
-            val bmp = BitmapFactory.decodeFile(
+            val rawBmp = BitmapFactory.decodeFile(
                 file.absolutePath,
                 BitmapFactory.Options().apply { inSampleSize = sample },
             ) ?: return@withContext null
 
-            val scaled = if (maxOf(bmp.width, bmp.height) > 960) {
-                val scale = 960f / maxOf(bmp.width, bmp.height)
-                val w = (bmp.width * scale).toInt().coerceAtLeast(1)
-                val h = (bmp.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(bmp, w, h, true).also {
-                    if (it !== bmp) bmp.recycle()
+            val matrix = Matrix()
+            when (exifOrientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    matrix.postRotate(90f)
+                    matrix.postScale(-1f, 1f)
                 }
-            } else bmp
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    matrix.postRotate(270f)
+                    matrix.postScale(-1f, 1f)
+                }
+            }
+
+            val upright = if (!matrix.isIdentity) {
+                Bitmap.createBitmap(rawBmp, 0, 0, rawBmp.width, rawBmp.height, matrix, true).also {
+                    if (it !== rawBmp) rawBmp.recycle()
+                }
+            } else rawBmp
+
+            val scaled = if (maxOf(upright.width, upright.height) > 960) {
+                val scale = 960f / maxOf(upright.width, upright.height)
+                val w = (upright.width * scale).toInt().coerceAtLeast(1)
+                val h = (upright.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(upright, w, h, true).also {
+                    if (it !== upright) upright.recycle()
+                }
+            } else upright
 
             val out = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 86, out)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 88, out)
             scaled.recycle()
             out.toByteArray()
         } catch (_: Throwable) {

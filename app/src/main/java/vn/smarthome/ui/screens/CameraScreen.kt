@@ -150,6 +150,7 @@ fun CameraScreen(
     onPtzPreset: (String, String) -> Unit = { _, _ -> },
     onDatRiengTu: (Boolean) -> Unit = {},
     onDatCheDoNha: (String) -> Unit = {},
+    onDocThuChao: (String) -> Unit = {},
 ) {
     val cam = state.cameras.getOrNull(state.selectedCamera) ?: state.cameras.firstOrNull()
     val stamp = rememberCameraStamp()
@@ -300,6 +301,7 @@ fun CameraScreen(
                     cauHinhCamera = cauHinhCamera,
                     cameraRecorder = cameraRecorder,
                     lanTai = lanTai,
+                    onDocThuChao = onDocThuChao,
                     onNotice = onNotice,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )

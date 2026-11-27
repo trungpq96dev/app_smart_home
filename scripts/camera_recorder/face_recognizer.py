@@ -585,26 +585,71 @@ class BoNhanDienKhuonMatYuNetSFace:
                 self._nap_thu_vien_neu_doi(force=True)
 
     def kiem_tra_co_khuon_mat(self, jpeg_bytes: bytes) -> tuple[bool, int]:
-        """Dùng YuNet kiểm tra ảnh đăng ký có khuôn mặt rõ ràng không trước khi lưu vào thư viện."""
+        co, so, _ = self.chuan_hoa_anh_khuon_mat(jpeg_bytes)
+        return co, so
+
+    def chuan_hoa_anh_khuon_mat(self, jpeg_bytes: bytes) -> tuple[bool, int, bytes]:
+        """Dùng YuNet kiểm tra & tự xoay ảnh đứng (0°/90°/270°/180°) nếu ảnh chụp từ tablet bị xoay EXIF.
+
+        Trả về `(co_mat, so_mat, jpeg_da_xoay_dung)`.
+        """
         if cv2 is None or np is None:
-            return True, 1
+            return True, 1, jpeg_bytes
         if not self.dam_bao_san_sang():
-            return True, 1
+            return True, 1, jpeg_bytes
         arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if img is None:
-            return False, 0
-        h, w = img.shape[:2]
-        if max(w, h) > 1280:
-            scale = 1280.0 / max(w, h)
-            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-            h, w = img.shape[:2]
+        img_goc = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img_goc is None:
+            return False, 0, jpeg_bytes
+
+        h0, w0 = img_goc.shape[:2]
+        if max(w0, h0) > 1280:
+            scale = 1280.0 / max(w0, h0)
+            img_goc = cv2.resize(img_goc, (int(w0 * scale), int(h0 * scale)), interpolation=cv2.INTER_AREA)
+
+        cac_goc = [
+            (0, img_goc),
+            (90, cv2.rotate(img_goc, cv2.ROTATE_90_CLOCKWISE)),
+            (270, cv2.rotate(img_goc, cv2.ROTATE_90_COUNTERCLOCKWISE)),
+            (180, cv2.rotate(img_goc, cv2.ROTATE_180)),
+        ]
+
+        tot_nhat_img = img_goc
+        tot_nhat_goc = 0
+        tot_nhat_so = 0
+        tot_nhat_diem = 0.0
+
         with self._lock:
             assert self._detector is not None
-            self._detector.setInputSize((w, h))
-            _, faces = self._detector.detect(img)
-            so_mat = 0 if faces is None else sum(1 for m in faces if float(m[14]) >= 0.62)
-            return so_mat > 0, so_mat
+            for goc, anh in cac_goc:
+                h, w = anh.shape[:2]
+                self._detector.setInputSize((w, h))
+                _, faces = self._detector.detect(anh)
+                if faces is None or len(faces) == 0:
+                    continue
+                hop_le = [m for m in faces if float(m[14]) >= 0.55]
+                if not hop_le:
+                    continue
+                diem_max = max(float(m[14]) for m in hop_le)
+                if diem_max > tot_nhat_diem:
+                    tot_nhat_diem = diem_max
+                    tot_nhat_so = len(hop_le)
+                    tot_nhat_img = anh
+                    tot_nhat_goc = goc
+                # Nếu ảnh gốc 0° đã bắt mặt rất rõ (>= 0.72) thì dừng luôn cho nhanh
+                if goc == 0 and diem_max >= 0.72:
+                    break
+
+        if tot_nhat_so <= 0:
+            return False, 0, jpeg_bytes
+
+        if tot_nhat_goc != 0:
+            ok_enc, buf = cv2.imencode(".jpg", tot_nhat_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            if ok_enc:
+                log.info("Đã tự xoay ảnh khuôn mặt %d° về chiều đứng (độ tin cậy %.0f%%).", tot_nhat_goc, tot_nhat_diem * 100)
+                return True, tot_nhat_so, buf.tobytes()
+
+        return True, tot_nhat_so, jpeg_bytes
 
     def nhan_dien_tu_jpeg(self, jpeg_bytes: bytes) -> list[KetQuaMat]:
         if not self.dam_bao_san_sang() or cv2 is None or np is None:

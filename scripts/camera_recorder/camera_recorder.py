@@ -37,6 +37,7 @@ from onvif_ptz import QuanLyPtzOnvif, doc_danh_sach_onvif
 from recorder import LuongGhiCamera, MiniNvrClipper, chup_anh_ngay
 from storage import QuanLyLuuTru
 from telegram_notifier import TelegramNotifier
+from tts_viet import BoTtsTiengViet
 
 log = logging.getLogger("camera_recorder")
 
@@ -47,6 +48,7 @@ class DichVuCameraRecorder:
         self.db = CameraDb(cfg.data_dir / "index.db")
         self.storage = QuanLyLuuTru(cfg, self.db)
         self.tg = TelegramNotifier(cfg)
+        self.tts = BoTtsTiengViet(cfg.data_dir / "tts_cache")
         self.yolo = BoNhanDienNguoiOnnx(cfg)
         self.clipper = MiniNvrClipper(cfg, self.db)
         self.ptz = QuanLyPtzOnvif(
@@ -96,6 +98,7 @@ class DichVuCameraRecorder:
             face_enroll_camera_cb=self.them_mat_tu_camera,
             face_enroll_upload_cb=self.them_mat_tu_anh,
             face_delete_cb=self.xoa_mat_nguoi_quen,
+            tts_cb=self.tts.tao_mp3,
         )
         self._chay = True
 
@@ -141,14 +144,14 @@ class DichVuCameraRecorder:
         return self.them_mat_tu_anh(ten_nguoi, jpeg, nguon=f"cam_{cam_hd}")
 
     def them_mat_tu_anh(self, ten_nguoi: str, jpeg_bytes: bytes, nguon: str = "tablet") -> dict[str, Any]:
-        """Kiểm tra khuôn mặt bằng YuNet, lưu vào `faces/<Ten_Nguoi>/` và nạp nóng thư viện AI."""
-        co_mat, so_mat = self.face_worker.engine.kiem_tra_co_khuon_mat(jpeg_bytes)
+        """Kiểm tra & tự xoay ảnh khuôn mặt bằng YuNet, lưu vào `faces/<Ten_Nguoi>/` và nạp nóng AI."""
+        co_mat, so_mat, anh_chuan = self.face_worker.engine.chuan_hoa_anh_khuon_mat(jpeg_bytes)
         if not co_mat:
             return {
                 "ok": False,
                 "message": "Không phát hiện khuôn mặt rõ trong ảnh — hãy đứng gần, đủ sáng và nhìn thẳng vào ống kính rồi thử lại.",
             }
-        ok, msg, _, tong = luu_anh_mau_nguoi_quen(self.cfg.face_dir, ten_nguoi, jpeg_bytes, nguon=nguon)
+        ok, msg, _, tong = luu_anh_mau_nguoi_quen(self.cfg.face_dir, ten_nguoi, anh_chuan, nguon=nguon)
         if ok:
             self.face_worker.engine.lam_moi_thu_vien()
             self.face_worker.quyet_dinh.xoa_cooldown_nguoi(ten_nguoi.strip())

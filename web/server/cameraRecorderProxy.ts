@@ -145,6 +145,9 @@ export function proxyCameraRecorderHttp(
     upstreamPath = '/api/face/unknown';
   } else if (method === 'GET' && subPath === '/ptz/presets') {
     upstreamPath = `/api/ptz/presets${queryStr ? `?${queryStr}` : ''}`;
+  } else if (method === 'GET' && subPath === '/tts') {
+    upstreamPath = `/api/tts${queryStr ? `?${queryStr}` : ''}`;
+    timeoutMs = SNAPSHOT_TIMEOUT_MS;
   } else if (method === 'POST' && subPath === '/snapshot') {
     upstreamPath = `/api/snapshot${queryStr ? `?${queryStr}` : ''}`;
     timeoutMs = SNAPSHOT_TIMEOUT_MS;
