@@ -269,7 +269,16 @@ const clientDist = fs.existsSync(path.join(candidateNearDist, 'index.html'))
   : candidateCwd;
 const indexHtml = path.join(clientDist, 'index.html');
 if (fs.existsSync(indexHtml)) {
-  app.use(express.static(clientDist));
+  app.use(
+    express.static(clientDist, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html') || filePath.endsWith('.webmanifest')) {
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        }
+      },
+    }),
+  );
   app.use((req, res, next) => {
     if (
       req.method !== 'GET' ||
@@ -279,6 +288,7 @@ if (fs.existsSync(indexHtml)) {
     ) {
       return next();
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(indexHtml);
   });
 }
