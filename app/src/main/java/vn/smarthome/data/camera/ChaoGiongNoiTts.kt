@@ -10,8 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import vn.smarthome.data.baomat.ManChoLogic
 import java.io.File
+import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -94,11 +96,11 @@ object FaceGreetLogic {
 
 /**
  * Bộ phát chuông ting-tong và đọc câu chào tiếng Việt chuẩn tự nhiên:
- * 1. Ưu tiên tải MP3 giọng Việt Neural (`vi-VN-HoaiMyNeural`) từ `/api/tts` trên serverubuntu
- *    (có cache ổ đĩa trên server -> độ trễ LAN ~50ms, giọng người Việt tự nhiên 100%, không bị
- *    lỗi giọng Samsung TTS đọc lơ lớ kiểu tiếng Trung).
- * 2. Dự phòng offline: dùng Android `TextToSpeech` ưu tiên động cơ `com.google.android.tts`
- *    và chọn đúng giọng `vi-VN`.
+ * 1. Tải MP3 giọng nữ tiếng Việt chuẩn (`tl=vi`) từ `/api/tts` trên serverubuntu (có cache ổ đĩa).
+ * 2. Phát qua `MediaPlayer` trên luồng `USAGE_MEDIA` (`STREAM_MUSIC`) bằng `FileDescriptor`
+ *    (không dùng `USAGE_ASSISTANCE_SONIFICATION` vốn bị tắt tiếng mặc định trên tablet Samsung,
+ *    và không truyền path trực tiếp tránh lỗi SELinux `MediaServer` với `cacheDir`).
+ * 3. Dự phòng offline: Android `TextToSpeech` trên luồng Main, ưu tiên `com.google.android.tts` + `vi-VN`.
  */
 class ChaoGiongNoiTts(
     private val context: Context,
@@ -120,38 +122,66 @@ class ChaoGiongNoiTts(
         quyetDinh: QuyetDinhChao,
         cauHinhCamera: CauHinhCamera? = null,
         congApi: Int? = null,
+        onLoi: ((String) -> Unit)? = null,
     ) {
         if (!quyetDinh.hopLe) return
         val cau = quyetDinh.docTts
-        scope.launch(Dispatchers.IO) {
+        scope.launch {
             if (quyetDinh.phatChuongTingTong) {
-                phatTingTong()
-                delay(320L)
+                withContext(Dispatchers.IO) { phatTingTong() }
+                delay(280L)
             }
             if (!cau.isNullOrBlank()) {
-                val daPhatServer = cauHinhCamera?.takeIf { it.dayDu() }?.let { cfg ->
-                    phatMp3TuServer(cfg, cau, congApi)
-                } ?: false
-                if (!daPhatServer) {
-                    docTiengVietOffline(cau)
-                }
+                phatCauNoi(cau, cauHinhCamera, congApi, onLoi)
             }
         }
     }
 
-    fun docThu(cau: String, cauHinhCamera: CauHinhCamera?, congApi: Int?) {
+    fun docThu(
+        cau: String,
+        cauHinhCamera: CauHinhCamera?,
+        congApi: Int?,
+        onKetQua: ((String) -> Unit)? = null,
+    ) {
         val noiDung = cau.trim().ifEmpty { "Chào mừng bạn đã về nhà!" }
-        scope.launch(Dispatchers.IO) {
-            val daPhatServer = cauHinhCamera?.takeIf { it.dayDu() }?.let { cfg ->
-                phatMp3TuServer(cfg, noiDung, congApi)
-            } ?: false
-            if (!daPhatServer) {
-                docTiengVietOffline(noiDung)
-            }
+        scope.launch {
+            phatCauNoi(noiDung, cauHinhCamera, congApi, onKetQua)
         }
     }
 
-    private fun phatMp3TuServer(cfg: CauHinhCamera, text: String, congApi: Int?): Boolean {
+    private suspend fun phatCauNoi(
+        noiDung: String,
+        cauHinhCamera: CauHinhCamera?,
+        congApi: Int?,
+        onThongBao: ((String) -> Unit)?,
+    ) {
+        // Kiem tra am luong Media (STREAM_MUSIC) cua may tinh bang
+        val amLuongZero = runCatching {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            am != null && am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
+        }.getOrDefault(false)
+        if (amLuongZero) {
+            onThongBao?.invoke("Âm lượng Media trên máy tính bảng đang bằng 0 — hãy tăng âm lượng loa!")
+        }
+
+        // 1. Tai MP3 giong Viet chuan tu serverubuntu (tren Dispatchers.IO)
+        val mp3File = cauHinhCamera?.takeIf { it.dayDu() }?.let { cfg ->
+            withContext(Dispatchers.IO) { taiMp3TuServer(cfg, noiDung, congApi) }
+        }
+
+        // 2. Phat MediaPlayer tren Dispatchers.Main bang FileDescriptor + USAGE_MEDIA (STREAM_MUSIC)
+        if (mp3File != null) {
+            val okPhat = withContext(Dispatchers.Main) { phatFileMp3(mp3File) }
+            if (okPhat) return
+        }
+
+        // 3. Du phong offline: Android TextToSpeech tren Dispatchers.Main
+        withContext(Dispatchers.Main) {
+            docTiengVietOffline(noiDung)
+        }
+    }
+
+    private fun taiMp3TuServer(cfg: CauHinhCamera, text: String, congApi: Int?): File? {
         var conn: HttpURLConnection? = null
         return try {
             val url = cfg.urlTts(text, congApi)
@@ -161,13 +191,26 @@ class ChaoGiongNoiTts(
                 readTimeout = 10000
                 cfg.headerBasicAuth().forEach { (k, v) -> setRequestProperty(k, v) }
             }
-            if (conn.responseCode != 200) return false
+            if (conn.responseCode != 200) return null
             val bytes = conn.inputStream.use { it.readBytes() }
-            if (bytes.size < 512) return false
+            if (bytes.size < 512) return null
 
-            val outFile = File(context.cacheDir, "tts_greet_latest.mp3")
+            val outFile = File(context.cacheDir, "tts_greet_${System.currentTimeMillis() % 10000}.mp3")
+            // Don file tam cu neu con sot
+            context.cacheDir.listFiles { f -> f.name.startsWith("tts_greet_") }?.forEach {
+                runCatching { it.delete() }
+            }
             outFile.writeBytes(bytes)
+            outFile
+        } catch (_: Throwable) {
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
 
+    private fun phatFileMp3(file: File): Boolean {
+        return try {
             runCatching {
                 mediaPlayer?.stop()
                 mediaPlayer?.release()
@@ -175,17 +218,22 @@ class ChaoGiongNoiTts(
             val mp = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )
-                setDataSource(outFile.absolutePath)
+                FileInputStream(file).use { fis ->
+                    setDataSource(fis.fd)
+                }
+                setVolume(1.0f, 1.0f)
                 setOnCompletionListener { player ->
                     runCatching { player.release() }
+                    runCatching { file.delete() }
                     if (mediaPlayer === player) mediaPlayer = null
                 }
                 setOnErrorListener { player, _, _ ->
                     runCatching { player.release() }
+                    runCatching { file.delete() }
                     if (mediaPlayer === player) mediaPlayer = null
                     true
                 }
@@ -195,15 +243,14 @@ class ChaoGiongNoiTts(
             mediaPlayer = mp
             true
         } catch (_: Throwable) {
+            runCatching { file.delete() }
             false
-        } finally {
-            conn?.disconnect()
         }
     }
 
     private fun phatTingTong() {
         runCatching {
-            val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            val tg = ToneGenerator(AudioManager.STREAM_MUSIC, 90)
             try {
                 tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
                 Thread.sleep(220L)
@@ -225,7 +272,6 @@ class ChaoGiongNoiTts(
                     if (engine != null) {
                         val vi = Locale("vi", "VN")
                         engine.setLanguage(vi)
-                        // Chon dung giong tieng Viet (uu tien local/network cua Google TTS)
                         runCatching {
                             val giongViet = engine.voices
                                 ?.filter { it.locale?.language.equals("vi", ignoreCase = true) }
@@ -243,7 +289,6 @@ class ChaoGiongNoiTts(
                     }
                 }
             }
-            // Uu tien Google TTS (com.google.android.tts) thay vi Samsung TTS de tranh giong lo lo
             val hasGoogleTts = runCatching {
                 context.packageManager.getPackageInfo("com.google.android.tts", 0)
                 true

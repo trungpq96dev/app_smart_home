@@ -601,7 +601,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         )
         if (!qd.hopLe) return
         if (qd.hienPopup) {
-            chaoTts.phat(qd, cauHinhCamera.value, cameraRecorder.value.apiPort)
+            chaoTts.phat(qd, cauHinhCamera.value, cameraRecorder.value.apiPort) { tb ->
+                _thongBao.tryEmit(tb)
+            }
             _chaoMatHienTai.value = ev to qd
             chaoMatAnJob?.cancel()
             chaoMatAnJob = viewModelScope.launch {
@@ -613,7 +615,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun docThuGiongChao(ten: String) {
         val sach = ten.trim().ifBlank { "bạn" }
-        chaoTts.docThu("Chào mừng về nhà, $sach!", cauHinhCamera.value, cameraRecorder.value.apiPort)
+        _thongBao.tryEmit("Đang phát giọng chào: \"Chào mừng về nhà, $sach!\"")
+        chaoTts.docThu("Chào mừng về nhà, $sach!", cauHinhCamera.value, cameraRecorder.value.apiPort) { tb ->
+            _thongBao.tryEmit(tb)
+        }
     }
 
     fun anPopupChaoMat() {
