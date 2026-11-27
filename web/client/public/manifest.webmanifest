@@ -1,0 +1,20 @@
+{
+  "name": "SmartHome — Điều khiển nhà thông minh",
+  "short_name": "SmartHome",
+  "description": "Ứng dụng điều khiển nhà thông minh v0.9.4 (Camera 24/24, phòng 2.5D, Điện EVN, Bơm nước, Trợ lý Gemini)",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B1220",
+  "theme_color": "#0B1220",
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "/logo_sh.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

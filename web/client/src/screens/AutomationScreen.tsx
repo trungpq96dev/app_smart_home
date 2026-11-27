@@ -232,6 +232,7 @@ export function AutomationScreen() {
           aquaUrl={config.aquaControlUrl}
           onOpenPumpTab={() => setTab('pump')}
           onOpenAquaWeb={openAquaControl}
+          onShowToast={showToast}
         />
       )}
 
@@ -1195,6 +1196,7 @@ function TabKichBan({
   aquaUrl,
   onOpenPumpTab,
   onOpenAquaWeb,
+  onShowToast,
 }: {
   daCauHinh: boolean;
   bomNuoc: BomNuocState | null;
@@ -1203,7 +1205,10 @@ function TabKichBan({
   aquaUrl: string;
   onOpenPumpTab: () => void;
   onOpenAquaWeb: () => void;
+  onShowToast: (msg: string, tone?: 'info' | 'success' | 'warning' | 'error') => void;
 }) {
+  const modeRaw = nhanCheDoBon(bomNuoc?.tankMode);
+  const modeCap = modeRaw ? modeRaw.charAt(0).toUpperCase() + modeRaw.slice(1) : modeRaw;
   const pumpBadge = !daCauHinh
     ? { label: 'Chưa cấu hình', color: SH.TextOff }
     : bomNuoc && coLoiBom(bomNuoc)
@@ -1211,7 +1216,7 @@ function TabKichBan({
       : bomNuoc && bomChinhDangChay(bomNuoc)
         ? { label: 'Đang bơm', color: SH.Green }
         : ketNoiDirect
-          ? { label: `${nhanCheDoBon(bomNuoc?.tankMode)} · Online`, color: SH.Cyan }
+          ? { label: `${modeCap} · Online`, color: SH.Cyan }
           : { label: 'Offline', color: SH.Amber };
 
   return (
@@ -1339,9 +1344,16 @@ function TabKichBan({
               icon: <Radio size={17} />,
             },
           ].map((sc) => (
-            <div
+            <button
               key={sc.title}
-              className="rounded-xl border border-[#253459] bg-[#0E1627] p-3 space-y-2"
+              type="button"
+              onClick={() =>
+                onShowToast(
+                  `Kịch bản mẫu "${sc.title}" — tùy chỉnh trực tiếp trong từng phòng chi tiết.`,
+                  'info',
+                )
+              }
+              className="rounded-xl border border-[#253459] bg-[#0E1627] p-3 space-y-2 text-left hover:bg-[#1A2744] hover:border-[#3B4F7D] transition-colors cursor-pointer"
             >
               <div className="flex items-center justify-between gap-2">
                 <IconBadge color={sc.color} size={32}>
@@ -1351,7 +1363,7 @@ function TabKichBan({
               </div>
               <div className="text-xs font-bold text-[#E6EDF7]">{sc.title}</div>
               <p className="text-[11px] text-[#8A9BB8] leading-relaxed">{sc.desc}</p>
-            </div>
+            </button>
           ))}
         </div>
       </SmartCard>

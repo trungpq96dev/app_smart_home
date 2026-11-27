@@ -102,26 +102,35 @@ export function StatsScreen() {
           });
     const values = slice.map((d) => d.kwh);
 
-    const statusOk =
-      mqttStatus.state === 'da_noi' &&
-      !dien.loi &&
-      dien.trangThai !== 'loi' &&
-      tuoi !== 'QUA_CU' &&
-      tuoi !== 'HOI_CU' &&
-      tuoi !== 'CHUA_CO';
+    const baseStatus = (() => {
+      if (mqttStatus.state === 'chua_cau_hinh') {
+        return { ok: false, color: SH.TextDim, label: 'Chưa cấu hình MQTT', sub: 'Vào Cài đặt → Dịch vụ' };
+      }
+      if (mqttStatus.state === 'loi') {
+        return { ok: false, color: SH.Red, label: 'Lỗi kết nối MQTT', sub: mqttStatus.moTa };
+      }
+      if (mqttStatus.state !== 'da_noi') {
+        return { ok: false, color: SH.Amber, label: 'Đang nối MQTT…', sub: dien.capNhat || 'Chờ máy chủ' };
+      }
+      if (dien.loi) {
+        return { ok: false, color: SH.Red, label: 'Cữ gần nhất lỗi', sub: dien.loi };
+      }
+      if (dien.trangThai === 'loi') {
+        return { ok: false, color: SH.Red, label: 'Cữ gần nhất lỗi', sub: 'Xem log trên serverubuntu' };
+      }
+      if (tuoi === 'CHUA_CO') {
+        return { ok: false, color: SH.TextDim, label: 'Chưa có mốc cập nhật', sub: 'Chờ gói dien/capnhat' };
+      }
+      if (tuoi === 'QUA_CU') {
+        return { ok: false, color: SH.Red, label: 'Dữ liệu cũ > 24h', sub: dien.capNhat || '' };
+      }
+      if (tuoi === 'HOI_CU') {
+        return { ok: false, color: SH.Amber, label: 'Số hơi cũ (8–24h)', sub: dien.capNhat || '' };
+      }
+      return { ok: true, color: SH.Green, label: 'Bình thường', sub: dien.capNhat || '' };
+    })();
 
-    const statusText = dien.loi
-      ? `Lỗi: ${dien.loi}`
-      : mqttStatus.state !== 'da_noi'
-        ? 'Chưa nối MQTT'
-        : tuoi === 'QUA_CU'
-          ? 'Dữ liệu cũ > 24h'
-          : tuoi === 'HOI_CU'
-            ? 'Số hơi cũ (8–24h)'
-            : tuoi === 'CHUA_CO'
-              ? 'Chưa có mốc cập nhật'
-              : 'Bình thường';
-
+    const statusOk = baseStatus.ok;
     const selectedCost = selectedDay ? uocTinhTienNgay(selectedDay.kwh, dien) : null;
     const diffPctVsAvg =
       selectedDay && avgKwh !== null && avgKwh > 0
@@ -130,12 +139,7 @@ export function StatsScreen() {
 
     const dayStatus = (() => {
       if (!selectedDay || !statusOk) {
-        return {
-          ok: statusOk,
-          color: statusOk ? SH.Green : SH.Amber,
-          label: statusText,
-          sub: dien.capNhat || '',
-        };
+        return baseStatus;
       }
       if (avgKwh !== null && avgKwh > 0 && selectedDay.kwh > avgKwh * 1.25) {
         return {
@@ -168,6 +172,9 @@ export function StatsScreen() {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-bold text-[#E6EDF7]">Điện năng EVN · Dữ liệu thật MQTT</span>
               <TrangThaiKetNoi ketNoi={mqttStatus} dien={dien} nowMs={nowMs} />
+              {(dien.loi || dien.trangThai === 'loi') && (
+                <StatusPill label="Cữ gần nhất lỗi" color={SH.Red} />
+              )}
             </div>
             <p className="text-[11px] text-[#8A9BB8]">
               {dien.capNhat ? `Cập nhật gần nhất: ${dien.capNhat}` : 'Chưa nhận được gói dien/capnhat'}
@@ -272,7 +279,7 @@ export function StatsScreen() {
               )}
             </SmartCard>
 
-            {/* Bottom 3 summary cards (update dynamically when tapping a column) */}
+            {/* Bottom 3 summary cards */}
             <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <SmartCard
                 glowColor={selectedDay ? SH.Blue : undefined}
@@ -368,7 +375,7 @@ export function StatsScreen() {
     );
   };
 
-  // WATER tab uses strict real AquaControl telemetry (khong bia so, khong DemoBadge)
+  // WATER tab uses strict real AquaControl telemetry
   const renderRealWaterStats = () => {
     const tongThangLit = bomNuoc?.useT ?? luongNuocThang[0]?.bomLit ?? null;
     const nuocMayThangLit = bomNuoc?.useC ?? luongNuocThang[0]?.nuocMayLit ?? null;
@@ -381,7 +388,7 @@ export function StatsScreen() {
 
     const statusBadge =
       bomNuoc === null
-        ? { label: nhanKetNoiBom(ketNoiBom, kenhBom), color: SH.TextOff }
+        ? { label: nhanKetNoiBom(ketNoiBom, kenhBom), color: SH.TextDim }
         : fault !== null
           ? { label: fault.noiDung, color: SH.Red }
           : locked

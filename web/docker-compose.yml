@@ -6,14 +6,21 @@ services:
     container_name: smarthome-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3080}:3000"
     volumes:
       - ./data:/app/data
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"
       CONFIG_PATH: "/app/data/config.json"
-      # Các biến môi trường dưới đây chỉ làm giá trị khởi tạo ban đầu nếu chưa có data/config.json
+      CLOUDFLARED_LOG_PATH: "/app/data/cloudflared.log"
+      COCKPIT_CLOUDFLARED_LOG_PATH: "/app/data/cockpit_cloudflared.log"
+      COCKPIT_PROXY_PORT: "3001"
+      COCKPIT_HOST: "${COCKPIT_HOST:-192.168.0.50}"
+      COCKPIT_PORT: "${COCKPIT_PORT:-9090}"
+      WEB_ACCESS_PASS: "${WEB_ACCESS_PASS:-}"
+      WEB_AUTH_BYPASS_LAN: "${WEB_AUTH_BYPASS_LAN:-true}"
+      # Các biến môi trường dưới đây làm giá trị khởi tạo nếu chưa có data/config.json
       MQTT_HOST: "${MQTT_HOST:-192.168.0.50}"
       MQTT_PORT: "${MQTT_PORT:-1883}"
       MQTT_TLS: "${MQTT_TLS:-false}"
@@ -21,10 +28,41 @@ services:
       MQTT_PASS: "${MQTT_PASS:-}"
       GO2RTC_HOST: "${GO2RTC_HOST:-192.168.0.50}"
       GO2RTC_PORT: "${GO2RTC_PORT:-1984}"
+      CAMERA_RECORDER_PORT: "${CAMERA_RECORDER_PORT:-1985}"
       GO2RTC_USER: "${GO2RTC_USER:-}"
       GO2RTC_PASS: "${GO2RTC_PASS:-}"
       WEATHER_NAME: "${WEATHER_NAME:-Hà Nội}"
       WEATHER_LAT: "${WEATHER_LAT:-21.0278}"
       WEATHER_LON: "${WEATHER_LON:-105.8342}"
       AQUACONTROL_URL: "${AQUACONTROL_URL:-}"
+      BOMNUOC_ESP_HOST: "${BOMNUOC_ESP_HOST:-}"
+      BOMNUOC_MQTT_HOST: "${BOMNUOC_MQTT_HOST:-}"
+      BOMNUOC_MQTT_PORT: "${BOMNUOC_MQTT_PORT:-8883}"
+      BOMNUOC_MQTT_TLS: "${BOMNUOC_MQTT_TLS:-true}"
+      BOMNUOC_MQTT_USER: "${BOMNUOC_MQTT_USER:-}"
+      BOMNUOC_MQTT_PASS: "${BOMNUOC_MQTT_PASS:-}"
+      TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-false}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: smarthome-tunnel
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      - smarthome-web
+    volumes:
+      - ./data:/tunnel
+    command: tunnel --no-autoupdate --url http://smarthome-web:3000 --logfile /tunnel/cloudflared.log
+
+  cockpit-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: smarthome-cockpit-tunnel
+    user: "0:0"
+    restart: unless-stopped
+    depends_on:
+      - smarthome-web
+    volumes:
+      - ./data:/tunnel
+    command: tunnel --no-autoupdate --url http://smarthome-web:3001 --logfile /tunnel/cockpit_cloudflared.log

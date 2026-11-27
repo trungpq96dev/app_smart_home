@@ -3,12 +3,15 @@ import {
   BellRing,
   Check,
   CloudSun,
+  Copy,
   Droplets,
   ExternalLink,
   Eye,
   EyeOff,
+  Globe,
   Lock,
   LockOpen,
+  LogOut,
   Mic,
   Moon,
   RefreshCw,
@@ -29,6 +32,7 @@ import {
 } from '../data/giongnoi/types.js';
 import { BarChart } from '../components/Charts.js';
 import { TrangThaiKetNoiBomPill } from '../components/BomNuocUi.js';
+import { useWebAccess } from '../components/WebAccessGate.js';
 import {
   ChoiceChip,
   FlatButton,
@@ -92,9 +96,37 @@ export function SettingsScreen() {
     requireAdminPin,
     lockAdmin,
     updateAdminPin,
+    showToast,
   } = useSmartHome();
+  const { mode: webAccessMode, logout: webLogout } = useWebAccess();
 
   const [tab, setTab] = useState<SettingsTab>('services');
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [cockpitTunnelUrl, setCockpitTunnelUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tab !== 'system') return;
+    let cancelled = false;
+    const loadTunnel = async () => {
+      try {
+        const r = await fetch('/api/tunnel/status', { credentials: 'same-origin' });
+        if (!r.ok || cancelled) return;
+        const d = (await r.json()) as { url?: string | null; cockpitUrl?: string | null };
+        if (!cancelled) {
+          setTunnelUrl(d.url || null);
+          setCockpitTunnelUrl(d.cockpitUrl || null);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void loadTunnel();
+    const id = window.setInterval(loadTunnel, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [tab]);
 
   // MQTT form
   const [mqttHost, setMqttHost] = useState(config.mqtt.host);
@@ -109,6 +141,7 @@ export function SettingsScreen() {
   // Camera form
   const [camHost, setCamHost] = useState(config.camera.host);
   const [camPort, setCamPort] = useState(String(config.camera.cong));
+  const [camRecorderPort, setCamRecorderPort] = useState(String(config.camera.congGhiHinh || 1985));
   const [camTls, setCamTls] = useState(config.camera.tls);
   const [camUser, setCamUser] = useState(config.camera.taiKhoan);
   const [camPass, setCamPass] = useState('');
@@ -119,6 +152,7 @@ export function SettingsScreen() {
   const [wTen, setWTen] = useState(config.weather.ten);
   const [wLat, setWLat] = useState(String(config.weather.lat));
   const [wLon, setWLon] = useState(String(config.weather.lon));
+  const [wErr, setWErr] = useState<string | null>(null);
   const [savingWeather, setSavingWeather] = useState(false);
 
   // AquaControl URL form
@@ -179,6 +213,7 @@ export function SettingsScreen() {
 
     setCamHost(config.camera.host);
     setCamPort(String(config.camera.cong));
+    setCamRecorderPort(String(config.camera.congGhiHinh || 1985));
     setCamTls(config.camera.tls);
     setCamUser(config.camera.taiKhoan);
 
@@ -208,8 +243,15 @@ export function SettingsScreen() {
   const inputCls =
     'w-full rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs text-[#E6EDF7] outline-none focus:border-[#4F8BFF] font-mono-num';
 
-  const homNayGiay = MucDung.cuaNgay(voiceUsage, MucDung.homNay()).giay;
+  const homNayRec = MucDung.cuaNgay(voiceUsage, MucDung.homNay());
+  const homNayGiay = homNayRec.giay;
   const bayNgayGiay = MucDung.giayNgayGanDay(voiceUsage, 7);
+  const tranGiayNgay = Math.max(0, voiceConfig.phutMoiNgay * 60);
+  const quotaPct = tranGiayNgay > 0 ? Math.min(100, (homNayGiay / tranGiayNgay) * 100) : 0;
+  const conLaiPhut =
+    tranGiayNgay > 0 ? Math.max(0, Math.ceil((tranGiayNgay - homNayGiay) / 60)) : null;
+  const quotaColor =
+    quotaPct >= 100 ? SH.Red : quotaPct >= 80 ? SH.Amber : SH.Green;
 
   return (
     <div className="flex flex-col gap-2.5 lg:h-full lg:overflow-hidden">
@@ -307,21 +349,31 @@ export function SettingsScreen() {
           </SmartCard>
 
           {/* go2rtc Camera Config */}
-          <SmartCard className="space-y-3">
+          <SmartCard className="flex flex-col justify-between gap-2.5 p-3">
             <SectionHeader
-              title="Máy chủ Camera go2rtc"
-              subtitle="Gateway proxy luồng camera an toàn, không lộ mật khẩu ra client"
+              title="Camera go2rtc & Đầu ghi 24/24"
+              subtitle="Gateway proxy luồng xem & tua lại an toàn, không lộ mật khẩu ra client"
               action={<TrangThaiCameraPill cam={cameraStatus} />}
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {cameraStatus.state === 'loi' && (
+              <div className="rounded-xl border border-[#EF4444]/40 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">
+                {cameraStatus.moTa}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
               <div className="sm:col-span-2">
-                <label className="block text-xs text-[#8A9BB8] mb-1">Host / IP go2rtc</label>
-                <input type="text" value={camHost} onChange={(e) => setCamHost(e.target.value)} placeholder="192.168.0.x" className={inputCls} />
+                <label className="block text-xs text-[#8A9BB8] mb-1">Host / IP máy chủ</label>
+                <input type="text" value={camHost} onChange={(e) => setCamHost(e.target.value)} placeholder="192.168.0.50" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-[#8A9BB8] mb-1">Cổng</label>
-                <input type="number" value={camPort} onChange={(e) => setCamPort(e.target.value)} className={inputCls} />
+                <label className="block text-xs text-[#8A9BB8] mb-1">Cổng xem</label>
+                <input type="number" value={camPort} onChange={(e) => setCamPort(e.target.value)} placeholder="1984" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs text-[#8A9BB8] mb-1">Cổng ghi</label>
+                <input type="number" value={camRecorderPort} onChange={(e) => setCamRecorderPort(e.target.value)} placeholder="1985" className={inputCls} />
               </div>
             </div>
 
@@ -360,11 +412,12 @@ export function SettingsScreen() {
               variant="solid"
               disabled={savingCam}
               onClick={() =>
-                requireAdminPin('Lưu cấu hình Camera go2rtc', async () => {
+                requireAdminPin('Lưu cấu hình Camera go2rtc & Đầu ghi', async () => {
                   setSavingCam(true);
                   await luuCameraConfig({
                     host: camHost,
                     cong: Number(camPort) || 1984,
+                    congGhiHinh: Number(camRecorderPort) || 1985,
                     tls: camTls,
                     taiKhoan: camUser,
                     matKhau: camPass || undefined,
@@ -398,6 +451,7 @@ export function SettingsScreen() {
                     setWTen(p.ten);
                     setWLat(String(p.lat));
                     setWLon(String(p.lon));
+                    setWErr(null);
                   }}
                 />
               ))}
@@ -408,23 +462,53 @@ export function SettingsScreen() {
                 <input type="text" value={wTen} onChange={(e) => setWTen(e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-[#8A9BB8] mb-1">Vĩ độ (Lat)</label>
-                <input type="number" step="0.0001" value={wLat} onChange={(e) => setWLat(e.target.value)} className={inputCls} />
+                <label className="block text-xs text-[#8A9BB8] mb-1">Vĩ độ (-90..90)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={wLat}
+                  onChange={(e) => {
+                    setWLat(e.target.value);
+                    setWErr(null);
+                  }}
+                  className={inputCls}
+                />
               </div>
               <div>
-                <label className="block text-xs text-[#8A9BB8] mb-1">Kinh độ (Lon)</label>
-                <input type="number" step="0.0001" value={wLon} onChange={(e) => setWLon(e.target.value)} className={inputCls} />
+                <label className="block text-xs text-[#8A9BB8] mb-1">Kinh độ (-180..180)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={wLon}
+                  onChange={(e) => {
+                    setWLon(e.target.value);
+                    setWErr(null);
+                  }}
+                  className={inputCls}
+                />
               </div>
             </div>
+            {wErr && <p className="text-xs text-[#EF4444]">{wErr}</p>}
             <FlatButton
               color={SH.Amber}
               disabled={savingWeather}
               onClick={async () => {
+                const latNum = Number.parseFloat(wLat.trim());
+                const lonNum = Number.parseFloat(wLon.trim());
+                if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) {
+                  setWErr('Vĩ độ phải nằm trong khoảng -90 đến 90.');
+                  return;
+                }
+                if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) {
+                  setWErr('Kinh độ phải nằm trong khoảng -180 đến 180.');
+                  return;
+                }
+                setWErr(null);
                 setSavingWeather(true);
                 await luuWeatherConfig({
                   ten: wTen.trim() || 'Hà Nội',
-                  lat: Number(wLat) || 21.0278,
-                  lon: Number(wLon) || 105.8342,
+                  lat: latNum,
+                  lon: lonNum,
                 });
                 setSavingWeather(false);
               }}
@@ -697,8 +781,8 @@ export function SettingsScreen() {
 
             <DeviceSwitchRow
               icon={<Wifi size={16} />}
-              label="Cho phép trợ lý gửi lệnh MQTT thật"
-              subtitle="Bật để giọng nói điều khiển công tắc thật ngoài đời"
+              label="Bắn cả lệnh của thiết bị mẫu ra MQTT"
+              subtitle="Công tắc thật luôn gửi qua MQTT; bật nếu muốn thiết bị mô phỏng cũng bắn gói smarthome/control"
               color={SH.Green}
               checked={vMqtt}
               onToggle={() => setVMqtt((m) => !m)}
@@ -710,8 +794,8 @@ export function SettingsScreen() {
                 <input type="number" value={vImLang} onChange={(e) => setVImLang(e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className="block text-[11px] text-[#8A9BB8] mb-1">Tối đa 1 phiên (s)</label>
-                <input type="number" value={vToiDaPhien} onChange={(e) => setVToiDaPhien(e.target.value)} className={inputCls} />
+                <label className="block text-[11px] text-[#8A9BB8] mb-1">Tối đa phiên (60–900s)</label>
+                <input type="number" min={60} max={900} value={vToiDaPhien} onChange={(e) => setVToiDaPhien(e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className="block text-[11px] text-[#8A9BB8] mb-1">Trần mỗi ngày (phút)</label>
@@ -725,6 +809,8 @@ export function SettingsScreen() {
                 variant="solid"
                 onClick={() => {
                   requireAdminPin('Lưu khóa API & cấu hình Trợ lý giọng nói', () => {
+                    const clampedPhien = Math.min(900, Math.max(60, Number(vToiDaPhien) || 600));
+                    setVToiDaPhien(String(clampedPhien));
                     updateVoiceConfig({
                       khoaApi: vKey.trim(),
                       model: vModel.trim() || MODEL_MAC_DINH,
@@ -732,7 +818,7 @@ export function SettingsScreen() {
                       guiMqtt: vMqtt,
                       banSongCong: vBanSongCong,
                       giayImLangTuDong: Math.max(0, Number(vImLang) || 45),
-                      giayToiDaPhien: Math.max(30, Number(vToiDaPhien) || 600),
+                      giayToiDaPhien: clampedPhien,
                       phutMoiNgay: Math.max(0, Number(vPhutNgay) || 30),
                     });
                     setVoiceSavedFlag(true);
@@ -753,8 +839,8 @@ export function SettingsScreen() {
 
           <SmartCard className="lg:col-span-5 flex flex-col gap-2.5 p-3">
             <SectionHeader
-              title="Thống kê sử dụng 30 ngày"
-              subtitle={`Hôm nay: ${Math.floor(homNayGiay / 60)}p ${homNayGiay % 60}s · 7 ngày: ${Math.floor(bayNgayGiay / 60)}p`}
+              title="Hạn mức & Thống kê 30 ngày"
+              subtitle={`7 ngày gần đây: ${Math.floor(bayNgayGiay / 60)}p ${bayNgayGiay % 60}s`}
               action={
                 <FlatButton
                   color={SH.Red}
@@ -765,6 +851,46 @@ export function SettingsScreen() {
                 </FlatButton>
               }
             />
+
+            {/* Daily Quota Bar */}
+            <div className="rounded-xl border border-[#253459] bg-[#0E1627] p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#8A9BB8]">Hạn mức hôm nay ({voiceConfig.phutMoiNgay} phút)</span>
+                <span className="font-semibold" style={{ color: quotaColor }}>
+                  {tranGiayNgay <= 0
+                    ? 'Không giới hạn'
+                    : homNayGiay >= tranGiayNgay
+                      ? 'Đã chạm trần'
+                      : `Còn ${conLaiPhut} phút`}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-[#1C2946] overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${quotaPct}%`, backgroundColor: quotaColor }}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                <div className="rounded-lg bg-[#16213A] px-2 py-1.5">
+                  <div className="text-[10px] text-[#8A9BB8]">Hôm nay</div>
+                  <div className="font-mono-num text-xs font-bold text-[#E6EDF7]">
+                    {Math.floor(homNayGiay / 60)}p {homNayGiay % 60}s
+                  </div>
+                </div>
+                <div className="rounded-lg bg-[#16213A] px-2 py-1.5">
+                  <div className="text-[10px] text-[#8A9BB8]">Số phiên</div>
+                  <div className="font-mono-num text-xs font-bold text-[#A78BFA]">
+                    {homNayRec.soPhien}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-[#16213A] px-2 py-1.5">
+                  <div className="text-[10px] text-[#8A9BB8]">Token hôm nay</div>
+                  <div className="font-mono-num text-xs font-bold text-[#22D3EE]">
+                    {homNayRec.tokenTong.toLocaleString('vi-VN')}
+                  </div>
+                </div>
+              </div>
+            </div>
             {voiceUsage.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#253459] py-8 text-center text-xs text-[#8A9BB8]">
                 Chưa có phiên trò chuyện giọng nói nào trên trình duyệt này.
@@ -1234,6 +1360,74 @@ export function SettingsScreen() {
                 <span className="text-[#8A9BB8]">Trạng thái Node.js Gateway</span>
                 <StatusPill label={gatewayOnline ? 'Sẵn sàng' : 'Mất kết nối'} color={gatewayOnline ? SH.Green : SH.Red} />
               </div>
+            </div>
+
+            {/* Link 4G Cloudflare Quick Tunnel */}
+            <div className="pt-2 space-y-2 border-t border-[#253459]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#E6EDF7]">
+                  <Globe size={14} className="text-[#22C55E]" />
+                  <span>Đường dẫn 4G từ xa (Cloudflare HTTPS)</span>
+                </span>
+                {webAccessMode === 'cookie' && (
+                  <button
+                    type="button"
+                    onClick={() => void webLogout()}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/12 px-2 py-1 text-[11px] font-semibold text-[#FCA5A5] hover:brightness-110 cursor-pointer"
+                  >
+                    <LogOut size={12} />
+                    <span>Đăng xuất</span>
+                  </button>
+                )}
+              </div>
+              {tunnelUrl ? (
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-[11px] text-[#8A9BB8] mb-1">1. Web Nhà thông minh (4G):</div>
+                    <div className="flex items-center gap-2">
+                      <input type="text" readOnly value={tunnelUrl} className={inputCls} />
+                      <FlatButton
+                        color={SH.Green}
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(tunnelUrl);
+                          showToast('Đã sao chép link 4G SmartHome!', 'success');
+                        }}
+                      >
+                        <Copy size={13} />
+                        <span>Chép</span>
+                      </FlatButton>
+                    </div>
+                  </div>
+                  {cockpitTunnelUrl && (
+                    <div>
+                      <div className="text-[11px] text-[#8A9BB8] mb-1">2. Quản trị Server Ubuntu (:9090 Cockpit):</div>
+                      <div className="flex items-center gap-2">
+                        <input type="text" readOnly value={cockpitTunnelUrl} className={inputCls} />
+                        <FlatButton
+                          color={SH.Purple}
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(cockpitTunnelUrl);
+                            showToast('Đã sao chép link 4G Cockpit :9090!', 'success');
+                          }}
+                        >
+                          <Copy size={13} />
+                          <span>Chép</span>
+                        </FlatButton>
+                        <FlatButton
+                          color={SH.Blue}
+                          onClick={() => window.open(cockpitTunnelUrl, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink size={13} />
+                        </FlatButton>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#253459] bg-[#0E1627] px-3 py-2 text-[11px] text-[#8A9BB8]">
+                  Chưa phát hiện đường hầm cloudflared đang chạy.
+                </div>
+              )}
             </div>
 
             <div className="pt-2 space-y-2 border-t border-[#253459]">

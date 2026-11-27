@@ -29,6 +29,47 @@ class Pcm16Downsampler extends AudioWorkletProcessor {
 registerProcessor('pcm16-downsampler', Pcm16Downsampler);
 `;
 
+function getAudioContextClass(): typeof AudioContext {
+  return (
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+  );
+}
+
+/**
+ * Kich hoat va giu AudioContext song tren iOS Safari / standalone PWA:
+ *  - Safari tren iPhone chan phat tieng tu WebSocket neu AudioContext chua duoc
+ *    unlock dong bo ngay trong thao tac cham (user gesture).
+ *  - Khi goi getUserMedia hoac co cuoc goi / Siri, WebKit dat state = 'interrupted'
+ *    (khong phai 'suspended'), can goi resume() cho moi trang thai khac 'running'.
+ */
+function ensureAudioRunning(ctx: AudioContext | null): void {
+  if (!ctx) return;
+  const st = ctx.state as string;
+  if (st !== 'running' && st !== 'closed') {
+    void ctx.resume().catch(() => {});
+  }
+}
+
+function unlockOnUserGesture(ctx: AudioContext): void {
+  try {
+    ensureAudioRunning(ctx);
+    const silent = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = silent;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch {
+    // ignore unlock glitch
+  }
+  ctx.onstatechange = () => {
+    const st = ctx.state as string;
+    if (st === 'suspended' || st === 'interrupted') {
+      void ctx.resume().catch(() => {});
+    }
+  };
+}
+
 export class ThuAmWeb {
   private stream: MediaStream | null = null;
   private ctx: AudioContext | null = null;
@@ -48,8 +89,25 @@ export class ThuAmWeb {
     this.khoa = khoa;
   }
 
+  /**
+   * Khoi tao va mo khoa AudioContext DONG BO ngay luc nguoi dung bam nut mic
+   * (truoc khi await getUserMedia lam het han user-activation tren iOS Safari).
+   */
+  chuanBiTruocKhiXinQuyen(): void {
+    if (this.ctx) return;
+    try {
+      const AudioCtx = getAudioContextClass();
+      if (!AudioCtx) return;
+      this.ctx = new AudioCtx();
+      unlockOnUserGesture(this.ctx);
+    } catch {
+      // se thu lai sau khi xin quyen mic
+    }
+  }
+
   async batDau(): Promise<string | null> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.dung();
       return 'Trình duyệt chỉ cấp quyền micro trên localhost hoặc kết nối HTTPS. Hãy mở qua https:// hoặc localhost.';
     }
 
@@ -63,6 +121,7 @@ export class ThuAmWeb {
         },
       });
     } catch (err) {
+      this.dung();
       const name = (err as { name?: string })?.name;
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         return 'Chưa cấp quyền micro nên chưa nói chuyện được.';
@@ -77,11 +136,16 @@ export class ThuAmWeb {
     const settings = track?.getSettings?.();
     this.coKhuVong = settings?.echoCancellation !== false;
 
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx();
+    const AudioCtx = getAudioContextClass();
+    const ctx = this.ctx ?? new AudioCtx();
     this.ctx = ctx;
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
+    unlockOnUserGesture(ctx);
+    if ((ctx.state as string) !== 'running') {
+      try {
+        await ctx.resume();
+      } catch {
+        // ignore
+      }
     }
 
     const src = ctx.createMediaStreamSource(this.stream);
@@ -158,7 +222,10 @@ export class ThuAmWeb {
       this.stream = null;
     }
     if (this.ctx) {
-      try { void this.ctx.close(); } catch { /* ignore */ }
+      try {
+        this.ctx.onstatechange = null;
+        void this.ctx.close();
+      } catch { /* ignore */ }
       this.ctx = null;
     }
   }
@@ -171,28 +238,26 @@ export class PhatAmWeb {
 
   batDau(): string | null {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AudioCtx({ sampleRate: 24000 });
+      const AudioCtx = getAudioContextClass();
+      // Dung tan so lay mau goc cua phan cung (48kHz tren iOS) de khong xung dot voi
+      // PlayAndRecord session cua getUserMedia; WebAudio tu resample buffer 24000Hz muot.
+      this.ctx = new AudioCtx();
       this.nextTime = 0;
+      unlockOnUserGesture(this.ctx);
       return null;
-    } catch {
-      try {
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        this.ctx = new AudioCtx();
-        this.nextTime = 0;
-        return null;
-      } catch (err) {
-        return 'Không mở được loa trình duyệt: ' + (err instanceof Error ? err.message : String(err));
-      }
+    } catch (err) {
+      return 'Không mở được loa trình duyệt: ' + (err instanceof Error ? err.message : String(err));
     }
+  }
+
+  kichHoatLai(): void {
+    ensureAudioRunning(this.ctx);
   }
 
   phat(pcmBytes: Uint8Array): void {
     const ctx = this.ctx;
     if (!ctx || pcmBytes.byteLength < 2) return;
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
+    ensureAudioRunning(ctx);
 
     const sampleCount = Math.floor(pcmBytes.byteLength / 2);
     const aligned =
@@ -246,9 +311,11 @@ export class PhatAmWeb {
   dung(): void {
     this.xoaHangDoi();
     if (this.ctx) {
-      try { void this.ctx.close(); } catch { /* ignore */ }
+      try {
+        this.ctx.onstatechange = null;
+        void this.ctx.close();
+      } catch { /* ignore */ }
       this.ctx = null;
     }
   }
 }
-

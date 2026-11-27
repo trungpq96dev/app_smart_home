@@ -1,156 +1,353 @@
-import React from 'react';
-import { AirVent, ChevronRight, Fan, Lightbulb, Power } from 'lucide-react';
-import { isBridgeSong } from '../data/congtac.js';
-import { ROOM_MODE_LABELS } from '../data/models.js';
+import React, { useMemo } from 'react';
 import {
-  DemoBadge,
+  AirVent,
+  Fan,
+  Flame,
+  Lightbulb,
+  Lock,
+  Unlock,
+  Video,
+} from 'lucide-react';
+import {
+  isBridgeSong,
+  laCongTacThat,
+  trangThaiCongTacCua,
+  type CongTacState,
+} from '../data/congtac.js';
+import { tenCheDoPhong, type RoomUi } from '../data/models.js';
+import {
+  Dot,
   IconBadge,
   RoomIcon,
-  SectionHeader,
-  SmartCard,
   StatusPill,
 } from '../components/Common.js';
-import { DeviceSwitchRow } from '../components/Tiles.js';
 import { useSmartHome } from '../store/SmartHomeContext.js';
-import { SH } from '../theme/colors.js';
+import { SH, tint } from '../theme/colors.js';
 
-export function DevicesScreen() {
-  const {
-    rooms,
-    congtac,
-    choCongTacIds,
-    oThietBi,
-    bamCongTac,
-    toggleRoomLight,
-    toggleRoomFan,
-    toggleRoomAc,
-    openRoomDetail,
-  } = useSmartHome();
+/**
+ * Thứ tự hiển thị 6 mục phòng lớn trên lưới 3x2 (khớp 1:1 DevicesScreen.kt trên Tablet).
+ * Hàng 1: Phòng ngủ 1, 2, 3. Hàng 2: Nhà bếp, Phòng khách, Hành lang.
+ */
+export const THU_TU_PHONG = ['bed1', 'bed2', 'bed3', 'kitchen', 'living', 'hall'] as const;
 
-  const bridgeOk = isBridgeSong(congtac);
+export type DeviceTileIconKey =
+  | 'lightbulb'
+  | 'air'
+  | 'ac'
+  | 'flame'
+  | 'lock'
+  | 'unlock'
+  | 'videocam';
+
+export interface TrangThaiMucThietBi {
+  ten: string;
+  icon: DeviceTileIconKey;
+  mau: string;
+  bat: boolean;
+  chuTrangThai: string;
+  that: boolean;
+  roRang: boolean;
+}
+
+export interface TomTatPhongUi {
+  room: RoomUi;
+  mucThietBi: TrangThaiMucThietBi[];
+  coCongTacThat: boolean;
+  soDangBat: number;
+}
+
+function mucCongTac(
+  roomId: string,
+  loai: string,
+  ten: string,
+  icon: DeviceTileIconKey,
+  mau: string,
+  giaTriRoom: boolean,
+  ct: CongTacState,
+): TrangThaiMucThietBi {
+  const that = laCongTacThat(ct, roomId, loai);
+  const tt = trangThaiCongTacCua(ct, roomId, loai);
+  const roRang = !that || (isBridgeSong(ct) && tt?.online === true && tt.bat !== null);
+  const giaTriHienThi = that ? tt?.bat === true : giaTriRoom;
+  const bat = giaTriHienThi && roRang;
+  const chu = !roRang ? '—' : bat ? 'Bật' : 'Tắt';
+  return {
+    ten,
+    icon,
+    mau,
+    bat,
+    chuTrangThai: chu,
+    that,
+    roRang,
+  };
+}
+
+export function tomTatPhong(room: RoomUi, ct: CongTacState): TomTatPhongUi {
+  let mucThietBi: TrangThaiMucThietBi[];
+
+  if (room.id === 'kitchen') {
+    const den = mucCongTac(room.id, 'den', 'Đèn', 'lightbulb', SH.Amber, room.lightOn, ct);
+    const hutMuiGoc = mucCongTac(room.id, 'quat', 'Hút mùi', 'air', SH.Blue, room.fanOn, ct);
+    const hutMui: TrangThaiMucThietBi =
+      hutMuiGoc.roRang && hutMuiGoc.bat
+        ? { ...hutMuiGoc, chuTrangThai: `Cấp ${room.hoodSpeed}` }
+        : hutMuiGoc;
+    const bepTu: TrangThaiMucThietBi = {
+      ten: 'Bếp từ',
+      icon: 'flame',
+      mau: SH.Orange,
+      bat: room.stoveOn,
+      chuTrangThai: room.stoveOn ? `Mức ${room.stoveLevel}` : 'Tắt',
+      that: false,
+      roRang: true,
+    };
+    mucThietBi = [den, hutMui, bepTu];
+  } else if (room.id === 'hall') {
+    const denGoc = mucCongTac(room.id, 'den', 'Đèn', 'lightbulb', SH.Amber, room.lightOn, ct);
+    let den: TrangThaiMucThietBi;
+    if (!denGoc.roRang) {
+      den = denGoc;
+    } else {
+      const soDenBat = [
+        denGoc.bat,
+        room.hallFrontLightOn,
+        room.hallSurroundingLightOn,
+      ].filter(Boolean).length;
+      den = {
+        ...denGoc,
+        bat: soDenBat > 0,
+        chuTrangThai: soDenBat > 0 ? `${soDenBat}/3 bật` : 'Tắt',
+      };
+    }
+    const khoa: TrangThaiMucThietBi = {
+      ten: 'Khóa cửa',
+      icon: room.hallDoorLocked ? 'lock' : 'unlock',
+      mau: room.hallDoorLocked ? SH.Green : SH.Red,
+      bat: room.hallDoorLocked,
+      chuTrangThai: room.hallDoorLocked ? 'Đã khóa' : 'Đang mở',
+      that: false,
+      roRang: true,
+    };
+    const cam: TrangThaiMucThietBi = {
+      ten: 'Camera',
+      icon: 'videocam',
+      mau: room.hallCameraOn ? SH.Blue : SH.TextOff,
+      bat: room.hallCameraOn,
+      chuTrangThai: !room.hallCameraOn ? 'Tắt' : room.hallIrMode ? 'IR' : 'Bật',
+      that: false,
+      roRang: true,
+    };
+    mucThietBi = [den, khoa, cam];
+  } else {
+    const den = mucCongTac(room.id, 'den', 'Đèn', 'lightbulb', SH.Amber, room.lightOn, ct);
+    const quat = mucCongTac(room.id, 'quat', 'Quạt', 'air', SH.Blue, room.fanOn, ct);
+    const dhGoc = mucCongTac(room.id, 'dieu_hoa', 'Điều hòa', 'ac', SH.Purple, room.acOn, ct);
+    const dieuHoa: TrangThaiMucThietBi = dhGoc.that
+      ? dhGoc.roRang && dhGoc.bat
+        ? { ...dhGoc, chuTrangThai: `${room.acTemp}°C` }
+        : dhGoc
+      : {
+          ten: 'Điều hòa',
+          icon: 'ac',
+          mau: SH.Purple,
+          bat: room.acOn,
+          chuTrangThai: room.acOn ? `${room.acTemp}°C` : 'Tắt',
+          that: false,
+          roRang: true,
+        };
+    mucThietBi = [den, quat, dieuHoa];
+  }
+
+  return {
+    room,
+    mucThietBi,
+    coCongTacThat: mucThietBi.some((m) => m.that),
+    soDangBat: mucThietBi.filter((m) => m.bat).length,
+  };
+}
+
+export function tomTatDanhSachPhong(rooms: RoomUi[], ct: CongTacState): {
+  dsPhong: TomTatPhongUi[];
+  tongDangBat: number;
+  tongThietBi: number;
+} {
+  const rank = (id: string) => {
+    const idx = (THU_TU_PHONG as readonly string[]).indexOf(id);
+    return idx >= 0 ? idx : 99;
+  };
+  const dsPhong = [...rooms]
+    .sort((a, b) => rank(a.id) - rank(b.id))
+    .map((r) => tomTatPhong(r, ct));
+  const tongDangBat = dsPhong.reduce((sum, p) => sum + p.soDangBat, 0);
+  const tongThietBi = dsPhong.length * 3;
+  return { dsPhong, tongDangBat, tongThietBi };
+}
+
+function DeviceTileIcon({ icon, size = 22 }: { icon: DeviceTileIconKey; size?: number }) {
+  switch (icon) {
+    case 'lightbulb':
+      return <Lightbulb size={size} />;
+    case 'air':
+      return <Fan size={size} />;
+    case 'ac':
+      return <AirVent size={size} />;
+    case 'flame':
+      return <Flame size={size} />;
+    case 'lock':
+      return <Lock size={size} />;
+    case 'unlock':
+      return <Unlock size={size} />;
+    case 'videocam':
+      return <Video size={size} />;
+  }
+}
+
+function OThietBiNho({ muc }: { muc: TrangThaiMucThietBi }) {
+  const nen = muc.bat ? tint(muc.mau, 0.12) : SH.Card2;
+  const vien = muc.bat ? tint(muc.mau, 0.35) : SH.Border;
+  const chuColor = !muc.roRang ? SH.TextDim : muc.bat ? muc.mau : SH.TextOff;
 
   return (
-    <div className="flex flex-col gap-2.5 lg:h-full lg:overflow-hidden">
-      {/* Real Hardware Switches Section */}
-      {congtac.danhSach.length > 0 && (
-        <SmartCard className="shrink-0 space-y-2 p-2.5">
-          <SectionHeader
-            title={`Công tắc thật ngoài đời (${congtac.danhSach.length})`}
-            subtitle="Điều khiển trực tiếp qua MQTT → Python Switch Bridge"
-            badge={
-              <StatusPill
-                label={bridgeOk ? 'Bộ nối đang chạy' : 'Bộ nối chưa chạy'}
-                color={bridgeOk ? SH.Green : SH.Amber}
-              />
-            }
-          />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {congtac.danhSach.map((tb) => {
-              const tt = congtac.trangThai[tb.ma];
-              const cho = oThietBi(tb.phong, tb.thietBi, false);
-              const pending = cho.kind === 'that' ? cho.dangCho : Boolean(choCongTacIds[tb.ma]);
-              const online = tt?.online ?? false;
-              const bat = cho.kind === 'that' && cho.dangCho && cho.mong !== null ? cho.mong : (tt?.bat ?? null);
-              return (
-                <DeviceSwitchRow
-                  key={tb.ma}
-                  icon={<Power size={16} />}
-                  label={tb.ten}
-                  subtitle={`Phòng: ${tb.phong} · ${tb.he}${tt?.lyDoLoi ? ` · ${tt.lyDoLoi}` : ''}`}
-                  color={SH.Green}
-                  checked={bat === true}
-                  disabled={pending}
-                  pending={pending}
-                  badge={<StatusPill label={online ? 'Online' : 'Offline'} color={online ? SH.Green : SH.Red} dot={false} />}
-                  onToggle={() => bamCongTac(tb.phong, tb.thietBi)}
-                />
-              );
-            })}
-          </div>
-        </SmartCard>
-      )}
-
-      {/* Rooms Grid fills remaining height */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2 gap-2.5">
-        {rooms.map((r) => {
-          const den = oThietBi(r.id, 'den', r.lightOn);
-          const quat = oThietBi(r.id, 'quat', r.fanOn);
-          const dieuHoa = oThietBi(r.id, 'dieu_hoa', r.acOn);
-          const countOn = [
-            den.kind === 'that' ? den.bat === true : r.lightOn,
-            quat.kind === 'that' ? quat.bat === true : r.fanOn,
-            dieuHoa.kind === 'that' ? dieuHoa.bat === true : r.acOn,
-            r.tvOn,
-            r.stoveOn,
-          ].filter(Boolean).length;
-
-          return (
-            <SmartCard key={r.id} className="p-3 flex flex-col justify-between gap-2 min-h-0">
-              <div className="flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <IconBadge color={r.accent} size={34}>
-                    <RoomIcon icon={r.icon} size={17} />
-                  </IconBadge>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#E6EDF7] truncate">{r.name}</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-semibold" style={{ color: r.accent }}>
-                        {ROOM_MODE_LABELS[r.mode]}
-                      </span>
-                      <span className="text-[11px] text-[#8A9BB8]">· {countOn} thiết bị bật</span>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openRoomDetail(r.id)}
-                  className="inline-flex items-center gap-1 rounded-xl border border-[#253459] bg-[#0E1627] px-2.5 py-1 text-xs font-semibold text-[#4F8BFF] hover:bg-[#1D2B4C] cursor-pointer shrink-0"
-                >
-                  <span>Chi tiết</span>
-                  <ChevronRight size={13} />
-                </button>
-              </div>
-
-              <div className="space-y-1.5 flex-1 flex flex-col justify-center">
-                <DeviceSwitchRow
-                  icon={<Lightbulb size={16} />}
-                  label={den.kind === 'that' ? den.ten : 'Đèn chiếu sáng'}
-                  subtitle={den.kind === 'that' ? (den.ghiChu || 'Công tắc thật') : `Sáng ${r.lightBrightness}%`}
-                  color={SH.Amber}
-                  checked={den.kind === 'that' ? (den.dangCho && den.mong !== null ? den.mong : den.bat === true) : r.lightOn}
-                  disabled={den.kind === 'that' ? den.dangCho : false}
-                  pending={den.kind === 'that' ? den.dangCho : false}
-                  badge={den.kind === 'that' ? <StatusPill label="Thật" color={SH.Green} dot={false} /> : <DemoBadge />}
-                  onToggle={() => (den.kind === 'that' ? bamCongTac(r.id, 'den') : toggleRoomLight(r.id))}
-                />
-                <DeviceSwitchRow
-                  icon={<Fan size={16} />}
-                  label={quat.kind === 'that' ? quat.ten : r.id === 'kitchen' ? 'Máy hút mùi' : 'Quạt'}
-                  subtitle={quat.kind === 'that' ? (quat.ghiChu || 'Công tắc thật') : r.id === 'kitchen' ? `Mức ${r.hoodSpeed}/3` : `Tốc độ ${r.fanSpeed}/3`}
-                  color={SH.Blue}
-                  checked={quat.kind === 'that' ? (quat.dangCho && quat.mong !== null ? quat.mong : quat.bat === true) : r.fanOn}
-                  disabled={quat.kind === 'that' ? quat.dangCho : false}
-                  pending={quat.kind === 'that' ? quat.dangCho : false}
-                  badge={quat.kind === 'that' ? <StatusPill label="Thật" color={SH.Green} dot={false} /> : <DemoBadge />}
-                  onToggle={() => (quat.kind === 'that' ? bamCongTac(r.id, 'quat') : toggleRoomFan(r.id))}
-                />
-                <DeviceSwitchRow
-                  icon={<AirVent size={16} />}
-                  label={dieuHoa.kind === 'that' ? dieuHoa.ten : 'Điều hòa'}
-                  subtitle={dieuHoa.kind === 'that' ? (dieuHoa.ghiChu || 'Công tắc thật') : `${r.acTemp}°C`}
-                  color={SH.Purple}
-                  checked={dieuHoa.kind === 'that' ? (dieuHoa.dangCho && dieuHoa.mong !== null ? dieuHoa.mong : dieuHoa.bat === true) : r.acOn}
-                  disabled={dieuHoa.kind === 'that' ? dieuHoa.dangCho : false}
-                  pending={dieuHoa.kind === 'that' ? dieuHoa.dangCho : false}
-                  badge={dieuHoa.kind === 'that' ? <StatusPill label="Thật" color={SH.Green} dot={false} /> : <DemoBadge />}
-                  onToggle={() => (dieuHoa.kind === 'that' ? bamCongTac(r.id, 'dieu_hoa') : toggleRoomAc(r.id))}
-                />
-              </div>
-            </SmartCard>
-          );
-        })}
-      </div>
+    <div
+      className="flex flex-col items-center justify-center rounded-[10px] px-1.5 py-2.5 text-center min-w-0 h-full transition-colors"
+      style={{
+        backgroundColor: nen,
+        border: `1px solid ${vien}`,
+      }}
+    >
+      <span
+        className="shrink-0"
+        style={{ color: muc.bat ? muc.mau : SH.TextOff }}
+      >
+        <DeviceTileIcon icon={muc.icon} size={22} />
+      </span>
+      <span className="mt-1.5 text-[11.5px] font-medium text-[#94A3B8] truncate max-w-full">
+        {muc.ten}
+      </span>
+      <span
+        className="mt-0.5 text-[13px] font-semibold truncate max-w-full font-mono-num"
+        style={{ color: chuColor }}
+      >
+        {muc.chuTrangThai}
+      </span>
     </div>
   );
 }
 
+function ThePhong({
+  tomTat,
+  onClick,
+}: {
+  tomTat: TomTatPhongUi;
+  onClick: () => void;
+}) {
+  const { room, mucThietBi, coCongTacThat, soDangBat } = tomTat;
+  const coThietBiBat = soDangBat > 0;
+  const vienMau = coThietBiBat ? tint(room.accent, 0.55) : SH.Border;
+  const chipMau = coCongTacThat ? SH.Green : SH.Amber;
+
+  const tenCheDo = tenCheDoPhong(room.id, room.mode);
+  const moTa =
+    room.scheduleOn && room.id !== 'kitchen'
+      ? `Chế độ: ${tenCheDo} • ${room.scheduleTime}`
+      : `Chế độ: ${tenCheDo}`;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group w-full h-full text-left rounded-[14px] p-3.5 flex flex-col justify-between gap-3 transition-all hover:bg-[#1A2744] active:scale-[0.99] cursor-pointer min-h-[210px] lg:min-h-0"
+      style={{
+        backgroundColor: SH.Card,
+        border: `1px solid ${vienMau}`,
+      }}
+    >
+      {/* Đầu thẻ: IconBadge + tên phòng & chế độ + chip THẬT/MẪU */}
+      <div className="flex items-center gap-2.5 w-full min-w-0 shrink-0">
+        <IconBadge
+          color={coThietBiBat ? room.accent : SH.TextOff}
+          size={44}
+          filled={coThietBiBat}
+        >
+          <RoomIcon icon={room.icon} size={23} />
+        </IconBadge>
+
+        <div className="flex-1 min-w-0">
+          <div className="text-[15px] sm:text-base font-bold text-[#F1F5F9] truncate">
+            {room.name}
+          </div>
+          <div className="text-xs text-[#94A3B8] truncate mt-0.5">{moTa}</div>
+        </div>
+
+        <span
+          className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide"
+          style={{
+            color: chipMau,
+            backgroundColor: tint(chipMau, 0.14),
+          }}
+        >
+          {coCongTacThat ? 'THẬT' : 'MẪU'}
+        </span>
+      </div>
+
+      {/* Giữa thẻ: 3 ô tóm tắt Đèn / Quạt / Điều hòa */}
+      <div className="grid grid-cols-3 gap-2 w-full flex-1 min-h-0">
+        {mucThietBi.map((muc) => (
+          <OThietBiNho key={muc.ten} muc={muc} />
+        ))}
+      </div>
+
+      {/* Chân thẻ: tổng đang bật + gợi ý bấm để chỉnh */}
+      <div className="flex items-center justify-between gap-2 w-full shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Dot color={coThietBiBat ? SH.Green : SH.TextOff} size={8} />
+          <span
+            className="text-xs font-medium truncate"
+            style={{ color: coThietBiBat ? SH.Green : SH.TextOff }}
+          >
+            {coThietBiBat ? `${soDangBat}/3 đang bật` : 'Tất cả đang tắt'}
+          </span>
+        </div>
+        <span
+          className="text-xs font-semibold shrink-0 transition-transform group-hover:translate-x-0.5"
+          style={{ color: room.accent }}
+        >
+          Vào chỉnh →
+        </span>
+      </div>
+    </button>
+  );
+}
+
+export function DevicesScreen() {
+  const { rooms, congtac, openRoomDetail } = useSmartHome();
+
+  const { dsPhong, tongDangBat, tongThietBi } = useMemo(
+    () => tomTatDanhSachPhong(rooms, congtac),
+    [rooms, congtac],
+  );
+
+  return (
+    <div className="flex flex-col gap-2.5 lg:h-full lg:overflow-hidden">
+      {/* Tóm tắt trên màn điện thoại nhỏ (trên Tablet/Desktop đã nằm ngay trên TopBar như bản Android) */}
+      <div className="sm:hidden shrink-0 flex flex-wrap items-center gap-2">
+        <StatusPill label={`${dsPhong.length} phòng`} color={SH.Blue} dot={false} />
+        <StatusPill
+          label={`${tongDangBat}/${tongThietBi} thiết bị đang bật`}
+          color={tongDangBat > 0 ? SH.Green : SH.TextOff}
+        />
+      </div>
+
+      {/* Lưới 3x2 — 6 mục phòng lớn khớp 1:1 với DevicesScreen.kt trên Tablet */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2 gap-2.5 sm:gap-3">
+        {dsPhong.map((tomTat) => (
+          <ThePhong
+            key={tomTat.room.id}
+            tomTat={tomTat}
+            onClick={() => openRoomDetail(tomTat.room.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

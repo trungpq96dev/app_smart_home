@@ -10,6 +10,8 @@ services:
 
     env_file:
       - .env
+    environment:
+      - TZ=ICT-7
 
     volumes:
       # Hot Cache 10 GB + chỉ mục SQLite + thumbnail sự kiện người + model ONNX

@@ -7,10 +7,14 @@ import { AdminAuthService } from './adminAuth.js';
 import { BomNuocBridge } from './bomNuocBridge.js';
 import { ConfigStore } from './configStore.js';
 import { MqttBridge } from './mqttBridge.js';
+import { proxyCameraRecorderHttp } from './cameraRecorderProxy.js';
+import { startCockpitProxyServer } from './cockpitProxy.js';
 import { fetchStreamList, Go2rtcWsProxy, proxyGo2rtcHttp } from './go2rtcProxy.js';
 import { TelegramAlertService } from './telegramAlerts.js';
+import { TunnelWatcher } from './tunnelWatcher.js';
+import { WebAccessAuthService } from './webAccessAuth.js';
 
-const APP_VERSION = '0.9.2-web';
+const APP_VERSION = '0.9.4-web';
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
@@ -24,10 +28,13 @@ const ADMIN_PROTECTED_PUMP_KINDS = new Set([
 
 const configStore = new ConfigStore();
 const adminAuth = new AdminAuthService(configStore);
+const webAccessAuth = new WebAccessAuthService();
 const mqttBridge = new MqttBridge(configStore.getConfig().mqtt);
 const bomNuocBridge = new BomNuocBridge(configStore.getConfig().bomNuoc);
 const go2rtcWsProxy = new Go2rtcWsProxy();
 const telegramAlerts = new TelegramAlertService(() => configStore.getConfig().telegram);
+const tunnelWatcher = new TunnelWatcher(() => configStore.getConfig().telegram);
+tunnelWatcher.start();
 
 mqttBridge.onMessage((topic, payload) => {
   telegramAlerts.observeMqttMessage(topic, payload);
@@ -42,14 +49,60 @@ bomNuocBridge.onState((state) => {
 const app = express();
 app.disable('x-powered-by');
 
-// Proxy go2rtc HTTP truoc express.json() de giu nguyen raw stream/body
-app.use('/go2rtc', (req, res) => {
+// Proxy go2rtc HTTP & Dau ghi Camera 24/24 truoc express.json() de giu nguyen raw stream/Range
+app.use('/go2rtc', webAccessAuth.requireWebAccess, (req, res) => {
   const orig = req.originalUrl || req.url;
   req.url = orig;
   proxyGo2rtcHttp(req, res, configStore.getConfig().camera);
 });
 
+app.use('/api/camera/recorder', webAccessAuth.requireWebAccess, (req, res) => {
+  proxyCameraRecorderHttp(req, res, configStore.getConfig().camera);
+});
+
 app.use(express.json({ limit: '1mb' }));
+
+// ---- Web Remote Access Auth (4G / Internet Password Gate) ----
+
+app.get('/api/auth/session', (req, res) => {
+  res.json(webAccessAuth.getSessionState(req));
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
+  const clientKey = webAccessAuth.getClientIpKey(req);
+  const result = webAccessAuth.verifyPasswordAndIssueToken(password, clientKey);
+  if (!result.ok) {
+    res.status(result.status).json({
+      ok: false,
+      error: result.error,
+      lockedUntilMs: result.lockedUntilMs,
+    });
+    return;
+  }
+  if (result.token) {
+    res.setHeader('Set-Cookie', webAccessAuth.buildSetCookieHeader(req, result.token));
+  }
+  res.json({ ok: true, expiresAt: result.expiresAt });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.setHeader('Set-Cookie', webAccessAuth.buildClearCookieHeader(req));
+  res.json({ ok: true });
+});
+
+// Cho phep Docker HEALTHCHECK loopback 127.0.0.1 goi /api/health, chan moi API khac neu chua dang nhap
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' && webAccessAuth.isLoopbackHealthCheck(req)) {
+    next();
+    return;
+  }
+  webAccessAuth.requireWebAccess(req, res, next);
+});
+
+app.get('/api/tunnel/status', (_req, res) => {
+  res.json(tunnelWatcher.getStatus());
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -233,6 +286,11 @@ if (fs.existsSync(indexHtml)) {
 const server = http.createServer(app);
 
 server.on('upgrade', (req, socket, head) => {
+  if (!webAccessAuth.isRequestAuthenticated(req)) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+    return;
+  }
   const url = req.url || '';
   if (url === '/ws/mqtt' || url.startsWith('/ws/mqtt?')) {
     mqttBridge.handleUpgrade(req, socket, head);
@@ -252,3 +310,14 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   console.log(`SmartHome Web Gateway đang chạy tại http://${HOST}:${PORT}`);
 });
+
+const cockpitProxyPort = Number.parseInt(process.env.COCKPIT_PROXY_PORT || '0', 10);
+if (cockpitProxyPort > 0) {
+  const cockpitHost = (process.env.COCKPIT_HOST || configStore.getConfig().mqtt.host || '192.168.0.50').trim();
+  const cockpitPort = Number.parseInt(process.env.COCKPIT_PORT || '9090', 10) || 9090;
+  startCockpitProxyServer(webAccessAuth, {
+    targetHost: cockpitHost,
+    targetPort: cockpitPort,
+    listenPort: cockpitProxyPort,
+  });
+}

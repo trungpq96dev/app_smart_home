@@ -12,6 +12,7 @@ export type KetNoiStatus =
 
 const SUB_TOPICS = ['dien/#', 'wifi/#', 'server/#', 'congtac/#', 'cuktech/#'];
 const OPTIONAL_SENSOR_TOPICS = ['smarthome/sensor/#'];
+const OPTIONAL_CAMERA_TOPICS = ['camera/#'];
 
 /**
  * Chi cho phep publish vao dung cac topic dieu khien.
@@ -23,6 +24,7 @@ const PUBLISH_ALLOWLIST = new Set([
   'cuktech/charger/port',
   'cuktech/charger/ble',
   'cuktech/charger/set',
+  'camera/cmd',
 ]);
 
 function isConfigReady(c: MqttConfig): boolean {
@@ -75,7 +77,9 @@ export class MqttBridge {
   private retainedCache = new Map<string, string>();
   private readonly wss = new WebSocketServer({ noServer: true });
   private readonly clients = new Set<WebSocket>();
-  private readonly messageListeners = new Set<(topic: string, payload: string, ts: number) => void>();
+  private readonly messageListeners = new Set<
+    (topic: string, payload: string, ts: number, retain: boolean) => void
+  >();
   private readonly statusListeners = new Set<(status: KetNoiStatus) => void>();
   private generation = 0;
 
@@ -108,7 +112,7 @@ export class MqttBridge {
     return this.status;
   }
 
-  onMessage(cb: (topic: string, payload: string, ts: number) => void): () => void {
+  onMessage(cb: (topic: string, payload: string, ts: number, retain: boolean) => void): () => void {
     this.messageListeners.add(cb);
     return () => {
       this.messageListeners.delete(cb);
@@ -187,8 +191,9 @@ export class MqttBridge {
             });
           }
         }
-        // Dang ky them topic cam bien (best-effort, khong bao loi neu broker siet ACL)
+        // Dang ky them topic cam bien & camera_recorder (best-effort, khong bao loi neu broker siet ACL)
         client.subscribe(OPTIONAL_SENSOR_TOPICS, { qos: 0 }, () => {});
+        client.subscribe(OPTIONAL_CAMERA_TOPICS, { qos: 1 }, () => {});
       });
     });
 
@@ -212,12 +217,14 @@ export class MqttBridge {
       this.setStatus({ state: 'loi', moTa: translateMqttError(err) });
     });
 
-    client.on('message', (topic, buffer) => {
+    client.on('message', (topic, buffer, packet) => {
       if (this.generation !== gen) return;
       const payload = buffer.toString('utf8');
-      if (topic.startsWith('cuktech/rssi/') && payload.trim() === '') {
+      const retain = Boolean(packet?.retain);
+      const isTransientResult = topic.endsWith('/cmd/result');
+      if ((topic.startsWith('cuktech/rssi/') || retain) && payload.trim() === '') {
         this.retainedCache.delete(topic);
-      } else {
+      } else if (!isTransientResult) {
         this.retainedCache.set(topic, payload);
       }
       const ts = Date.now();
@@ -226,10 +233,11 @@ export class MqttBridge {
         topic,
         payload,
         ts,
+        retain,
       });
       for (const cb of this.messageListeners) {
         try {
-          cb(topic, payload, ts);
+          cb(topic, payload, ts, retain);
         } catch {
           // ignore listener error
         }

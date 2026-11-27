@@ -9,6 +9,26 @@ export const ROOM_MODE_LABELS: Record<RoomMode, string> = {
   CUSTOM: 'Tùy chỉnh',
 };
 
+export function tenCheDoPhong(roomId: string, mode: RoomMode): string {
+  if (roomId === 'kitchen') {
+    switch (mode) {
+      case 'HOME': return 'Nấu ăn';
+      case 'CUSTOM': return 'Ăn tối';
+      case 'SLEEP': return 'Dọn dẹp';
+      case 'AWAY': return 'Vắng nhà';
+    }
+  }
+  if (roomId === 'hall') {
+    switch (mode) {
+      case 'SLEEP': return 'Đêm an ninh';
+      case 'HOME': return 'Về nhà';
+      case 'CUSTOM': return 'Tiếp khách';
+      case 'AWAY': return 'Đi vắng';
+    }
+  }
+  return ROOM_MODE_LABELS[mode];
+}
+
 export const ROOM_MODES: RoomMode[] = ['SLEEP', 'HOME', 'AWAY', 'CUSTOM'];
 
 export type HallwayView = 'DAU_HE' | 'XUNG_QUANH' | 'TU_XA';

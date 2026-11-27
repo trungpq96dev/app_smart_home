@@ -93,6 +93,9 @@ export function QuickActionTile({
   subtitle,
   pending = false,
   disabled = false,
+  unknownState = false,
+  subtitleWarning = false,
+  statusText,
   badge,
   onClick,
 }: {
@@ -103,9 +106,16 @@ export function QuickActionTile({
   subtitle?: string;
   pending?: boolean;
   disabled?: boolean;
+  unknownState?: boolean;
+  subtitleWarning?: boolean;
+  statusText?: string;
   badge?: React.ReactNode;
   onClick: () => void;
 }) {
+  const isLit = !unknownState && on;
+  const pillLabel =
+    statusText ?? (pending ? 'Đang gửi…' : unknownState ? '—' : on ? 'BẬT' : 'TẮT');
+
   return (
     <button
       type="button"
@@ -113,30 +123,37 @@ export function QuickActionTile({
       onClick={onClick}
       className="text-left rounded-xl p-2.5 transition-all active:scale-[0.98] disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer w-full"
       style={{
-        backgroundColor: on ? tint(color, 0.14) : SH.Card,
-        border: `1px solid ${on ? tint(color, 0.45) : SH.Border}`,
-        boxShadow: on ? `0 0 18px -6px ${tint(color, 0.32)}` : undefined,
+        backgroundColor: isLit ? tint(color, 0.14) : SH.Card,
+        border: `1px solid ${isLit ? tint(color, 0.45) : SH.Border}`,
+        boxShadow: isLit ? `0 0 18px -6px ${tint(color, 0.32)}` : undefined,
       }}
     >
       <div className="flex items-center justify-between gap-1.5">
-        <IconBadge color={color} active={on} size={30}>
+        <IconBadge color={color} active={isLit} size={30}>
           {icon}
         </IconBadge>
         <div className="flex items-center gap-1">
           {badge}
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${pending ? 'animate-pulse' : ''}`}
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono-num ${pending ? 'animate-pulse' : ''}`}
             style={{
-              backgroundColor: on ? tint(color, 0.22) : tint(SH.TextDim, 0.18),
-              color: on ? color : SH.TextSecondary,
+              backgroundColor: isLit ? tint(color, 0.22) : tint(SH.TextDim, 0.18),
+              color: isLit ? color : SH.TextSecondary,
             }}
           >
-            {pending ? 'Đang gửi…' : on ? 'BẬT' : 'TẮT'}
+            {pillLabel}
           </span>
         </div>
       </div>
       <div className="mt-1.5 text-xs font-semibold text-[#E6EDF7] truncate">{label}</div>
-      {subtitle && <div className="text-[11px] text-[#8A9BB8] truncate">{subtitle}</div>}
+      {subtitle && (
+        <div
+          className="text-[11px] truncate"
+          style={{ color: subtitleWarning ? SH.Amber : '#8A9BB8' }}
+        >
+          {subtitle}
+        </div>
+      )}
     </button>
   );
 }
@@ -150,6 +167,8 @@ export function DeviceSwitchRow({
   onToggle,
   disabled = false,
   pending = false,
+  unknownState = false,
+  subtitleWarning = false,
   badge,
 }: {
   icon: React.ReactNode;
@@ -160,18 +179,21 @@ export function DeviceSwitchRow({
   onToggle: () => void;
   disabled?: boolean;
   pending?: boolean;
+  unknownState?: boolean;
+  subtitleWarning?: boolean;
   badge?: React.ReactNode;
 }) {
+  const isLit = !unknownState && checked;
   return (
     <div
       className="flex items-center justify-between gap-2.5 rounded-xl px-2.5 py-1.5 border transition-colors"
       style={{
-        backgroundColor: checked ? tint(color, 0.08) : SH.Surface,
-        borderColor: checked ? tint(color, 0.3) : SH.Border,
+        backgroundColor: isLit ? tint(color, 0.08) : SH.Surface,
+        borderColor: isLit ? tint(color, 0.3) : SH.Border,
       }}
     >
       <div className="flex items-center gap-2.5 min-w-0">
-        <IconBadge color={color} active={checked} size={30}>
+        <IconBadge color={color} active={isLit} size={30}>
           {icon}
         </IconBadge>
         <div className="min-w-0">
@@ -179,16 +201,38 @@ export function DeviceSwitchRow({
             <span className="text-xs font-semibold text-[#E6EDF7] truncate">{label}</span>
             {badge}
           </div>
-          {subtitle && <div className="text-[11px] text-[#8A9BB8] truncate">{subtitle}</div>}
+          {subtitle && (
+            <div
+              className="text-[11px] truncate"
+              style={{ color: subtitleWarning ? SH.Amber : '#8A9BB8' }}
+            >
+              {subtitle}
+            </div>
+          )}
         </div>
       </div>
-      <SwitchToggle
-        checked={checked}
-        onChange={onToggle}
-        color={color}
-        disabled={disabled}
-        pending={pending}
-      />
+      {unknownState && !pending ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          title="Chưa rõ trạng thái công tắc thật (không giả định TẮT)"
+          className="shrink-0 rounded-lg border border-[#253459] bg-[#16213A] px-2.5 py-1 font-mono-num text-xs font-bold text-[#8A9BB8] hover:border-[#3B4F7D] disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
+        >
+          —
+        </button>
+      ) : (
+        <SwitchToggle
+          checked={checked}
+          onChange={onToggle}
+          color={color}
+          disabled={disabled}
+          pending={pending}
+        />
+      )}
     </div>
   );
 }
@@ -201,6 +245,10 @@ export function TempStepperRow({
   minusDisabled = false,
   plusDisabled = false,
   color = SH.Purple,
+  icon,
+  statusText,
+  active,
+  onToggle,
 }: {
   label: string;
   valueText: string;
@@ -209,11 +257,41 @@ export function TempStepperRow({
   minusDisabled?: boolean;
   plusDisabled?: boolean;
   color?: string;
+  icon?: React.ReactNode;
+  statusText?: string;
+  active?: boolean;
+  onToggle?: () => void;
 }) {
+  const isLit = active === true;
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0E1627] border border-[#253459] px-3 py-2">
-      <span className="text-xs font-medium text-[#8A9BB8]">{label}</span>
-      <div className="flex items-center gap-2">
+    <div
+      className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 transition-colors"
+      style={{
+        backgroundColor: isLit ? tint(color, 0.08) : '#0E1627',
+        borderColor: isLit ? tint(color, 0.32) : '#253459',
+      }}
+    >
+      {icon || onToggle ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={!onToggle}
+          className={`flex items-center gap-2.5 min-w-0 text-left ${onToggle ? 'cursor-pointer' : 'cursor-default'}`}
+        >
+          {icon && (
+            <IconBadge color={color} active={active !== false} size={30}>
+              {icon}
+            </IconBadge>
+          )}
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-[#E6EDF7] truncate">{label}</div>
+            {statusText && <div className="text-[11px] text-[#8A9BB8] truncate">{statusText}</div>}
+          </div>
+        </button>
+      ) : (
+        <span className="text-xs font-medium text-[#8A9BB8]">{label}</span>
+      )}
+      <div className="flex items-center gap-2 shrink-0">
         <RoundIconButton onClick={onMinus} disabled={minusDisabled} size={30} color={color}>
           <Minus size={14} />
         </RoundIconButton>
@@ -278,4 +356,3 @@ export function CompactSlider({
     </div>
   );
 }
-

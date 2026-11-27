@@ -36,6 +36,7 @@ export class TroLyGiongNoi {
   private mocHoatDong = 0;
   private banSongCong = false;
   private boQuaLuotHienTai = false;
+  private sessionGen = 0;
 
   constructor(params: {
     nha: HanhDongNha;
@@ -101,6 +102,7 @@ export class TroLyGiongNoi {
       banSongCong: false,
     }));
 
+    const gen = ++this.sessionGen;
     const p = new PhatAmWeb();
     const errLoa = p.batDau();
     if (errLoa) {
@@ -110,11 +112,19 @@ export class TroLyGiongNoi {
     this.phat = p;
 
     const t = new ThuAmWeb((bytes) => this.live?.guiTieng(bytes));
+    t.chuanBiTruocKhiXinQuyen();
     const errMic = await t.batDau();
+    if (this.sessionGen !== gen) {
+      t.dung();
+      p.dung();
+      return;
+    }
     if (errMic) {
       this.tat(errMic);
       return;
     }
+    // Sau khi iOS Safari cap quyen getUserMedia, session am thanh chuyen sang PlayAndRecord -> kich hoat lai loa
+    p.kichHoatLai();
     this.thu = t;
 
     this.banSongCong =
@@ -181,6 +191,7 @@ export class TroLyGiongNoi {
   }
 
   tat(vi: string | null = null): void {
+    this.sessionGen++;
     const giay = this.phienState.giayDaChay;
     if (dangChayTrangThai(this.phienState.trangThai) && (giay > 0 || this.tokenTongPhien > 0)) {
       this.onRecordUsage(giay, this.tokenVaoPhien, this.tokenRaPhien, this.tokenTongPhien);

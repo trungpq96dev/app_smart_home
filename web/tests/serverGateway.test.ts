@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { ConfigStore } from '../server/configStore.js';
+import { proxyCameraRecorderHttp } from '../server/cameraRecorderProxy.js';
 import { fetchStreamList, proxyGo2rtcHttp } from '../server/go2rtcProxy.js';
 import { MqttBridge } from '../server/mqttBridge.js';
 
@@ -123,6 +124,7 @@ describe('go2rtcProxy security guarantees', () => {
       const camCfg = {
         host: '127.0.0.1',
         cong: addr.port,
+        congGhiHinh: 1985,
         tls: false,
         taiKhoan: 'camuser',
         matKhau: 'campass',
@@ -241,10 +243,117 @@ describe('MqttBridge WebSocket & publish allowlist', () => {
         reason: 'not_connected',
         error: 'Chưa nối broker MQTT',
       });
+
+      // 3. Cho phep topic camera/cmd di qua allowlist (v0.9.4)
+      const camAllowPromise = waitNextMessage();
+      ws.send(
+        JSON.stringify({
+          type: 'publish',
+          reqId: 'allowCam',
+          topic: 'camera/cmd',
+          payload: '{"action":"SET_DETECT_PERSON","value":true}',
+        }),
+      );
+      const camAllowAck = await camAllowPromise;
+      expect(camAllowAck).toEqual({
+        type: 'publish_ack',
+        reqId: 'allowCam',
+        ok: false,
+        reason: 'not_connected',
+        error: 'Chưa nối broker MQTT',
+      });
     } finally {
       ws?.close();
       bridge.disconnect();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('cameraRecorderProxy Range 206 & timeline/snapshot forwarding', () => {
+  it('chuyen tiep Basic Auth, HTTP Range 206 Partial Content va POST /snapshot', async () => {
+    let seenAuth = '';
+    let seenRange = '';
+    const sampleMp4 = Buffer.from('0123456789ABCDEF-MP4-SEGMENT-DATA', 'utf8');
+
+    const mockRecorder = http.createServer((req, res) => {
+      seenAuth = String(req.headers.authorization || '');
+      if (req.url?.startsWith('/api/days')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            camera: 'cua_chinh',
+            days: [{ date: '2026-11-26', segment_count: 12, recorded_sec: 7200, person_events: 2 }],
+          }),
+        );
+        return;
+      }
+      if (req.url === '/api/video/42') {
+        seenRange = String(req.headers.range || '');
+        const slice = sampleMp4.subarray(0, 10);
+        res.writeHead(206, {
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Content-Range': `bytes 0-9/${sampleMp4.length}`,
+          'Content-Length': String(slice.length),
+        });
+        res.end(slice);
+        return;
+      }
+      if (req.method === 'POST' && req.url?.startsWith('/api/snapshot')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, event_id: 99, message: 'Đã chụp ảnh thành công' }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    await new Promise<void>((resolve) => mockRecorder.listen(0, '127.0.0.1', resolve));
+    const recAddr = mockRecorder.address() as { port: number };
+
+    const proxyServer = http.createServer((req, res) => {
+      proxyCameraRecorderHttp(req, res, {
+        host: '127.0.0.1',
+        cong: 1984,
+        congGhiHinh: recAddr.port,
+        tls: false,
+        taiKhoan: 'iotcam',
+        matKhau: 'secretcam',
+      });
+    });
+    await new Promise<void>((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+    const proxyAddr = proxyServer.address() as { port: number };
+
+    try {
+      const daysResp = await fetch(
+        `http://127.0.0.1:${proxyAddr.port}/api/camera/recorder/days?cam=cua_chinh`,
+      );
+      expect(daysResp.status).toBe(200);
+      const daysJson = (await daysResp.json()) as { days: Array<{ date: string }> };
+      expect(daysJson.days[0].date).toBe('2026-11-26');
+      expect(seenAuth).toBe(`Basic ${Buffer.from('iotcam:secretcam', 'utf8').toString('base64')}`);
+
+      const videoResp = await fetch(
+        `http://127.0.0.1:${proxyAddr.port}/api/camera/recorder/video/42.mp4`,
+        { headers: { Range: 'bytes=0-9' } },
+      );
+      expect(videoResp.status).toBe(206);
+      expect(seenRange).toBe('bytes=0-9');
+      expect(videoResp.headers.get('content-range')).toBe(`bytes 0-9/${sampleMp4.length}`);
+      const buf = Buffer.from(await videoResp.arrayBuffer()).toString('utf8');
+      expect(buf).toBe('0123456789');
+
+      const snapResp = await fetch(
+        `http://127.0.0.1:${proxyAddr.port}/api/camera/recorder/snapshot?cam=cua_chinh`,
+        { method: 'POST' },
+      );
+      expect(snapResp.status).toBe(200);
+      const snapJson = (await snapResp.json()) as { ok: boolean; event_id: number };
+      expect(snapJson).toEqual({ ok: true, event_id: 99, message: 'Đã chụp ảnh thành công' });
+    } finally {
+      await new Promise<void>((resolve) => proxyServer.close(() => resolve()));
+      await new Promise<void>((resolve) => mockRecorder.close(() => resolve()));
     }
   });
 });

@@ -182,7 +182,7 @@ export function SideNav({
   };
 
   const navContent = (
-    <div className="flex h-full flex-col bg-[#0E1627] border-r border-[#253459] w-[196px] shrink-0">
+    <div className="flex h-full flex-col bg-[#0E1627] border-r border-[#253459] w-[206px] md:w-[196px] shrink-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
       {/* Brand header */}
       <div className="flex items-center justify-between px-3.5 py-3">
         <div className="flex items-center gap-2.5 mx-auto md:mx-0">

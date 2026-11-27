@@ -154,12 +154,14 @@ export function IconBadge({
   color,
   size = 38,
   active = true,
+  filled = false,
   className = '',
 }: {
   children: React.ReactNode;
   color: string;
   size?: number;
   active?: boolean;
+  filled?: boolean;
   className?: string;
 }) {
   return (
@@ -168,9 +170,15 @@ export function IconBadge({
       style={{
         width: size,
         height: size,
-        backgroundColor: active ? tint(color, 0.16) : tint(SH.TextDim, 0.14),
-        border: `1px solid ${active ? tint(color, 0.32) : tint(SH.Border, 0.6)}`,
-        color: active ? color : SH.TextSecondary,
+        backgroundColor: filled
+          ? color
+          : active
+            ? tint(color, 0.16)
+            : tint(SH.TextDim, 0.14),
+        border: `1px solid ${
+          filled ? color : active ? tint(color, 0.32) : tint(SH.Border, 0.6)
+        }`,
+        color: filled ? '#FFFFFF' : active ? color : SH.TextSecondary,
       }}
     >
       {children}
@@ -466,18 +474,21 @@ export function TrangThaiKetNoi({
 }
 
 export function TrangThaiCameraPill({ cam }: { cam: TrangThaiCam }) {
+  if (cam.state === 'chua_cau_hinh') {
+    return <StatusPill label="Chưa khai báo go2rtc" color={SH.TextDim} dot={false} />;
+  }
   if (cam.state === 'dang_do') {
-    return <StatusPill label="Đang dò go2rtc…" color={SH.Amber} pulse />;
+    return <StatusPill label="Đang hỏi…" color={SH.Amber} pulse />;
   }
   if (cam.state === 'co') {
     return (
       <StatusPill
-        label={cam.ds.length > 0 ? `${cam.ds.length} luồng live` : '0 luồng'}
+        label={`${cam.ds.length} luồng`}
         color={cam.ds.length > 0 ? SH.Green : SH.Amber}
       />
     );
   }
-  return <StatusPill label="go2rtc ngoại tuyến" color={SH.Red} />;
+  return <StatusPill label="Không lấy được luồng" color={SH.Red} />;
 }
 
 export function TopBar({
@@ -517,14 +528,23 @@ export function TopBar({
   onLockAdmin?: () => void;
   extra?: React.ReactNode;
 }) {
+  const mqttDotColor =
+    mqttStatus.state === 'da_noi'
+      ? SH.Green
+      : mqttStatus.state === 'dang_noi'
+        ? SH.Amber
+        : mqttStatus.state === 'loi'
+          ? SH.Red
+          : SH.TextDim;
+
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-[#253459] bg-[#0B1220]/90 px-4 py-2 backdrop-blur-md shrink-0">
+    <header className="sticky top-0 z-20 flex items-center justify-between gap-2.5 border-b border-[#253459] bg-[#0B1220]/90 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-4 backdrop-blur-md shrink-0">
       <div className="flex items-center gap-2.5 min-w-0">
         {onMenuOpen && (
           <button
             type="button"
             onClick={onMenuOpen}
-            className="md:hidden inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#253459] bg-[#16213A] text-[#E6EDF7]"
+            className="md:hidden inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#253459] bg-[#16213A] text-[#E6EDF7] shrink-0"
             title="Mở menu"
           >
             <Menu size={17} />
@@ -534,10 +554,10 @@ export function TopBar({
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#253459] bg-[#16213A] px-2.5 py-1 text-xs font-semibold text-[#E6EDF7] hover:bg-[#1D2B4C] cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[#253459] bg-[#16213A] px-2.5 py-1 text-xs font-semibold text-[#E6EDF7] hover:bg-[#1D2B4C] cursor-pointer shrink-0"
           >
             <ArrowLeft size={14} />
-            <span>{backLabel || 'Quay lại'}</span>
+            <span className="hidden xs:inline sm:inline">{backLabel || 'Quay lại'}</span>
           </button>
         )}
         <div className="min-w-0">
@@ -546,7 +566,7 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {extra}
         {adminLockEnabled && adminUnlocked && onLockAdmin && (
           <button
@@ -569,6 +589,16 @@ export function TopBar({
             <Moon size={15} />
           </button>
         )}
+        {/* Mobile compact MQTT indicator */}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          title="Trạng thái kết nối MQTT — bấm để mở Cài đặt"
+          className="sm:hidden inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#253459] bg-[#16213A] cursor-pointer"
+        >
+          <Dot color={mqttDotColor} pulse={mqttStatus.state === 'dang_noi'} size={8} />
+        </button>
+        {/* Tablet / Desktop full status pills */}
         <button
           type="button"
           onClick={onOpenSettings}
@@ -582,7 +612,7 @@ export function TopBar({
           type="button"
           onClick={onVoiceToggle}
           title="Trợ lý giọng nói Gemini"
-          className="md:hidden inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold transition-all cursor-pointer"
+          className="md:hidden inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer"
           style={{
             backgroundColor: voiceActive ? tint(SH.Green, 0.22) : tint(SH.Blue, 0.16),
             border: `1px solid ${voiceActive ? SH.Green : tint(SH.Blue, 0.4)}`,
@@ -606,7 +636,7 @@ export function ToastHost({
 }) {
   if (toasts.length === 0) return null;
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+    <div className="fixed inset-x-3 mx-auto sm:inset-x-auto sm:right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map((t) => {
         const color =
           t.tone === 'success'

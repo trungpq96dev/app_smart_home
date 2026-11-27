@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         rclone \
         ca-certificates \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
@@ -24,7 +25,8 @@ COPY cau_hinh.py db.py storage.py telegram_notifier.py recorder.py detector.py a
 USER recorder
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=Asia/Ho_Chi_Minh
 
 EXPOSE 1985
 

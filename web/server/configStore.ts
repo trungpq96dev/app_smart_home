@@ -14,6 +14,7 @@ export interface MqttConfig {
 export interface CameraConfig {
   host: string;
   cong: number;
+  congGhiHinh: number;
   tls: boolean;
   taiKhoan: string;
   matKhau: string;
@@ -139,6 +140,10 @@ function defaultFromEnv(): AppServerConfig {
     camera: {
       host: process.env.GO2RTC_HOST?.trim() || '192.168.0.50',
       cong: parsePort(process.env.GO2RTC_PORT, 1984),
+      congGhiHinh: parsePort(
+        process.env.CAMERA_RECORDER_PORT || process.env.GO2RTC_RECORDER_PORT,
+        1985,
+      ),
       tls: parseBool(process.env.GO2RTC_TLS, false),
       taiKhoan: process.env.GO2RTC_USER?.trim() ?? '',
       matKhau: process.env.GO2RTC_PASS ?? '',
@@ -210,6 +215,12 @@ export class ConfigStore {
           cong: typeof parsed.camera?.cong === 'number' && parsed.camera.cong >= 1 && parsed.camera.cong <= 65535
             ? Math.trunc(parsed.camera.cong)
             : base.camera.cong,
+          congGhiHinh:
+            typeof parsed.camera?.congGhiHinh === 'number' &&
+            parsed.camera.congGhiHinh >= 1 &&
+            parsed.camera.congGhiHinh <= 65535
+              ? Math.trunc(parsed.camera.congGhiHinh)
+              : base.camera.congGhiHinh,
           tls: typeof parsed.camera?.tls === 'boolean' ? parsed.camera.tls : base.camera.tls,
           taiKhoan: typeof parsed.camera?.taiKhoan === 'string' ? parsed.camera.taiKhoan.trim() : base.camera.taiKhoan,
           matKhau: typeof parsed.camera?.matKhau === 'string' ? parsed.camera.matKhau : base.camera.matKhau,
@@ -332,11 +343,16 @@ export class ConfigStore {
     const cong = typeof input.cong === 'number' && Number.isFinite(input.cong)
       ? Math.min(65535, Math.max(1, Math.trunc(input.cong)))
       : prev.cong;
+    const congGhiHinh =
+      typeof input.congGhiHinh === 'number' && Number.isFinite(input.congGhiHinh)
+        ? Math.min(65535, Math.max(1, Math.trunc(input.congGhiHinh)))
+        : prev.congGhiHinh;
     this.config = {
       ...this.config,
       camera: {
         host: typeof input.host === 'string' ? input.host.trim() : prev.host,
         cong,
+        congGhiHinh,
         tls: typeof input.tls === 'boolean' ? input.tls : prev.tls,
         taiKhoan: typeof input.taiKhoan === 'string' ? input.taiKhoan.trim() : prev.taiKhoan,
         matKhau: nextPass,

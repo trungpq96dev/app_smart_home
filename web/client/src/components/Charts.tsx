@@ -116,9 +116,9 @@ export function BarChart({
             <g
               key={i}
               onClick={() => onSelectIndex?.(i)}
-              className={onSelectIndex ? 'cursor-pointer' : undefined}
+              className={onSelectIndex ? 'cursor-pointer group' : undefined}
             >
-              {/* Full slot hit target */}
+              {/* Full slot hit target (covers bar + bottom axis label) */}
               <rect x={slotX} y={0} width={barStep} height={height} fill="transparent" />
 
               {/* Subtle backdrop around active column */}
@@ -153,6 +153,10 @@ export function BarChart({
                 rx={rx}
                 fill={`url(#${gradId})`}
                 opacity={dimmed ? 0.45 : 1}
+                style={{
+                  transition:
+                    'y 0.32s cubic-bezier(0.22, 1, 0.36, 1), height 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease',
+                }}
               />
 
               {/* Active glow outline */}
@@ -263,6 +267,9 @@ export function BarChart({
   );
 }
 
+/**
+ * Đồng hồ vòm bán nguyệt 180° (startAngle = 180°, sweep = 180° — khớp `ArcGauge` Android).
+ */
 export function ArcGauge({
   fraction,
   valueText,
@@ -277,44 +284,45 @@ export function ArcGauge({
   size?: number;
 }) {
   const f = Math.min(1, Math.max(0, fraction));
-  const stroke = 11;
+  const stroke = Math.max(8, Math.round(size * 0.092));
   const r = (size - stroke) / 2;
   const cx = size / 2;
-  const cy = size / 2;
-  const circumference = 2 * Math.PI * r;
-  const sweep = circumference * 0.72;
-  const dashOffset = sweep * (1 - f);
+  const cy = r + stroke / 2;
+  const svgH = Math.round(cy + stroke * 0.72);
+  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+  const arcLen = Math.PI * r;
+  const dashOffset = arcLen * (1 - f);
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-[220deg]">
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
+      <div className="relative flex flex-col items-center justify-end" style={{ width: size, height: svgH + 14 }}>
+        <svg width={size} height={svgH} className="overflow-visible">
+          <path
+            d={arcPath}
             fill="none"
             stroke="#253459"
             strokeWidth={stroke}
-            strokeDasharray={`${sweep} ${circumference}`}
             strokeLinecap="round"
           />
-          <circle
-            cx={cx}
-            cy={cy}
-            r={r}
+          <path
+            d={arcPath}
             fill="none"
             stroke={color}
             strokeWidth={stroke}
-            strokeDasharray={`${sweep} ${circumference}`}
+            strokeDasharray={`${arcLen} ${arcLen}`}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 0.4s ease' }}
+            style={{
+              transition: 'stroke-dashoffset 0.4s cubic-bezier(0.22, 1, 0.36, 1)',
+              filter: `drop-shadow(0 0 6px ${tint(color, 0.35)})`,
+            }}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2">
-          <span className="font-mono-num text-lg font-bold text-[#E6EDF7] leading-tight">{valueText}</span>
-          <span className="text-[11px] text-[#8A9BB8] mt-1">{label}</span>
+        <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end text-center px-1">
+          <span className="font-mono-num text-base sm:text-lg font-bold text-[#E6EDF7] leading-none">
+            {valueText}
+          </span>
+          <span className="text-[11px] text-[#8A9BB8] mt-1 leading-tight">{label}</span>
         </div>
       </div>
     </div>

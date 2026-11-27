@@ -35,6 +35,13 @@ import {
   type TrangThaiKetNoiBom,
 } from '../data/bomnuoc.js';
 import {
+  CameraPlaybackClient,
+  CameraTopic,
+  createEmptyCameraRecorderState,
+  gopCameraRecorder,
+  type CameraRecorderState,
+} from '../data/cameraRecorder.js';
+import {
   buildOThietBiThat,
   createEmptyCongTacState,
   gopCongTac,
@@ -50,7 +57,6 @@ import {
 import {
   createEmptyCuktechState,
   CuktechTopic,
-  cuktechDanhSachCong,
   cuktechTongOat,
   gopCuktech,
   type CongSacId,
@@ -60,9 +66,9 @@ import { DemoData } from '../data/demoData.js';
 import {
   coSoLieuDien,
   createEmptyDienState,
-  DienTopic,
   doTuoiDien,
   gopDien,
+  tongKwhDien,
   type DienState,
   type KetNoi,
 } from '../data/dien.js';
@@ -80,14 +86,18 @@ import {
   type PhienGiongNoi,
 } from '../data/giongnoi/types.js';
 import {
+  HALLWAY_VIEWS,
+  stoveWatts,
+  tenCheDoPhong,
   type CameraFeed,
+  type CameraIconKey,
   type DestRoute,
   type HallwayView,
   type QuickItem,
   type RoomMode,
   type RoomUi,
 } from '../data/models.js';
-import { gopServer, ServerTopic, type ServerState } from '../data/server.js';
+import { gopServer, type ServerState } from '../data/server.js';
 import {
   kiemTraSuCoKhanCap,
   loadScreensaverConfig,
@@ -99,8 +109,10 @@ import {
 } from '../data/screensaver.js';
 import { layThoiTiet, OpenMeteo, type ThoiTietUi } from '../data/thoitiet.js';
 import { gopWifi, WifiTopic, type WifiState } from '../data/wifi.js';
+import { SH } from '../theme/colors.js';
 
 export type TrangThaiCam =
+  | { state: 'chua_cau_hinh' }
   | { state: 'dang_do' }
   | { state: 'co'; ds: string[] }
   | { state: 'loi'; moTa: string };
@@ -117,6 +129,7 @@ export interface PublicMqttConfig {
 export interface PublicCameraConfig {
   host: string;
   cong: number;
+  congGhiHinh: number;
   tls: boolean;
   taiKhoan: string;
   coMatKhau: boolean;
@@ -194,8 +207,66 @@ export type UpdateCheckState =
   | { status: 'available'; release: GithubReleaseInfo }
   | { status: 'error'; message: string };
 
-export const APP_WEB_VERSION = '0.9.2-web';
-export const ANDROID_BASE_VERSION = '0.9.2';
+export const APP_WEB_VERSION = '0.9.4-web';
+export const ANDROID_BASE_VERSION = '0.9.4';
+
+function isNewerVersion(remoteRaw: string, localRaw: string): boolean {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/i, '')
+      .split('-')[0]
+      .split('.')
+      .map((n) => Number.parseInt(n, 10) || 0);
+  const r = parse(remoteRaw);
+  const l = parse(localRaw);
+  const len = Math.max(r.length, l.length);
+  for (let i = 0; i < len; i++) {
+    const rv = r[i] ?? 0;
+    const lv = l[i] ?? 0;
+    if (rv > lv) return true;
+    if (rv < lv) return false;
+  }
+  return false;
+}
+
+function goiYCameraFeed(streamKey: string, idx: number): CameraFeed {
+  const norm = streamKey
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  const palette = [SH.Blue, SH.Green, SH.Amber, SH.Purple, SH.Cyan, SH.Teal];
+  let name = streamKey;
+  let icon: CameraIconKey = 'videocam';
+  let accent = palette[idx % palette.length];
+
+  if (['cuachinh', 'cua', 'front', 'door', 'gate', 'cong'].some((k) => norm.includes(k))) {
+    name = streamKey === 'cua_chinh' || streamKey === 'front' ? 'Cửa chính' : streamKey;
+    icon = 'door';
+    accent = SH.Blue;
+  } else if (['san', 'vuon', 'yard', 'garden', 'ngoai'].some((k) => norm.includes(k))) {
+    name = streamKey === 'san_vuon' || streamKey === 'yard' ? 'Sân vườn' : streamKey;
+    icon = 'grass';
+    accent = SH.Green;
+  } else if (['bep', 'kitchen'].some((k) => norm.includes(k))) {
+    name = streamKey === 'nha_bep' || streamKey === 'kitchen' ? 'Nhà bếp' : streamKey;
+    icon = 'kitchen';
+    accent = SH.Amber;
+  } else if (['hanhlang', 'hall', 'stairs', 'cauthang'].some((k) => norm.includes(k))) {
+    name = streamKey === 'hanh_lang' || streamKey === 'hall' ? 'Hành lang' : streamKey;
+    icon = 'stairs';
+    accent = SH.Purple;
+  }
+
+  return {
+    id: `cam-${streamKey}`,
+    name,
+    icon,
+    accent,
+    luong: streamKey,
+  };
+}
 
 const GIAY_CHO_CUKTECH = 25;
 const GIAY_CHO_NOI_LAI = 90;
@@ -206,6 +277,7 @@ const CHE_DO_HOP_LE: Record<string, RoomMode> = {
   NGỦ: 'SLEEP',
   HOME: 'HOME',
   NHA: 'HOME',
+  O_NHA: 'HOME',
   NHÀ: 'HOME',
   AWAY: 'AWAY',
   VANG_NHA: 'AWAY',
@@ -230,19 +302,10 @@ const MAN_HINH_HOP_LE: Record<string, { route?: DestRoute; sub?: 'chi_tiet_dien'
   wifi: { sub: 'wifi' },
 };
 
-const TEN_THIET_BI_TUAN: Record<string, string> = {
-  den: 'đèn',
-  quat: 'quạt',
-  dieu_hoa: 'điều hòa',
-  tivi: 'tivi',
-  rem: 'rèm',
-  bep_tu: 'bếp từ',
-};
-
 function defaultPublicConfig(): PublicAppConfig {
   return {
     mqtt: { host: '', cong: 1883, tls: false, taiKhoan: '', clientId: '', coMatKhau: false },
-    camera: { host: '', cong: 1984, tls: false, taiKhoan: '', coMatKhau: false },
+    camera: { host: '', cong: 1984, congGhiHinh: 1985, tls: false, taiKhoan: '', coMatKhau: false },
     weather: { ten: OpenMeteo.TEN_DIA_DIEM, lat: OpenMeteo.LAT, lon: OpenMeteo.LON },
     aquaControlUrl: '',
     bomNuoc: {
@@ -300,7 +363,11 @@ interface SmartHomeContextValue {
   server: ServerState;
   wifi: WifiState;
   thoiTiet: ThoiTietUi;
+  cameraRecorder: CameraRecorderState;
+  dangChupAnh: boolean;
   choCongTacIds: Record<string, boolean>;
+  choCongSac: Partial<Record<CongSacId, boolean>>;
+  choCaiDatCuktech: Record<number, boolean>;
   dangDoiCuktechCong: Partial<Record<CongSacId, boolean>>;
   dangDoiCuktechCaiDat: boolean;
   dangNoiLaiCuktech: boolean;
@@ -312,9 +379,14 @@ interface SmartHomeContextValue {
   selectRoom: (id: string) => void;
   quickItems: QuickItem[];
   cameras: CameraFeed[];
+  selectedCameraIndex: number;
+  selectCamera: (index: number) => void;
+  chupAnhCamera: (tenLuong: string) => Promise<void>;
+  datCanhNguoiCamera: (bat: boolean) => void;
 
   // Quick & Room Controls
   toggleQuickItem: (id: string) => void;
+  thaoTacNhanhPhong: (roomId: string, actionId: string) => void;
   toggleRoomLight: (roomId: string) => void;
   toggleRoomFan: (roomId: string) => void;
   toggleRoomAc: (roomId: string) => void;
@@ -325,9 +397,11 @@ interface SmartHomeContextValue {
   setFanSpeed: (roomId: string, speed: number) => void;
   toggleRoomTv: (roomId: string) => void;
   setCurtainOpen: (roomId: string, pct: number) => void;
+  toggleCurtain: (roomId: string) => void;
   setHoodSpeed: (roomId: string, speed: number) => void;
   toggleStove: (roomId: string) => void;
   stepStoveLevel: (roomId: string, delta: number) => void;
+  setGasAlert: (roomId: string, alert: boolean) => void;
   triggerTestGasAlert: (roomId: string) => void;
   dismissGasAlert: (roomId: string) => void;
   setHallView: (roomId: string, view: HallwayView) => void;
@@ -335,11 +409,13 @@ interface SmartHomeContextValue {
   setHallFrontBrightness: (roomId: string, pct: number) => void;
   toggleHallSurroundingLight: (roomId: string) => void;
   setHallSurroundingBrightness: (roomId: string, pct: number) => void;
+  toggleHallAllLights: (roomId: string) => void;
   toggleHallDoorLock: (roomId: string) => void;
   toggleHallCamera: (roomId: string) => void;
   toggleHallIrMode: (roomId: string) => void;
   toggleHallMotionAuto: (roomId: string) => void;
   triggerHallMotionTest: (roomId: string) => void;
+  clearHallMotion: (roomId: string) => void;
 
   // Real Hardware Controls
   oThietBi: (phong: string, thietBi: string, batMau: boolean) => OThietBi;
@@ -347,7 +423,8 @@ interface SmartHomeContextValue {
   datCongSac: (id: CongSacId, bat: boolean) => void;
   datCaiDatCuktech: (piid: number, giaTri: number) => void;
   noiLaiCuktech: () => void;
-  guiLenhWifi: (cmd: Record<string, unknown>, okMsg?: string) => boolean;
+  guiLenhWifi: (cmd: Record<string, unknown> | string, okMsg?: string) => boolean;
+  khoiDongLaiWifi: () => boolean;
   toggleWifiSecurity: (key: string) => void;
   toggleWifiTrusted: (id: string) => void;
   toggleWifiBlocked: (id: string) => void;
@@ -367,6 +444,7 @@ interface SmartHomeContextValue {
   luuCameraConfig: (form: {
     host: string;
     cong: number;
+    congGhiHinh?: number;
     tls: boolean;
     taiKhoan: string;
     matKhau?: string;
@@ -421,6 +499,8 @@ interface SmartHomeContextValue {
   wakeScreensaver: () => void;
   emergencyAlert: SuCoKhanCap | null;
   dismissEmergencyAlert: () => void;
+  mqttGasAlert: boolean;
+  mqttGasPpm: number | null;
 
   // Telegram Alerts
   telegramStatus: TelegramAlertsStatus | null;
@@ -465,7 +545,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [gatewayOnline, setGatewayOnline] = useState(true);
   const [mqttStatus, setMqttStatus] = useState<KetNoi>({ state: 'chua_cau_hinh' });
-  const [cameraStatus, setCameraStatus] = useState<TrangThaiCam>({ state: 'dang_do' });
+  const [cameraStatus, setCameraStatus] = useState<TrangThaiCam>({ state: 'chua_cau_hinh' });
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -476,22 +556,56 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   const [server, setServer] = useState<ServerState>(() => DemoData.initialServerState());
   const [wifi, setWifi] = useState<WifiState>(() => DemoData.initialWifiState());
   const [thoiTiet, setThoiTiet] = useState<ThoiTietUi>({ state: 'dang_tai' });
+  const [cameraRecorder, setCameraRecorder] = useState<CameraRecorderState>(createEmptyCameraRecorderState);
+  const [dangChupAnh, setDangChupAnh] = useState(false);
+  const [selectedCameraIndex, setSelectedCameraIndex] = useState(0);
 
   // Pending commands & deadlines
   const hangChoRef = useRef(new HangChoCongTac());
   const [choCongTacIds, setChoCongTacIds] = useState<Record<string, boolean>>({});
-  const cuktechCongDeadlines = useRef<Partial<Record<CongSacId, number>>>({});
-  const cuktechCaiDatDeadline = useRef<number>(0);
+  const cuktechCongExpected = useRef<Partial<Record<CongSacId, { bat: boolean; deadline: number }>>>({});
+  const cuktechCaiDatExpected = useRef<Record<number, { giaTri: number; deadline: number }>>({});
   const cuktechNoiLaiDeadline = useRef<number>(0);
-  const [dangDoiCuktechCong, setDangDoiCuktechCong] = useState<Partial<Record<CongSacId, boolean>>>({});
-  const [dangDoiCuktechCaiDat, setDangDoiCuktechCaiDat] = useState(false);
+  const [choCongSac, setChoCongSac] = useState<Partial<Record<CongSacId, boolean>>>({});
+  const [choCaiDatCuktech, setChoCaiDatCuktech] = useState<Record<number, boolean>>({});
   const [dangNoiLaiCuktech, setDangNoiLaiCuktech] = useState(false);
+  const hallMotionTimersRef = useRef<Record<string, number>>({});
+
+  const dangDoiCuktechCong = useMemo(() => {
+    const out: Partial<Record<CongSacId, boolean>> = {};
+    for (const k of Object.keys(choCongSac) as CongSacId[]) out[k] = true;
+    return out;
+  }, [choCongSac]);
+  const dangDoiCuktechCaiDat = Object.keys(choCaiDatCuktech).length > 0;
 
   // Demo Room / UI states
   const [rooms, setRooms] = useState<RoomUi[]>(() => DemoData.rooms());
   const [selectedRoomId, setSelectedRoomId] = useState<string>('living');
   const [quickItems, setQuickItems] = useState<QuickItem[]>(() => DemoData.quickItems());
-  const cameras = useMemo(() => DemoData.cameras(), []);
+
+  const cameraConfigured = config.camera.host.trim().length > 0 && config.camera.cong >= 1;
+  const cameras = useMemo<CameraFeed[]>(() => {
+    if (!cameraConfigured || cameraStatus.state === 'chua_cau_hinh') {
+      return DemoData.cameras();
+    }
+    if (cameraStatus.state === 'co') {
+      return cameraStatus.ds.map((s, idx) => goiYCameraFeed(s, idx));
+    }
+    return [];
+  }, [cameraConfigured, cameraStatus]);
+
+  useEffect(() => {
+    if (cameras.length > 0 && selectedCameraIndex >= cameras.length) {
+      setSelectedCameraIndex(0);
+    }
+  }, [cameras.length, selectedCameraIndex]);
+
+  const selectCamera = useCallback(
+    (index: number) => {
+      setSelectedCameraIndex(Math.max(0, Math.min(Math.max(0, cameras.length - 1), index)));
+    },
+    [cameras.length],
+  );
 
   // Voice assistant states
   const [voiceConfig, setVoiceConfig] = useState<CauHinhGiongNoi>(() => loadVoiceConfig());
@@ -533,7 +647,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [wsPendingBom, localPendingBom],
   );
 
-  // Refs synced to latest states (tranh stale closure cho WebSocket, timer & Gemini Live tool calls)
+  // Refs synced to latest states
   const roomsRef = useRef(rooms);
   roomsRef.current = rooms;
   const quickItemsRef = useRef(quickItems);
@@ -550,6 +664,8 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   cuktechRef.current = cuktech;
   const thoiTietRef = useRef(thoiTiet);
   thoiTietRef.current = thoiTiet;
+  const cameraRecorderRef = useRef(cameraRecorder);
+  cameraRecorderRef.current = cameraRecorder;
   const mqttStatusRef = useRef(mqttStatus);
   mqttStatusRef.current = mqttStatus;
   const configRef = useRef(config);
@@ -570,6 +686,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   const pendingPublishResolvers = useRef(
     new Map<string, (ack: { ok: boolean; reason?: string; error?: string }) => void>(),
   );
+  const popHandlingRef = useRef(false);
 
   // Toast helpers
   const dismissToast = useCallback((id: string) => {
@@ -584,37 +701,98 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     }, 4500);
   }, []);
 
-  // Navigation helpers
-  const navigateDest = useCallback((route: DestRoute) => {
-    setCurrentDest(route);
-    setSelectedRoomDetailId(null);
-    setChiTietDienOpen(false);
-    setWifiOpen(false);
+  // Navigation + Browser/iOS Swipe-Back History integration
+  const pushNavHistory = useCallback((stateObj: Record<string, unknown>) => {
+    if (typeof window === 'undefined' || popHandlingRef.current) return;
+    try {
+      window.history.pushState(stateObj, '');
+    } catch {
+      // ignore sandboxed history errors
+    }
   }, []);
 
-  const openRoomDetail = useCallback((roomId: string) => {
-    setSelectedRoomId(roomId);
-    setSelectedRoomDetailId(roomId);
-    setChiTietDienOpen(false);
-    setWifiOpen(false);
-  }, []);
+  const navigateDest = useCallback(
+    (route: DestRoute) => {
+      setCurrentDest(route);
+      setSelectedRoomDetailId(null);
+      setChiTietDienOpen(false);
+      setWifiOpen(false);
+      pushNavHistory({ dest: route, room: null, sub: null });
+    },
+    [pushNavHistory],
+  );
+
+  const openRoomDetail = useCallback(
+    (roomId: string) => {
+      setSelectedRoomId(roomId);
+      setSelectedRoomDetailId(roomId);
+      setChiTietDienOpen(false);
+      setWifiOpen(false);
+      pushNavHistory({ dest: currentDestRef.current, room: roomId, sub: null });
+    },
+    [pushNavHistory],
+  );
 
   const openChiTietDien = useCallback(() => {
     setChiTietDienOpen(true);
     setSelectedRoomDetailId(null);
     setWifiOpen(false);
-  }, []);
+    pushNavHistory({ dest: currentDestRef.current, room: null, sub: 'chi_tiet_dien' });
+  }, [pushNavHistory]);
 
   const openWifi = useCallback(() => {
     setWifiOpen(true);
     setSelectedRoomDetailId(null);
     setChiTietDienOpen(false);
-  }, []);
+    pushNavHistory({ dest: currentDestRef.current, room: null, sub: 'wifi' });
+  }, [pushNavHistory]);
 
   const closeSubScreen = useCallback(() => {
     setSelectedRoomDetailId(null);
     setChiTietDienOpen(false);
     setWifiOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.history.replaceState({ dest: 'home', room: null, sub: null }, '');
+    } catch {
+      // ignore
+    }
+    const onPopState = (ev: PopStateEvent) => {
+      popHandlingRef.current = true;
+      try {
+        if (screensaverActiveRef.current) {
+          setScreensaverActive(false);
+          return;
+        }
+        const st = ev.state as { dest?: DestRoute; room?: string | null; sub?: string | null } | null;
+        if (st && st.dest) {
+          setCurrentDest(st.dest);
+          setSelectedRoomDetailId(st.room ?? null);
+          setChiTietDienOpen(st.sub === 'chi_tiet_dien');
+          setWifiOpen(st.sub === 'wifi');
+        } else {
+          setSelectedRoomDetailId(null);
+          setChiTietDienOpen(false);
+          setWifiOpen(false);
+          setCurrentDest('home');
+        }
+      } finally {
+        popHandlingRef.current = false;
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Cleanup hall motion timers on unmount
+  useEffect(() => {
+    const timers = hallMotionTimersRef.current;
+    return () => {
+      for (const t of Object.values(timers)) window.clearTimeout(t);
+    };
   }, []);
 
   // MQTT Publish qua Gateway WS
@@ -670,31 +848,105 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const syncCuktechPendingStates = useCallback((next: CuktechState) => {
+    let congUpdated = false;
+    for (const id of Object.keys(cuktechCongExpected.current) as CongSacId[]) {
+      const exp = cuktechCongExpected.current[id];
+      if (exp && next.caiDat?.congBat[id] === exp.bat) {
+        delete cuktechCongExpected.current[id];
+        congUpdated = true;
+      }
+    }
+    if (congUpdated) {
+      const snap: Partial<Record<CongSacId, boolean>> = {};
+      for (const [k, v] of Object.entries(cuktechCongExpected.current) as Array<
+        [CongSacId, { bat: boolean; deadline: number }]
+      >) {
+        if (v) snap[k] = v.bat;
+      }
+      setChoCongSac(snap);
+    }
+
+    let cdUpdated = false;
+    for (const rawKey of Object.keys(cuktechCaiDatExpected.current)) {
+      const piid = Number(rawKey);
+      const exp = cuktechCaiDatExpected.current[piid];
+      if (exp && next.caiDat?.tho[piid] === exp.giaTri) {
+        delete cuktechCaiDatExpected.current[piid];
+        cdUpdated = true;
+      }
+    }
+    if (cdUpdated) {
+      const snap: Record<number, boolean> = {};
+      for (const rawKey of Object.keys(cuktechCaiDatExpected.current)) {
+        snap[Number(rawKey)] = true;
+      }
+      setChoCaiDatCuktech(snap);
+    }
+  }, []);
+
+  const danhThucManChoTuSuKien = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    if (screensaverActiveRef.current) {
+      setScreensaverActive(false);
+      setCurrentDest('home');
+      setSelectedRoomDetailId(null);
+      setChiTietDienOpen(false);
+      setWifiOpen(false);
+    }
+  }, []);
+
   // Nhan 1 ban tin MQTT (snapshot hoac live)
   const handleMqttMessage = useCallback(
-    (topic: string, payload: string, isLive: boolean) => {
+    (topic: string, payload: string, isLive: boolean, retain = false) => {
       const sc = screensaverConfigRef.current;
-      const gasTopic = configRef.current.telegram?.gasTopic || sc.gasTopic || 'smarthome/sensor/gas';
-      const pirTopic = configRef.current.telegram?.pirTopic || sc.pirTopic || 'smarthome/sensor/pir';
+      const customScGas =
+        sc.gasTopic && sc.gasTopic.trim() && sc.gasTopic.trim() !== 'smarthome/sensor/gas'
+          ? sc.gasTopic.trim()
+          : '';
+      const customScPir =
+        sc.pirTopic && sc.pirTopic.trim() && sc.pirTopic.trim() !== 'smarthome/sensor/pir'
+          ? sc.pirTopic.trim()
+          : '';
+      const gasTopic =
+        customScGas || configRef.current.telegram?.gasTopic || sc.gasTopic || 'smarthome/sensor/gas';
+      const pirTopic =
+        customScPir || configRef.current.telegram?.pirTopic || sc.pirTopic || 'smarthome/sensor/pir';
       const gasThreshold = configRef.current.telegram?.gasThresholdPpm || 200;
+      const lowerTopic = topic.toLowerCase();
 
-      if (topic === gasTopic || topic === 'smarthome/sensor/gas') {
+      if (
+        topic === gasTopic ||
+        topic === 'smarthome/sensor/gas' ||
+        (lowerTopic.startsWith('smarthome/sensor/') && lowerTopic.includes('gas'))
+      ) {
         const res = parseGasSensorPayload(payload, gasThreshold);
         setMqttGasAlert(res.alert);
         setMqttGasPpm(res.ppm);
         return;
       }
 
-      if (topic === pirTopic || topic === 'smarthome/sensor/pir') {
-        if (isLive && sc.pirWakeEnabled && parsePirMotionPayload(payload)) {
-          lastInteractionRef.current = Date.now();
-          if (screensaverActiveRef.current) {
-            setScreensaverActive(false);
-            setCurrentDest('home');
-            setSelectedRoomDetailId(null);
-            setChiTietDienOpen(false);
-            setWifiOpen(false);
-          }
+      if (
+        topic === pirTopic ||
+        topic === 'smarthome/sensor/pir' ||
+        (lowerTopic.startsWith('smarthome/sensor/') && lowerTopic.includes('pir'))
+      ) {
+        if (isLive && !retain && sc.pirWakeEnabled && parsePirMotionPayload(payload)) {
+          danhThucManChoTuSuKien();
+        }
+        return;
+      }
+
+      if (topic.startsWith('camera/')) {
+        const next = gopCameraRecorder(cameraRecorderRef.current, topic, payload);
+        cameraRecorderRef.current = next;
+        setCameraRecorder(next);
+
+        if (isLive && !retain && topic === CameraTopic.PERSON && sc.pirWakeEnabled) {
+          danhThucManChoTuSuKien();
+        }
+        if (isLive && !retain && topic === CameraTopic.KET_QUA && next.ketQuaLenh?.message) {
+          showToast(next.ketQuaLenh.message, next.ketQuaLenh.ok ? 'success' : 'warning');
         }
         return;
       }
@@ -717,26 +969,12 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         setCuktech(next);
 
         if (isLive) {
-          if (topic === CuktechTopic.STATUS) {
-            for (const c of cuktechDanhSachCong(next)) {
-              const dl = cuktechCongDeadlines.current[c.id];
-              if (dl && next.noiDuoc) {
-                delete cuktechCongDeadlines.current[c.id];
-              }
-            }
-            setDangDoiCuktechCong(() => {
-              const out: Partial<Record<CongSacId, boolean>> = {};
-              for (const k of Object.keys(cuktechCongDeadlines.current) as CongSacId[]) out[k] = true;
-              return out;
-            });
-            if (cuktechNoiLaiDeadline.current > 0 && next.noiDuoc) {
-              cuktechNoiLaiDeadline.current = 0;
-              setDangNoiLaiCuktech(false);
-            }
+          if (topic === CuktechTopic.STATUS || topic === CuktechTopic.SETTINGS) {
+            syncCuktechPendingStates(next);
           }
-          if (topic === CuktechTopic.SETTINGS && cuktechCaiDatDeadline.current > 0) {
-            cuktechCaiDatDeadline.current = 0;
-            setDangDoiCuktechCaiDat(false);
+          if (topic === CuktechTopic.STATUS && cuktechNoiLaiDeadline.current > 0 && next.noiDuoc) {
+            cuktechNoiLaiDeadline.current = 0;
+            setDangNoiLaiCuktech(false);
           }
         }
         return;
@@ -760,17 +998,23 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [showToast, syncCongTacVaoRooms],
+    [danhThucManChoTuSuKien, showToast, syncCongTacVaoRooms, syncCuktechPendingStates],
   );
 
   // Camera probe
   const taiDanhSachCamera = useCallback(async () => {
+    if (!configRef.current.camera.host.trim()) {
+      setCameraStatus({ state: 'chua_cau_hinh' });
+      return;
+    }
     setCameraStatus({ state: 'dang_do' });
     try {
       const resp = await fetch('/api/go2rtc/streams');
       const data = (await resp.json()) as { ok: boolean; streams?: string[]; error?: string };
       if (data.ok) {
         setCameraStatus({ state: 'co', ds: data.streams ?? [] });
+      } else if (data.error === 'Chưa khai báo go2rtc') {
+        setCameraStatus({ state: 'chua_cau_hinh' });
       } else {
         setCameraStatus({ state: 'loi', moTa: data.error || 'Không kết nối được go2rtc' });
       }
@@ -802,8 +1046,17 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         if (resp.ok) {
           const data = (await resp.json()) as PublicAppConfig;
           if (!cancelled) {
-            configRef.current = data;
-            setConfig(data);
+            const merged: PublicAppConfig = {
+              ...defaultPublicConfig(),
+              ...data,
+              camera: {
+                ...defaultPublicConfig().camera,
+                ...data.camera,
+                congGhiHinh: data.camera?.congGhiHinh || 1985,
+              },
+            };
+            configRef.current = merged;
+            setConfig(merged);
             setConfigLoaded(true);
             setGatewayOnline(true);
           }
@@ -855,18 +1108,18 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
           const msg = JSON.parse(String(ev.data)) as
             | { type: 'snapshot'; status: KetNoi; messages: Array<[string, string]> }
             | { type: 'status'; status: KetNoi }
-            | { type: 'message'; topic: string; payload: string; ts: number }
+            | { type: 'message'; topic: string; payload: string; ts: number; retain?: boolean }
             | { type: 'publish_ack'; reqId: string; ok: boolean; reason?: string; error?: string };
 
           if (msg.type === 'snapshot') {
             setMqttStatus(msg.status);
             for (const [topic, payload] of msg.messages) {
-              handleMqttMessage(topic, payload, false);
+              handleMqttMessage(topic, payload, false, true);
             }
           } else if (msg.type === 'status') {
             setMqttStatus(msg.status);
           } else if (msg.type === 'message') {
-            handleMqttMessage(msg.topic, msg.payload, true);
+            handleMqttMessage(msg.topic, msg.payload, true, Boolean(msg.retain));
           } else if (msg.type === 'publish_ack') {
             const resolver = pendingPublishResolvers.current.get(msg.reqId);
             if (resolver) {
@@ -997,36 +1250,53 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       const expired = hangChoRef.current.quaHan(now);
       if (expired.length > 0) {
         setChoCongTacIds(hangChoRef.current.anhChup());
-        showToast('Công tắc không trả lời (hết 6s). Kiểm tra điện / Wi-Fi công tắc.', 'warning');
+        for (const ma of expired) {
+          const ten = congtacRef.current.danhSach.find((tb) => tb.ma === ma)?.ten ?? ma;
+          showToast(`${ten} không phản hồi sau 6 giây. Không rõ lệnh đã chạy chưa.`, 'warning');
+        }
       }
 
       let congChanged = false;
-      for (const key of Object.keys(cuktechCongDeadlines.current) as CongSacId[]) {
-        const dl = cuktechCongDeadlines.current[key];
-        if (dl && now >= dl) {
-          delete cuktechCongDeadlines.current[key];
+      for (const key of Object.keys(cuktechCongExpected.current) as CongSacId[]) {
+        const exp = cuktechCongExpected.current[key];
+        if (exp && now >= exp.deadline) {
+          delete cuktechCongExpected.current[key];
           congChanged = true;
-          showToast('Sạc không phản hồi lệnh bật/tắt cổng. Kiểm tra kết nối BLE.', 'warning');
+          showToast(`Cổng ${key === 'USB_A' ? 'USB-A' : key} không phản hồi sau ${GIAY_CHO_CUKTECH}s.`, 'warning');
         }
       }
       if (congChanged) {
-        setDangDoiCuktechCong(() => {
-          const next: Partial<Record<CongSacId, boolean>> = {};
-          for (const k of Object.keys(cuktechCongDeadlines.current) as CongSacId[]) next[k] = true;
-          return next;
-        });
+        const snap: Partial<Record<CongSacId, boolean>> = {};
+        for (const [k, v] of Object.entries(cuktechCongExpected.current) as Array<
+          [CongSacId, { bat: boolean; deadline: number }]
+        >) {
+          if (v) snap[k] = v.bat;
+        }
+        setChoCongSac(snap);
       }
 
-      if (cuktechCaiDatDeadline.current > 0 && now >= cuktechCaiDatDeadline.current) {
-        cuktechCaiDatDeadline.current = 0;
-        setDangDoiCuktechCaiDat(false);
-        showToast('Sạc không phản hồi lệnh đổi cài đặt.', 'warning');
+      let cdChanged = false;
+      for (const rawKey of Object.keys(cuktechCaiDatExpected.current)) {
+        const piid = Number(rawKey);
+        const exp = cuktechCaiDatExpected.current[piid];
+        if (exp && now >= exp.deadline) {
+          delete cuktechCaiDatExpected.current[piid];
+          cdChanged = true;
+          showToast('Củ sạc không phản hồi lệnh đổi cài đặt.', 'warning');
+        }
+      }
+      if (cdChanged) {
+        const snap: Record<number, boolean> = {};
+        for (const rawKey of Object.keys(cuktechCaiDatExpected.current)) {
+          snap[Number(rawKey)] = true;
+        }
+        setChoCaiDatCuktech(snap);
       }
 
       if (cuktechNoiLaiDeadline.current > 0 && now >= cuktechNoiLaiDeadline.current) {
         cuktechNoiLaiDeadline.current = 0;
         setDangNoiLaiCuktech(false);
-        showToast('Không thấy phản hồi nối lại từ máy chủ.', 'warning');
+        showToast('Không thấy phản hồi nối lại BLE từ máy chủ.', 'warning');
       }
     }, 1000);
 
@@ -1038,7 +1308,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updater(r) : r)));
   }, []);
 
-  // Cua duy nhat gui lenh toi cong tac that (hoac doi cuc bo neu la thiet bi mau)
+  // Cua duy nhat gui lenh toi cong tac that (hoac doi cuc bo neu la thiet bi mau / mat ket noi khi bam tu man hinh)
   const gatCongTac = useCallback(
     (phong: string, thietBi: string, dao: boolean, bat: boolean, nguon: string): string | null => {
       const tuManHinh = nguon === LenhCongTac.NGUON_MAN_HINH;
@@ -1068,24 +1338,36 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
 
       if (mqttStatusRef.current.state !== 'da_noi') {
         const loi = 'Chưa nối broker MQTT nên chưa gửi được lệnh. Kiểm tra Cài đặt.';
-        if (tuManHinh) showToast(loi, 'error');
+        if (tuManHinh) {
+          capNhatCucBo();
+          showToast(loi, 'error');
+        }
         return loi;
       }
       if (!isBridgeSong(ct)) {
         const loi = 'Bộ nối công tắc trên máy chủ chưa chạy nên chưa gửi được lệnh.';
-        if (tuManHinh) showToast(loi, 'warning');
+        if (tuManHinh) {
+          capNhatCucBo();
+          showToast(loi, 'warning');
+        }
         return loi;
       }
 
       const tt = ct.trangThai[tb.ma];
       if (!tt || !tt.online) {
         const loi = `${tb.ten} đang mất kết nối${tt?.lyDoLoi ? ` (${tt.lyDoLoi})` : ''}.`;
-        if (tuManHinh) showToast(loi, 'warning');
+        if (tuManHinh) {
+          capNhatCucBo();
+          showToast(loi, 'warning');
+        }
         return loi;
       }
       if (dao && tt.bat === null) {
         const loi = `Chưa biết ${tb.ten} đang bật hay tắt nên không đảo được.`;
-        if (tuManHinh) showToast(loi, 'warning');
+        if (tuManHinh) {
+          capNhatCucBo();
+          showToast(loi, 'warning');
+        }
         return loi;
       }
       if (hangChoRef.current.dangCho(tb.ma)) {
@@ -1131,189 +1413,539 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     setQuickItems((prev) => prev.map((q) => (q.id === id ? { ...q, on: !q.on } : q)));
   }, []);
 
-  const toggleRoomLight = useCallback((id: string) => {
-    gatCongTac(id, 'den', true, false, LenhCongTac.NGUON_MAN_HINH);
-  }, [gatCongTac]);
+  const toggleRoomLight = useCallback(
+    (id: string) => {
+      gatCongTac(id, 'den', true, false, LenhCongTac.NGUON_MAN_HINH);
+    },
+    [gatCongTac],
+  );
 
-  const toggleRoomFan = useCallback((id: string) => {
-    gatCongTac(id, 'quat', true, false, LenhCongTac.NGUON_MAN_HINH);
-  }, [gatCongTac]);
+  const toggleRoomFan = useCallback(
+    (id: string) => {
+      gatCongTac(id, 'quat', true, false, LenhCongTac.NGUON_MAN_HINH);
+    },
+    [gatCongTac],
+  );
 
-  const toggleRoomAc = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, acOn: !r.acOn }));
-  }, [updateRoom]);
+  const toggleRoomAc = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, acOn: !r.acOn }));
+    },
+    [updateRoom],
+  );
 
-  const stepAcTemp = useCallback((id: string, delta: number) => {
-    updateRoom(id, (r) => ({ ...r, acTemp: Math.min(30, Math.max(16, r.acTemp + delta)) }));
-  }, [updateRoom]);
-
-  const setRoomMode = useCallback((id: string, mode: RoomMode) => {
-    const ct = congtacRef.current;
-    const denThat = Boolean(
-      timCongTac(ct, id, 'den') &&
-      isBridgeSong(ct) &&
-      trangThaiCongTacCua(ct, id, 'den')?.online === true,
-    );
-    const quatThat = Boolean(
-      timCongTac(ct, id, 'quat') &&
-      isBridgeSong(ct) &&
-      trangThaiCongTacCua(ct, id, 'quat')?.online === true,
-    );
-    updateRoom(id, (r) => {
-      switch (mode) {
-        case 'SLEEP':
-          return {
-            ...r,
-            mode,
-            lightOn: denThat ? r.lightOn : false,
-            fanOn: quatThat ? r.fanOn : true,
-            acOn: true,
-            acTemp: 27,
-            tvOn: false,
-            curtainOpen: 0,
-            stoveOn: false,
-            hoodSpeed: 1,
-            hallFrontLightOn: false,
-            hallSurroundingLightOn: false,
-            hallDoorLocked: true,
-            hallIrMode: true,
-          };
-        case 'AWAY':
-          return {
-            ...r,
-            mode,
-            lightOn: denThat ? r.lightOn : false,
-            fanOn: quatThat ? r.fanOn : false,
-            acOn: false,
-            tvOn: false,
-            stoveOn: false,
-            hoodSpeed: 1,
-            hallFrontLightOn: false,
-            hallSurroundingLightOn: true,
-            hallDoorLocked: true,
-            hallCameraOn: true,
-            hallMotionAuto: true,
-          };
-        case 'HOME':
-          return {
-            ...r,
-            mode,
-            lightOn: denThat ? r.lightOn : true,
-            acOn: true,
-            acTemp: 25,
-            curtainOpen: 100,
-            hallFrontLightOn: true,
-            hallSurroundingLightOn: true,
-            hallDoorLocked: true,
-            hallIrMode: false,
-          };
-        default:
-          return { ...r, mode };
-      }
-    });
-  }, [updateRoom]);
-
-  const toggleRoomSchedule = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, scheduleOn: !r.scheduleOn }));
-  }, [updateRoom]);
-
-  const setLightBrightness = useCallback((id: string, pct: number) => {
-    updateRoom(id, (r) => ({ ...r, lightBrightness: Math.min(100, Math.max(10, Math.round(pct))) }));
-  }, [updateRoom]);
-
-  const setFanSpeed = useCallback((id: string, speed: number) => {
-    updateRoom(id, (r) => ({ ...r, fanSpeed: Math.min(3, Math.max(1, Math.trunc(speed))), fanOn: true }));
-    const ct = congtacRef.current;
-    const tb = timCongTac(ct, id, 'quat');
-    const tt = tb ? ct.trangThai[tb.ma] : undefined;
-    if (tb && isBridgeSong(ct) && tt?.online === true && tt.bat !== true) {
-      gatCongTac(id, 'quat', false, true, LenhCongTac.NGUON_MAN_HINH);
-    }
-  }, [gatCongTac, updateRoom]);
-
-  const toggleRoomTv = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, tvOn: !r.tvOn }));
-  }, [updateRoom]);
-
-  const setCurtainOpen = useCallback((id: string, pct: number) => {
-    updateRoom(id, (r) => ({ ...r, curtainOpen: Math.min(100, Math.max(0, Math.round(pct))) }));
-  }, [updateRoom]);
-
-  const setHoodSpeed = useCallback((id: string, speed: number) => {
-    updateRoom(id, (r) => ({ ...r, hoodSpeed: Math.min(3, Math.max(1, Math.trunc(speed))), fanOn: true }));
-  }, [updateRoom]);
-
-  const toggleStove = useCallback((id: string) => {
-    updateRoom(id, (r) => {
-      const nextOn = !r.stoveOn;
-      return nextOn && !r.fanOn
-        ? { ...r, stoveOn: true, fanOn: true, hoodSpeed: 2 }
-        : { ...r, stoveOn: nextOn };
-    });
-  }, [updateRoom]);
-
-  const stepStoveLevel = useCallback((id: string, delta: number) => {
-    updateRoom(id, (r) => ({ ...r, stoveLevel: Math.min(9, Math.max(1, r.stoveLevel + delta)) }));
-  }, [updateRoom]);
-
-  const triggerTestGasAlert = useCallback((id: string) => {
-    updateRoom(id, (r) => {
-      const next = !r.gasAlert;
-      return { ...r, gasAlert: next, gasPpm: next ? 360 : 18, fanOn: next ? true : r.fanOn, hoodSpeed: next ? 3 : r.hoodSpeed };
-    });
-  }, [updateRoom]);
-
-  const dismissGasAlert = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, gasAlert: false, gasPpm: 18 }));
-  }, [updateRoom]);
-
-  const setHallView = useCallback((id: string, view: HallwayView) => {
-    updateRoom(id, (r) => ({ ...r, hallView: view }));
-  }, [updateRoom]);
-
-  const toggleHallFrontLight = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallFrontLightOn: !r.hallFrontLightOn }));
-  }, [updateRoom]);
-
-  const setHallFrontBrightness = useCallback((id: string, pct: number) => {
-    updateRoom(id, (r) => ({ ...r, hallFrontBrightness: Math.min(100, Math.max(10, Math.round(pct))) }));
-  }, [updateRoom]);
-
-  const toggleHallSurroundingLight = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallSurroundingLightOn: !r.hallSurroundingLightOn }));
-  }, [updateRoom]);
-
-  const setHallSurroundingBrightness = useCallback((id: string, pct: number) => {
-    updateRoom(id, (r) => ({ ...r, hallSurroundingBrightness: Math.min(100, Math.max(10, Math.round(pct))) }));
-  }, [updateRoom]);
-
-  const toggleHallDoorLock = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallDoorLocked: !r.hallDoorLocked }));
-  }, [updateRoom]);
-
-  const toggleHallCamera = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallCameraOn: !r.hallCameraOn }));
-  }, [updateRoom]);
-
-  const toggleHallIrMode = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallIrMode: !r.hallIrMode }));
-  }, [updateRoom]);
-
-  const toggleHallMotionAuto = useCallback((id: string) => {
-    updateRoom(id, (r) => ({ ...r, hallMotionAuto: !r.hallMotionAuto }));
-  }, [updateRoom]);
-
-  const triggerHallMotionTest = useCallback((id: string) => {
-    updateRoom(id, (r) => {
-      const next = !r.hallMotionDetected;
-      return {
+  const stepAcTemp = useCallback(
+    (id: string, delta: number) => {
+      updateRoom(id, (r) => ({
         ...r,
-        hallMotionDetected: next,
-        hallFrontLightOn: next && r.hallMotionAuto ? true : r.hallFrontLightOn,
-        hallSurroundingLightOn: next && r.hallMotionAuto ? true : r.hallSurroundingLightOn,
-      };
-    });
-  }, [updateRoom]);
+        acOn: true,
+        acTemp: Math.min(30, Math.max(16, r.acTemp + delta)),
+      }));
+    },
+    [updateRoom],
+  );
+
+  // Kich ban che do theo tung loai phong khop 100% HomeViewModel.setMode (Android)
+  const setRoomMode = useCallback(
+    (id: string, mode: RoomMode) => {
+      const ct = congtacRef.current;
+      const denThatOnline = Boolean(
+        timCongTac(ct, id, 'den') &&
+          isBridgeSong(ct) &&
+          trangThaiCongTacCua(ct, id, 'den')?.online === true,
+      );
+      const quatThatOnline = Boolean(
+        timCongTac(ct, id, 'quat') &&
+          isBridgeSong(ct) &&
+          trangThaiCongTacCua(ct, id, 'quat')?.online === true,
+      );
+
+      updateRoom(id, (r) => {
+        if (id === 'living') {
+          switch (mode) {
+            case 'HOME':
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 100,
+                acOn: true,
+                acTemp: 24,
+                curtainOpen: 100,
+                tvOn: false,
+              };
+            case 'SLEEP':
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 20,
+                acOn: true,
+                acTemp: 23,
+                curtainOpen: 0,
+                tvOn: true,
+              };
+            case 'CUSTOM':
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 55,
+                acOn: true,
+                acTemp: 25,
+                curtainOpen: 50,
+                tvOn: false,
+              };
+            case 'AWAY':
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : false,
+                fanOn: quatThatOnline ? r.fanOn : false,
+                acOn: false,
+                tvOn: false,
+                curtainOpen: 0,
+              };
+          }
+        }
+
+        if (id === 'kitchen') {
+          switch (mode) {
+            case 'HOME': // Nấu ăn
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 100,
+                fanOn: quatThatOnline ? r.fanOn : true,
+                hoodSpeed: 2,
+                stoveOn: true,
+                stoveLevel: 5,
+              };
+            case 'CUSTOM': // Ăn tối
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 55,
+                fanOn: quatThatOnline ? r.fanOn : false,
+                stoveOn: false,
+              };
+            case 'SLEEP': // Dọn dẹp
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 100,
+                fanOn: quatThatOnline ? r.fanOn : true,
+                hoodSpeed: 1,
+                stoveOn: false,
+              };
+            case 'AWAY': // Vắng nhà
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : false,
+                fanOn: quatThatOnline ? r.fanOn : false,
+                stoveOn: false,
+              };
+          }
+        }
+
+        if (id === 'hall') {
+          switch (mode) {
+            case 'SLEEP': // Đêm an ninh
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : false,
+                hallFrontLightOn: true,
+                hallFrontBrightness: 60,
+                hallSurroundingLightOn: true,
+                hallSurroundingBrightness: 75,
+                hallDoorLocked: true,
+                hallCameraOn: true,
+                hallIrMode: true,
+                hallMotionAuto: true,
+              };
+            case 'HOME': // Về nhà
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 100,
+                hallFrontLightOn: true,
+                hallFrontBrightness: 100,
+                hallSurroundingLightOn: true,
+                hallSurroundingBrightness: 80,
+                hallDoorLocked: false,
+                hallIrMode: false,
+              };
+            case 'CUSTOM': // Tiếp khách
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : true,
+                lightBrightness: 100,
+                hallFrontLightOn: true,
+                hallFrontBrightness: 100,
+                hallSurroundingLightOn: true,
+                hallSurroundingBrightness: 100,
+                hallDoorLocked: false,
+                hallIrMode: false,
+              };
+            case 'AWAY': // Đi vắng
+              return {
+                ...r,
+                mode,
+                lightOn: denThatOnline ? r.lightOn : false,
+                hallFrontLightOn: false,
+                hallSurroundingLightOn: false,
+                hallDoorLocked: true,
+                hallCameraOn: true,
+                hallIrMode: true,
+                hallMotionAuto: true,
+              };
+          }
+        }
+
+        // Phòng ngủ (bed1, bed2, bed3)
+        switch (mode) {
+          case 'SLEEP':
+            return {
+              ...r,
+              mode,
+              lightOn: denThatOnline ? r.lightOn : true,
+              lightBrightness: 20,
+              fanOn: quatThatOnline ? r.fanOn : true,
+              fanSpeed: 1,
+              acOn: true,
+              acTemp: 26,
+            };
+          case 'HOME':
+            return {
+              ...r,
+              mode,
+              lightOn: denThatOnline ? r.lightOn : true,
+              lightBrightness: 100,
+              fanOn: quatThatOnline ? r.fanOn : false,
+              acOn: true,
+              acTemp: 25,
+            };
+          case 'AWAY':
+            return {
+              ...r,
+              mode,
+              lightOn: denThatOnline ? r.lightOn : false,
+              fanOn: quatThatOnline ? r.fanOn : false,
+              acOn: false,
+            };
+          case 'CUSTOM':
+            return { ...r, mode };
+        }
+      });
+    },
+    [updateRoom],
+  );
+
+  const toggleRoomSchedule = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, scheduleOn: !r.scheduleOn }));
+    },
+    [updateRoom],
+  );
+
+  const setLightBrightness = useCallback(
+    (id: string, pct: number) => {
+      const clamped = Math.min(100, Math.max(10, Math.round(pct)));
+      const ct = congtacRef.current;
+      const tb = timCongTac(ct, id, 'den');
+      const tt = tb ? ct.trangThai[tb.ma] : undefined;
+      updateRoom(id, (r) => ({
+        ...r,
+        lightOn: tb && isBridgeSong(ct) && tt?.online ? r.lightOn : true,
+        lightBrightness: clamped,
+        mode: id === 'hall' ? r.mode : 'CUSTOM',
+      }));
+      if (tb && isBridgeSong(ct) && tt?.online === true && tt.bat !== true) {
+        gatCongTac(id, 'den', false, true, LenhCongTac.NGUON_MAN_HINH);
+      }
+    },
+    [gatCongTac, updateRoom],
+  );
+
+  const setFanSpeed = useCallback(
+    (id: string, speed: number) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        fanSpeed: Math.min(3, Math.max(1, Math.trunc(speed))),
+        fanOn: true,
+        mode: id === 'hall' ? r.mode : 'CUSTOM',
+      }));
+      const ct = congtacRef.current;
+      const tb = timCongTac(ct, id, 'quat');
+      const tt = tb ? ct.trangThai[tb.ma] : undefined;
+      if (tb && isBridgeSong(ct) && tt?.online === true && tt.bat !== true) {
+        gatCongTac(id, 'quat', false, true, LenhCongTac.NGUON_MAN_HINH);
+      }
+    },
+    [gatCongTac, updateRoom],
+  );
+
+  const toggleRoomTv = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, tvOn: !r.tvOn }));
+    },
+    [updateRoom],
+  );
+
+  const setCurtainOpen = useCallback(
+    (id: string, pct: number) => {
+      updateRoom(id, (r) => ({ ...r, curtainOpen: Math.min(100, Math.max(0, Math.round(pct))) }));
+    },
+    [updateRoom],
+  );
+
+  const toggleCurtain = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, curtainOpen: r.curtainOpen > 0 ? 0 : 100 }));
+    },
+    [updateRoom],
+  );
+
+  const setHoodSpeed = useCallback(
+    (id: string, speed: number) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        hoodSpeed: Math.min(3, Math.max(1, Math.trunc(speed))),
+        fanOn: true,
+      }));
+    },
+    [updateRoom],
+  );
+
+  const toggleStove = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, stoveOn: !r.stoveOn }));
+    },
+    [updateRoom],
+  );
+
+  const stepStoveLevel = useCallback(
+    (id: string, delta: number) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        stoveOn: true,
+        stoveLevel: Math.min(9, Math.max(1, r.stoveLevel + delta)),
+      }));
+    },
+    [updateRoom],
+  );
+
+  const setGasAlert = useCallback(
+    (id: string, alert: boolean) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        gasAlert: alert,
+        gasPpm: alert ? 485 : 18,
+        fanOn: alert ? true : r.fanOn,
+        hoodSpeed: alert ? 3 : r.hoodSpeed,
+      }));
+    },
+    [updateRoom],
+  );
+
+  const triggerTestGasAlert = useCallback(
+    (id: string) => {
+      setGasAlert(id, true);
+    },
+    [setGasAlert],
+  );
+
+  const dismissGasAlert = useCallback(
+    (id: string) => {
+      setGasAlert(id, false);
+    },
+    [setGasAlert],
+  );
+
+  const setHallView = useCallback(
+    (id: string, view: HallwayView) => {
+      updateRoom(id, (r) => ({ ...r, hallView: view }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallFrontLight = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallFrontLightOn: !r.hallFrontLightOn }));
+    },
+    [updateRoom],
+  );
+
+  const setHallFrontBrightness = useCallback(
+    (id: string, pct: number) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        hallFrontLightOn: true,
+        hallFrontBrightness: Math.min(100, Math.max(10, Math.round(pct))),
+      }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallSurroundingLight = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallSurroundingLightOn: !r.hallSurroundingLightOn }));
+    },
+    [updateRoom],
+  );
+
+  const setHallSurroundingBrightness = useCallback(
+    (id: string, pct: number) => {
+      updateRoom(id, (r) => ({
+        ...r,
+        hallSurroundingLightOn: true,
+        hallSurroundingBrightness: Math.min(100, Math.max(10, Math.round(pct))),
+      }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallAllLights = useCallback(
+    (id: string) => {
+      const room = roomsRef.current.find((r) => r.id === id);
+      if (!room) return;
+      const anyOn = room.lightOn || room.hallFrontLightOn || room.hallSurroundingLightOn;
+      const target = !anyOn;
+      gatCongTac(id, 'den', false, target, LenhCongTac.NGUON_MAN_HINH);
+      updateRoom(id, (r) => ({
+        ...r,
+        hallFrontLightOn: target,
+        hallSurroundingLightOn: target,
+      }));
+    },
+    [gatCongTac, updateRoom],
+  );
+
+  const toggleHallDoorLock = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallDoorLocked: !r.hallDoorLocked }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallCamera = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallCameraOn: !r.hallCameraOn }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallIrMode = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallCameraOn: true, hallIrMode: !r.hallIrMode }));
+    },
+    [updateRoom],
+  );
+
+  const toggleHallMotionAuto = useCallback(
+    (id: string) => {
+      updateRoom(id, (r) => ({ ...r, hallMotionAuto: !r.hallMotionAuto }));
+    },
+    [updateRoom],
+  );
+
+  const clearHallMotion = useCallback(
+    (id: string) => {
+      if (hallMotionTimersRef.current[id]) {
+        window.clearTimeout(hallMotionTimersRef.current[id]);
+        delete hallMotionTimersRef.current[id];
+      }
+      updateRoom(id, (r) => ({ ...r, hallMotionDetected: false }));
+    },
+    [updateRoom],
+  );
+
+  const triggerHallMotionTest = useCallback(
+    (id: string) => {
+      const cur = roomsRef.current.find((r) => r.id === id);
+      if (!cur) return;
+      if (cur.hallMotionAuto) {
+        gatCongTac(id, 'den', false, true, LenhCongTac.NGUON_MAN_HINH);
+      }
+      updateRoom(id, (r) => ({
+        ...r,
+        hallMotionDetected: true,
+        lightOn: r.hallMotionAuto ? true : r.lightOn,
+        lightBrightness: r.hallMotionAuto ? Math.max(85, r.lightBrightness) : r.lightBrightness,
+        hallSurroundingLightOn: r.hallMotionAuto ? true : r.hallSurroundingLightOn,
+        hallSurroundingBrightness: r.hallMotionAuto
+          ? Math.max(85, r.hallSurroundingBrightness)
+          : r.hallSurroundingBrightness,
+      }));
+      if (hallMotionTimersRef.current[id]) {
+        window.clearTimeout(hallMotionTimersRef.current[id]);
+      }
+      hallMotionTimersRef.current[id] = window.setTimeout(() => {
+        delete hallMotionTimersRef.current[id];
+        updateRoom(id, (r) => ({ ...r, hallMotionDetected: false }));
+      }, 6500);
+    },
+    [gatCongTac, updateRoom],
+  );
+
+  const thaoTacNhanhPhong = useCallback(
+    (roomId: string, actionId: string) => {
+      switch (actionId) {
+        case 'light':
+          toggleRoomLight(roomId);
+          break;
+        case 'fan':
+        case 'hood':
+          toggleRoomFan(roomId);
+          break;
+        case 'ac':
+          toggleRoomAc(roomId);
+          break;
+        case 'curtain':
+          toggleCurtain(roomId);
+          break;
+        case 'sleep': {
+          const cur = roomsRef.current.find((r) => r.id === roomId)?.mode;
+          setRoomMode(roomId, cur === 'SLEEP' ? 'HOME' : 'SLEEP');
+          break;
+        }
+        case 'stove':
+          toggleStove(roomId);
+          break;
+        case 'schedule':
+          toggleRoomSchedule(roomId);
+          break;
+        case 'hall_front':
+          toggleHallFrontLight(roomId);
+          break;
+        case 'hall_lock':
+          toggleHallDoorLock(roomId);
+          break;
+        case 'hall_camera':
+          toggleHallCamera(roomId);
+          break;
+      }
+    },
+    [
+      setRoomMode,
+      toggleCurtain,
+      toggleHallCamera,
+      toggleHallDoorLock,
+      toggleHallFrontLight,
+      toggleRoomAc,
+      toggleRoomFan,
+      toggleRoomLight,
+      toggleRoomSchedule,
+      toggleStove,
+    ],
+  );
 
   // Real Hardware Switch helpers
   const oThietBi = useCallback(
@@ -1348,6 +1980,44 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [gatCongTac],
   );
 
+  // Camera 24/24 actions (v0.9.4)
+  const chupAnhCamera = useCallback(
+    async (tenLuong: string) => {
+      if (dangChupAnh) return;
+      setDangChupAnh(true);
+      try {
+        const res = await CameraPlaybackClient.chupAnhNgay(
+          tenLuong,
+          cameraRecorderRef.current.apiPort,
+        );
+        showToast(res.message, res.ok ? 'success' : 'warning');
+      } finally {
+        setDangChupAnh(false);
+      }
+    },
+    [dangChupAnh, showToast],
+  );
+
+  const datCanhNguoiCamera = useCallback(
+    (bat: boolean) => {
+      if (mqttStatusRef.current.state !== 'da_noi') {
+        showToast('Chưa nối broker MQTT nên chưa đổi được cài đặt canh người.', 'warning');
+        return;
+      }
+      const payload = JSON.stringify({
+        action: 'SET_DETECT_PERSON',
+        id: LenhCongTac.maLenh(),
+        value: bat,
+      });
+      void publishMqtt(CameraTopic.CMD, payload).then((ack) => {
+        if (!ack.ok) {
+          showToast(`Không gửi được lệnh camera: ${ack.error || ack.reason || 'lỗi'}`, 'error');
+        }
+      });
+    },
+    [publishMqtt, showToast],
+  );
+
   // Cuktech BLE controls
   const datCongSac = useCallback(
     (id: CongSacId, bat: boolean) => {
@@ -1364,16 +2034,16 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
               ? { topic: 'c3', nhan: 'C3' }
               : { topic: 'a', nhan: 'USB-A' };
 
-      cuktechCongDeadlines.current[id] = Date.now() + GIAY_CHO_CUKTECH * 1000;
-      setDangDoiCuktechCong((prev) => ({ ...prev, [id]: true }));
+      cuktechCongExpected.current[id] = { bat, deadline: Date.now() + GIAY_CHO_CUKTECH * 1000 };
+      setChoCongSac((prev) => ({ ...prev, [id]: bat }));
 
       void publishMqtt(
         CuktechTopic.CMD_CONG,
         JSON.stringify({ port: meta.topic, action: bat ? 'on' : 'off' }),
       ).then((ack) => {
         if (!ack.ok) {
-          delete cuktechCongDeadlines.current[id];
-          setDangDoiCuktechCong((prev) => {
+          delete cuktechCongExpected.current[id];
+          setChoCongSac((prev) => {
             const next = { ...prev };
             delete next[id];
             return next;
@@ -1391,12 +2061,20 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         showToast('Chưa nối được với máy chủ MQTT.', 'error');
         return;
       }
-      cuktechCaiDatDeadline.current = Date.now() + GIAY_CHO_CUKTECH * 1000;
-      setDangDoiCuktechCaiDat(true);
+      cuktechCaiDatExpected.current[piid] = {
+        giaTri,
+        deadline: Date.now() + GIAY_CHO_CUKTECH * 1000,
+      };
+      setChoCaiDatCuktech((prev) => ({ ...prev, [piid]: true }));
+
       void publishMqtt(CuktechTopic.CMD_SET, JSON.stringify({ piid, value: giaTri })).then((ack) => {
         if (!ack.ok) {
-          cuktechCaiDatDeadline.current = 0;
-          setDangDoiCuktechCaiDat(false);
+          delete cuktechCaiDatExpected.current[piid];
+          setChoCaiDatCuktech((prev) => {
+            const next = { ...prev };
+            delete next[piid];
+            return next;
+          });
           showToast(`Không gửi được cài đặt: ${ack.error || ack.reason || 'lỗi'}`, 'error');
         }
       });
@@ -1430,14 +2108,20 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     });
   }, [publishMqtt, showToast]);
 
-  // WiFi actions
+  // WiFi actions — wifi_collector.py nhan chuoi tho "reboot" tren topic wifi/cmd
   const guiLenhWifi = useCallback(
-    (cmd: Record<string, unknown>, okMsg?: string): boolean => {
+    (cmd: Record<string, unknown> | string, okMsg?: string): boolean => {
       if (mqttStatusRef.current.state !== 'da_noi') {
         showToast('Cần nối MQTT để gửi lệnh tới Router.', 'warning');
         return false;
       }
-      void publishMqtt(WifiTopic.CMD, JSON.stringify(cmd)).then((ack) => {
+      const rawPayload =
+        typeof cmd === 'string'
+          ? cmd
+          : cmd.action === 'reboot' && Object.keys(cmd).length === 1
+            ? 'reboot'
+            : JSON.stringify(cmd);
+      void publishMqtt(WifiTopic.CMD, rawPayload).then((ack) => {
         if (!ack.ok) showToast(`Lỗi gửi lệnh WiFi: ${ack.error || ack.reason}`, 'error');
         else if (okMsg) showToast(okMsg, 'success');
       });
@@ -1446,11 +2130,17 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [publishMqtt, showToast],
   );
 
+  const khoiDongLaiWifi = useCallback((): boolean => {
+    return guiLenhWifi('reboot', 'Đã gửi lệnh khởi động lại Router qua MQTT.');
+  }, [guiLenhWifi]);
+
   const toggleWifiSecurity = useCallback(
     (key: string) => {
       setWifi((prev) => ({
         ...prev,
-        securitySettings: prev.securitySettings.map((s) => (s.key === key ? { ...s, enabled: !s.enabled } : s)),
+        securitySettings: prev.securitySettings.map((s) =>
+          s.key === key ? { ...s, enabled: !s.enabled } : s,
+        ),
       }));
       guiLenhWifi({ action: 'toggle_security', key });
     },
@@ -1512,7 +2202,8 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
 
   const enterScreensaver = useCallback(() => {
     setScreensaverActive(true);
-  }, []);
+    pushNavHistory({ dest: currentDestRef.current, screensaver: true });
+  }, [pushNavHistory]);
 
   const wakeScreensaver = useCallback(() => {
     lastInteractionRef.current = Date.now();
@@ -1596,24 +2287,21 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const requireAdminPin = useCallback(
-    (actionLabel: string, fn: () => void | Promise<void>) => {
-      const enabled = configRef.current.adminPin?.enabled !== false;
-      const valid =
-        !enabled ||
-        (Boolean(adminTokenRef.current) && Date.now() < adminUnlockExpiryRef.current);
-      if (valid) {
-        if (adminTokenRef.current) {
-          adminUnlockExpiryRef.current = Date.now() + 5 * 60_000;
-        }
-        void fn();
-        return;
+  const requireAdminPin = useCallback((actionLabel: string, fn: () => void | Promise<void>) => {
+    const enabled = configRef.current.adminPin?.enabled !== false;
+    const valid =
+      !enabled ||
+      (Boolean(adminTokenRef.current) && Date.now() < adminUnlockExpiryRef.current);
+    if (valid) {
+      if (adminTokenRef.current) {
+        adminUnlockExpiryRef.current = Date.now() + 5 * 60_000;
       }
-      pendingAdminActionRef.current = fn;
-      setPinPrompt({ label: actionLabel, error: null, busy: false });
-    },
-    [],
-  );
+      void fn();
+      return;
+    }
+    pendingAdminActionRef.current = fn;
+    setPinPrompt({ label: actionLabel, error: null, busy: false });
+  }, []);
 
   const submitAdminPin = useCallback(async (pin: string) => {
     setPinPrompt((prev) => (prev ? { ...prev, busy: true, error: null } : prev));
@@ -1733,12 +2421,13 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     async (form: {
       host: string;
       cong: number;
+      congGhiHinh?: number;
       tls: boolean;
       taiKhoan: string;
       matKhau?: string;
       xoaMatKhau?: boolean;
     }) => {
-      setCameraStatus({ state: 'dang_do' });
+      setCameraStatus(form.host.trim() ? { state: 'dang_do' } : { state: 'chua_cau_hinh' });
       try {
         const resp = await fetch('/api/config/camera', {
           method: 'PUT',
@@ -1757,7 +2446,10 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         if (data.ok) {
           configRef.current = data.config;
           setConfig(data.config);
-          if (data.probe.ok) {
+          if (!data.config.camera.host.trim()) {
+            setCameraStatus({ state: 'chua_cau_hinh' });
+            showToast('Đã xóa địa chỉ máy chủ Camera.', 'info');
+          } else if (data.probe.ok) {
             setCameraStatus({ state: 'co', ds: data.probe.streams ?? [] });
             showToast(`Đã lưu & thấy ${data.probe.streams?.length ?? 0} luồng camera.`, 'success');
           } else {
@@ -2000,20 +2692,11 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [guiLenhBom],
   );
 
-  const xoaLoiBom = useCallback(
-    () => guiLenhBom('clear', { kind: 'clear' }),
-    [guiLenhBom],
-  );
+  const xoaLoiBom = useCallback(() => guiLenhBom('clear', { kind: 'clear' }), [guiLenhBom]);
 
-  const tatCoiBom = useCallback(
-    () => guiLenhBom('coiTat', { kind: 'coiTat' }),
-    [guiLenhBom],
-  );
+  const tatCoiBom = useCallback(() => guiLenhBom('coiTat', { kind: 'coiTat' }), [guiLenhBom]);
 
-  const thuCoiBom = useCallback(
-    () => guiLenhBom('coiThu', { kind: 'coiThu' }),
-    [guiLenhBom],
-  );
+  const thuCoiBom = useCallback(() => guiLenhBom('coiThu', { kind: 'coiThu' }), [guiLenhBom]);
 
   const luuBaoVeBom = useCallback(
     (dryCheck: number, minRest: number, maxRun: number, pulses: number, minFlow: number) =>
@@ -2062,7 +2745,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     showToast('Không xoá được nhật ký bơm.', 'error');
   }, [adminHeaders, handleAdminUnauthorized, showToast]);
 
-  // Voice Actions + TroLyGiongNoi
+  // Voice Actions + TroLyGiongNoi (dong bo day du voi HomeViewModel.kt)
   const hanhDongNha = useMemo<HanhDongNha>(
     () => ({
       maPhong: () => roomsRef.current.map((r) => r.id),
@@ -2114,9 +2797,14 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         setQuickItems((prev) => prev.map((q) => (q.id === id ? { ...q, on: bat } : q)));
       },
       dangBat: (phong, thietBi) => {
+        if (phong === CongCuNha.NHANH) {
+          return quickItemsRef.current.find((q) => q.id === thietBi)?.on ?? null;
+        }
         const ct = congtacRef.current;
         if (timCongTac(ct, phong, thietBi)) {
-          return trangThaiCongTacCua(ct, phong, thietBi)?.bat ?? null;
+          const tt = trangThaiCongTacCua(ct, phong, thietBi);
+          if (!isBridgeSong(ct) || tt?.online !== true) return null;
+          return tt.bat ?? null;
         }
         const r = roomsRef.current.find((x) => x.id === phong);
         if (!r) return null;
@@ -2154,7 +2842,8 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
           );
         }
         switch (thietBi) {
-          case CongCuNha.BOM_CHINH: {
+          case CongCuNha.BOM_CHINH:
+          case CongCuNha.CHE_DO: {
             let mode: 'auto' | 'on' | 'off';
             if (hanhDong === CongCuNha.BAT) mode = 'on';
             else if (hanhDong === CongCuNha.TAT) mode = 'off';
@@ -2162,11 +2851,14 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
             else if (hanhDong === CongCuNha.DAT) {
               const g = giaTri?.trim().toLowerCase() ?? '';
               if (g === 'auto' || g === 'tu_dong' || g === 'tự động') mode = 'auto';
-              else if (g === 'on' || g === 'bat' || g === 'bật') mode = 'on';
-              else if (g === 'off' || g === 'tat' || g === 'tắt') mode = 'off';
+              else if (g === 'on' || g === 'bat' || g === 'bật' || g === 'bat_tay') mode = 'on';
+              else if (g === 'off' || g === 'tat' || g === 'tắt' || g === 'tat_tay') mode = 'off';
               else throw new LoiLenh('Bơm lên bồn chỉ nhận chế độ tự động (auto), bật hoặc tắt.');
             } else {
               throw new LoiLenh('Không rõ lệnh cho bơm lên bồn.');
+            }
+            if (mode === 'on' && dangKhoaBom(s)) {
+              throw new LoiLenh('Bơm lên bồn đang khoá bảo vệ sau sự cố. Cần xoá lỗi trước khi bật tay.');
             }
             void datCheDoBon(mode);
             return `Bơm lên bồn: đã gửi lệnh chuyển sang ${nhanCheDoBon(mode)}`;
@@ -2235,42 +2927,98 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
           case 'trang_thai_nha':
             return {
               co_so: true,
-              phong: roomsRef.current.map((r) => ({
-                ma: r.id,
-                ten: r.name,
-                che_do: r.mode,
-                den: r.lightOn,
-                quat: r.fanOn,
-                dieu_hoa: r.acOn,
-                nhiet_do_dat: r.acTemp,
-              })),
+              o_nhanh: quickItemsRef.current.map((q) => ({ ma: q.id, ten: q.label, bat: q.on })),
+              phong: roomsRef.current.map((r) => {
+                const denTb = timCongTac(ct, r.id, 'den');
+                const quatTb = timCongTac(ct, r.id, 'quat');
+                const denSt = denTb ? ct.trangThai[denTb.ma] : undefined;
+                const quatSt = quatTb ? ct.trangThai[quatTb.ma] : undefined;
+                const denVal = denTb
+                  ? isBridgeSong(ct) && denSt?.online
+                    ? denSt.bat
+                    : null
+                  : r.lightOn;
+                const quatVal = quatTb
+                  ? isBridgeSong(ct) && quatSt?.online
+                    ? quatSt.bat
+                    : null
+                  : r.fanOn;
+                const base: Record<string, unknown> = {
+                  ma: r.id,
+                  ten: r.name,
+                  che_do: tenCheDoPhong(r.id, r.mode),
+                  den: denVal,
+                  den_that: Boolean(denTb),
+                  do_sang_den: r.lightBrightness,
+                  quat: quatVal,
+                  quat_that: Boolean(quatTb),
+                  dieu_hoa: r.acOn,
+                  nhiet_do_dat: r.acTemp,
+                  lich_hen: r.scheduleOn,
+                  gio_hen: r.scheduleTime,
+                };
+                if (r.id === 'living') {
+                  base.tivi = r.tvOn;
+                  base.rem_mo = r.curtainOpen;
+                } else if (r.id === 'kitchen') {
+                  base.cap_hut_mui = r.hoodSpeed;
+                  base.bep_tu = r.stoveOn;
+                  base.muc_bep_tu = r.stoveLevel;
+                  base.canh_bao_gas = r.gasAlert;
+                  base.gas_ppm = r.gasPpm;
+                } else if (r.id === 'hall') {
+                  base.den_truoc_nha = r.hallFrontLightOn;
+                  base.den_xung_quanh = r.hallSurroundingLightOn;
+                  base.khoa_cua = r.hallDoorLocked;
+                  base.camera = r.hallCameraOn;
+                }
+                return base;
+              }),
             };
           case 'dien':
             return {
               co_so: coSoLieuDien(d),
               ket_noi: m.state === 'da_noi' ? 'đã nối' : m.state,
+              ly_do: m.state === 'loi' ? m.moTa : d.loi,
               cap_nhat: d.capNhat ?? 'chưa có',
+              ngay_gan_nhat: d.ngay,
               hom_nay_kwh: d.ngaySanLuong,
               thang_kwh: d.thangSanLuong,
               tien_thang_vnd: d.thangTien,
+              cong_no_dong: d.congNoSoTien,
               chi_so_cong_to: d.congToChiSo,
+              tong_7_ngay_kwh: tongKwhDien(d, 7),
+              tong_30_ngay_kwh: tongKwhDien(d, 30),
               do_tuoi: doTuoiDien(d),
             };
           case 'server':
             return {
               co_so: s.isRealData,
+              ly_do: !s.isRealData ? 'Chưa nhận được gói MQTT server/#, đang hiện số mẫu.' : null,
               hostname: s.info.hostname,
+              he_dieu_hanh: s.info.os,
               cpu_phan_tram: s.metric.cpuPercent,
               ram_phan_tram: s.metric.ramPercent,
+              ram_dung_gb: s.metric.ramUsedGb,
+              ram_tong_gb: s.info.ramTotalGb,
+              dia_phan_tram: s.metric.diskPercent,
+              dia_dung_gb: s.metric.diskUsedGb,
+              dia_tong_gb: s.info.diskTotalGb,
               nhiet_do_c: s.metric.cpuTempC,
+              chay_lien_tuc_ngay: s.info.uptimeDays,
+              so_container_docker: s.containers.length,
               du_lieu: s.isRealData ? 'thật' : 'mẫu',
             };
           case 'wifi':
             return {
               co_so: w.isRealData,
+              ly_do: !w.isRealData ? 'Chưa nhận được gói MQTT wifi/#, đang hiện số mẫu.' : null,
               ssid: w.info.ssid,
-              so_thiet_bi_online: w.devices.filter((x) => x.isOnline).length,
+              dang_noi: w.info.isConnected,
+              tin_hieu_dbm: w.info.signalDbm,
+              so_thiet_bi_online: w.devices.filter((x) => x.isOnline && !x.blocked).length,
               download_mbps: w.info.downloadMbps,
+              tai_len_mbps: w.info.uploadMbps,
               du_lieu: w.isRealData ? 'thật' : 'mẫu',
             };
           case 'thoi_tiet': {
@@ -2289,23 +3037,43 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
           }
           case 'lich_am': {
             const now = new Date();
-            const am = AmLich.tuDuongLich(now.getDate(), now.getMonth() + 1, now.getFullYear());
+            const dd = now.getDate();
+            const mm = now.getMonth() + 1;
+            const yy = now.getFullYear();
+            const am = AmLich.tuDuongLich(dd, mm, yy);
             const cc = AmLich.canChi(am);
-            const suKien = AmLich.suKien(now.getDate(), now.getMonth() + 1, am);
+            const suKien = AmLich.suKien(dd, mm, am);
             return {
               co_so: true,
+              duong_lich: `${dd}/${mm}/${yy}`,
               ngay_am: `${am.ngay}/${am.thang}${am.nhuan ? ' (nhuận)' : ''}/${am.nam}`,
               can_chi: `Ngày ${cc.ngay}, tháng ${cc.thang}, năm ${cc.nam}`,
+              gio_hoang_dao: AmLich.gioHoangDao(cc.chiNgay),
               su_kien: suKien,
             };
           }
           case 'cong_tac':
             return {
               co_so: ct.danhSach.length > 0,
+              ly_do:
+                ct.danhSach.length === 0
+                  ? 'Chưa nhận được danh sách công tắc từ congtac/info.'
+                  : !isBridgeSong(ct)
+                    ? 'Bộ nối công tắc trên máy chủ đang offline.'
+                    : null,
               bridge: ct.bridge ?? 'chưa rõ',
               thiet_bi: ct.danhSach.map((tb) => {
                 const st = ct.trangThai[tb.ma];
-                return { ten: tb.ten, phong: tb.phong, online: st?.online ?? false, bat: st?.bat ?? null };
+                const song = isBridgeSong(ct) && Boolean(st?.online);
+                return {
+                  ten: tb.ten,
+                  phong: tb.phong,
+                  he: tb.he,
+                  online: song,
+                  bat: song ? (st?.bat ?? null) : null,
+                  luc: st?.luc ?? null,
+                  loi: st?.lyDoLoi ?? null,
+                };
               }),
             };
           case 'bom_nuoc': {
@@ -2344,9 +3112,49 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         }
       },
       chupTrangThai: () => {
-        const lines = roomsRef.current.map(
-          (r) => `${r.name} (${r.id}): đèn=${r.lightOn ? 'bật' : 'tắt'}, quạt=${r.fanOn ? 'bật' : 'tắt'}, điều hòa=${r.acOn ? `${r.acTemp}°C` : 'tắt'}`,
-        );
+        const ct = congtacRef.current;
+        const formatSwitch = (roomId: string, loai: 'den' | 'quat', fallback: boolean): string => {
+          const tb = timCongTac(ct, roomId, loai);
+          if (!tb) return fallback ? 'bật' : 'tắt';
+          const st = ct.trangThai[tb.ma];
+          if (!isBridgeSong(ct) || !st?.online || st.bat === null) {
+            return 'không rõ (mất kết nối)';
+          }
+          return st.bat ? 'bật' : 'tắt';
+        };
+
+        const lines = roomsRef.current.map((r) => {
+          const modeLabel = tenCheDoPhong(r.id, r.mode);
+          const denStr = formatSwitch(r.id, 'den', r.lightOn);
+          if (r.id === 'kitchen') {
+            const hutStr = formatSwitch(r.id, 'quat', r.fanOn);
+            return (
+              `- ${r.name} (${r.id}, chế độ ${modeLabel}): đèn=${denStr} (${r.lightBrightness}%), ` +
+              `hút mùi=${hutStr} (cấp ${r.hoodSpeed}), bếp từ=${r.stoveOn ? `mức ${r.stoveLevel} (${stoveWatts(r.stoveLevel)}W)` : 'tắt'}, ` +
+              `gas=${r.gasPpm} ppm${r.gasAlert ? ' (CẢNH BÁO!)' : ''}`
+            );
+          }
+          if (r.id === 'hall') {
+            const viewLabel = HALLWAY_VIEWS.find((v) => v.id === r.hallView)?.label ?? r.hallView;
+            return (
+              `- ${r.name} (${r.id}, chế độ ${modeLabel}, góc ${viewLabel}): đèn hành lang=${denStr} (${r.lightBrightness}%), ` +
+              `đèn trước nhà=${r.hallFrontLightOn ? `${r.hallFrontBrightness}%` : 'tắt'}, ` +
+              `đèn xung quanh=${r.hallSurroundingLightOn ? `${r.hallSurroundingBrightness}%` : 'tắt'}, ` +
+              `khóa cửa=${r.hallDoorLocked ? 'đã khóa' : 'đang mở'}, ` +
+              `camera=${r.hallCameraOn ? (r.hallIrMode ? 'bật IR' : 'bật') : 'tắt'}`
+            );
+          }
+          const quatStr = formatSwitch(r.id, 'quat', r.fanOn);
+          const extra =
+            r.id === 'living'
+              ? `, tivi=${r.tvOn ? 'bật' : 'tắt'}, rèm=${r.curtainOpen}%`
+              : ` (tốc độ quạt ${r.fanSpeed})`;
+          return (
+            `- ${r.name} (${r.id}, chế độ ${modeLabel}): đèn=${denStr} (${r.lightBrightness}%), ` +
+            `quạt=${quatStr}${extra}, điều hòa=${r.acOn ? `${r.acTemp}°C` : 'tắt'}`
+          );
+        });
+
         if (daCauHinhBom(configRef.current.bomNuoc)) {
           const bn = bomNuocRef.current;
           const link = ketNoiBomRef.current;
@@ -2389,7 +3197,23 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         return true;
       },
     }),
-    [updateRoom, setRoomMode, openRoomDetail, navigateDest, openChiTietDien, openWifi, bamCongTac, gatCongTac, publishMqtt, datCheDoBon, datBomTangAp, datDenPhuBom, xoaLoiBom, tatCoiBom, thuCoiBom],
+    [
+      updateRoom,
+      setRoomMode,
+      openRoomDetail,
+      navigateDest,
+      openChiTietDien,
+      openWifi,
+      bamCongTac,
+      gatCongTac,
+      publishMqtt,
+      datCheDoBon,
+      datBomTangAp,
+      datDenPhuBom,
+      xoaLoiBom,
+      tatCoiBom,
+      thuCoiBom,
+    ],
   );
 
   const troLyRef = useRef<TroLyGiongNoi | null>(null);
@@ -2409,8 +3233,12 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateVoiceConfig = useCallback((c: CauHinhGiongNoi) => {
-    setVoiceConfig(c);
-    saveVoiceConfig(c);
+    const normalized: CauHinhGiongNoi = {
+      ...c,
+      giayToiDaPhien: Math.min(900, Math.max(60, Math.trunc(c.giayToiDaPhien || 600))),
+    };
+    setVoiceConfig(normalized);
+    saveVoiceConfig(normalized);
   }, []);
 
   const clearVoiceUsage = useCallback(() => {
@@ -2458,7 +3286,7 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
         setUpdateCheck({ status: 'error', message: 'Không đọc được phiên bản phát hành' });
         return;
       }
-      if (tag === ANDROID_BASE_VERSION) {
+      if (!isNewerVersion(tag, ANDROID_BASE_VERSION)) {
         setUpdateCheck({ status: 'up_to_date', latestTag: raw.tag_name || tag });
       } else {
         setUpdateCheck({
@@ -2485,8 +3313,6 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [rooms, selectedRoomId],
   );
 
-  // Also add helper for voice text logging? No, unused TEN_THIET_BI_TUAN warning avoidance
-  void TEN_THIET_BI_TUAN;
   void cuktechTongOat;
 
   const value: SmartHomeContextValue = {
@@ -2514,7 +3340,11 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     server,
     wifi,
     thoiTiet,
+    cameraRecorder,
+    dangChupAnh,
     choCongTacIds,
+    choCongSac,
+    choCaiDatCuktech,
     dangDoiCuktechCong,
     dangDoiCuktechCaiDat,
     dangNoiLaiCuktech,
@@ -2524,7 +3354,12 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     selectRoom: setSelectedRoomId,
     quickItems,
     cameras,
+    selectedCameraIndex,
+    selectCamera,
+    chupAnhCamera,
+    datCanhNguoiCamera,
     toggleQuickItem,
+    thaoTacNhanhPhong,
     toggleRoomLight,
     toggleRoomFan,
     toggleRoomAc,
@@ -2535,9 +3370,11 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     setFanSpeed,
     toggleRoomTv,
     setCurtainOpen,
+    toggleCurtain,
     setHoodSpeed,
     toggleStove,
     stepStoveLevel,
+    setGasAlert,
     triggerTestGasAlert,
     dismissGasAlert,
     setHallView,
@@ -2545,17 +3382,20 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     setHallFrontBrightness,
     toggleHallSurroundingLight,
     setHallSurroundingBrightness,
+    toggleHallAllLights,
     toggleHallDoorLock,
     toggleHallCamera,
     toggleHallIrMode,
     toggleHallMotionAuto,
     triggerHallMotionTest,
+    clearHallMotion,
     oThietBi,
     bamCongTac,
     datCongSac,
     datCaiDatCuktech,
     noiLaiCuktech,
     guiLenhWifi,
+    khoiDongLaiWifi,
     toggleWifiSecurity,
     toggleWifiTrusted,
     toggleWifiBlocked,
@@ -2604,6 +3444,8 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     wakeScreensaver,
     emergencyAlert,
     dismissEmergencyAlert,
+    mqttGasAlert,
+    mqttGasPpm,
     telegramStatus,
     refreshTelegramStatus,
     luuTelegramConfig,
@@ -2626,4 +3468,3 @@ export function useSmartHome(): SmartHomeContextValue {
   if (!ctx) throw new Error('useSmartHome must be used inside SmartHomeProvider');
   return ctx;
 }
-

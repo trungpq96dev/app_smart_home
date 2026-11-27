@@ -95,6 +95,51 @@ def do_thoi_luong_ffprobe(file_path: Path, timeout: float = 10.0) -> float | Non
     return None
 
 
+def chuyen_va_dong_muc_luc_mp4(src: Path, dich: Path, timeout: float = 60.0) -> bool:
+    """Đóng gói lại MP4 phân mảnh (`empty_moov`) sang MP4 có bảng chỉ mục chuẩn (`+faststart`).
+
+    Khi đang ghi ở `staging/`, dùng `empty_moov` để mất điện không hỏng file; khi đã cắt đoạn xong,
+    remux `-c copy -movflags +faststart` (~0,1 giây, không nén lại hình) giúp `MediaPlayer` trên
+    Android tua chính xác tới từng giây khớp với đồng hồ in trên hình camera.
+    """
+    if shutil.which("ffmpeg") is not None:
+        tam = dich.with_suffix(".fast.mp4")
+        tam.unlink(missing_ok=True)
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(src),
+                    "-c",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                    "-y",
+                    str(tam),
+                ],
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+            if proc.returncode == 0 and tam.exists() and tam.stat().st_size > 4096:
+                tam.replace(dich)
+                if src.resolve() != dich.resolve():
+                    src.unlink(missing_ok=True)
+                return True
+        except Exception as e:
+            log.debug("Remux faststart bỏ qua (%s), chuyển nguyên bản: %s", src.name, e)
+        finally:
+            tam.unlink(missing_ok=True)
+
+    if src.resolve() != dich.resolve():
+        shutil.move(str(src), str(dich))
+    return True
+
+
 def thu_hoach_staging_cam(
     camera: str,
     staging_cam_dir: Path,
@@ -153,7 +198,8 @@ def thu_hoach_staging_cam(
             dich = dich_dir / f"{gio_ten[:-4]}_{int(time.time()) % 1000}.mp4"
 
         try:
-            shutil.move(str(src), str(dich))
+            chuyen_va_dong_muc_luc_mp4(src, dich)
+            sz = dich.stat().st_size
         except OSError as e:
             log.warning("Không chuyển được segment %s -> %s: %s", src, dich, e)
             continue

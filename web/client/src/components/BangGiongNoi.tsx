@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Mic, MicOff, Settings, Sparkles, Volume2, X } from 'lucide-react';
+import { AlertCircle, Check, Mic, MicOff, Settings, Sparkles, Volume2, X } from 'lucide-react';
 import { coKhoaGiongNoi, dangChayTrangThai } from '../data/giongnoi/types.js';
 import { useSmartHome } from '../store/SmartHomeContext.js';
 import { SH, tint } from '../theme/colors.js';
@@ -40,7 +40,7 @@ export function BangGiongNoi() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4 backdrop-blur-xs">
-      <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl border border-[#253459] bg-[#0E1627] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl border border-[#253459] bg-[#0E1627] shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-4 py-3.5 border-b border-[#253459] bg-[#16213A]">
           <div className="flex items-center gap-2.5">
@@ -124,7 +124,7 @@ export function BangGiongNoi() {
                     className="mt-0.5 shrink-0"
                     style={{ color: item.thanhCong ? SH.Green : SH.Red }}
                   >
-                    <Check size={14} />
+                    {item.thanhCong ? <Check size={14} /> : <AlertCircle size={14} />}
                   </span>
                   <div className="flex-1">
                     <div className="text-[#E6EDF7]">{item.cau}</div>
@@ -177,7 +177,7 @@ export function BangGiongNoi() {
         </div>
 
         {/* Footer controls */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-[#253459] bg-[#16213A]">
+        <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-[#253459] bg-[#16213A]">
           <div className="text-[11px] text-[#8A9BB8] flex items-center gap-1.5 truncate">
             <Volume2 size={14} className="shrink-0 text-[#4F8BFF]" />
             <span>Giọng {voiceConfig.giongDoc} · Trần {voiceConfig.phutMoiNgay} phút/ngày</span>

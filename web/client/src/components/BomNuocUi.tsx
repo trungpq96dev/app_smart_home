@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Save, X } from 'lucide-react';
+import { Eye, EyeOff, Save, X } from 'lucide-react';
 import {
   nhanKetNoiBom,
   type BomNuocConfigForm,
@@ -12,9 +12,9 @@ import { FlatButton, StatusPill } from './Common.js';
 import { SH, tint } from '../theme/colors.js';
 
 /**
- * So do he thong bom nuoc ve bang SVG dap ung theo bang mau SH.
- * Chi co 1 phao (GPIO 25) va van mot chieu co khi (khong co van dien tu ban 5.x).
- * Bo cuc da tranh chong chu: bom len bon o ben trai, bom tang ap o duoi lech phai.
+ * Sơ đồ hệ thống bơm nước vẽ bằng SVG đáp ứng theo bảng màu SH.
+ * Chỉ có 1 phao (GPIO 25) và van một chiều cơ khí (không có van điện từ bản 5.x).
+ * Bổ sung hiệu ứng mặt nước gợn sóng hình sin khi có dòng chảy.
  */
 export function SoDoBonNuoc({
   levelPercent,
@@ -36,6 +36,7 @@ export function SoDoBonNuoc({
   const tankH = 98;
   const waterH = pct !== null && pct > 0.5 ? (tankH - 6) * (pct / 100) : 0;
   const waterY = tankY + tankH - 3 - waterH;
+  const anyFlow = tankPumpRunning || boostPumpRunning || cityFlowing;
 
   const pumpCx = 64;
   const pumpCy = 136;
@@ -49,6 +50,20 @@ export function SoDoBonNuoc({
   const valveCx = 99;
   const riserX = tankX + tankW * 0.22;
   const outletX = tankX + tankW * 0.52;
+
+  const waveSpan = 48;
+  const buildSineSurfacePath = () => {
+    const startX = tankX - waveSpan;
+    const endX = tankX + tankW + waveSpan;
+    const bottomY = tankY + tankH + 6;
+    let d = `M ${startX} ${bottomY} L ${startX} ${waterY}`;
+    for (let x = startX; x <= endX; x += waveSpan) {
+      d += ` Q ${x + waveSpan * 0.25} ${waterY - 3.2}, ${x + waveSpan * 0.5} ${waterY}`;
+      d += ` T ${x + waveSpan} ${waterY}`;
+    }
+    d += ` L ${endX} ${bottomY} Z`;
+    return d;
+  };
 
   const renderPipe = (d: string, active: boolean) => (
     <g>
@@ -120,24 +135,56 @@ export function SoDoBonNuoc({
         </clipPath>
       </defs>
 
-      {/* Than bon */}
+      {/* Thân bồn */}
       <rect x={tankX} y={tankY} width={tankW} height={tankH} rx={8} fill={SH.Card2} />
       {waterH > 0 && (
         <g clipPath="url(#bom-tank-clip)">
-          <rect
-            x={tankX + 3}
-            y={waterY}
-            width={tankW - 6}
-            height={waterH + 3}
-            fill={tint(SH.Cyan, 0.52)}
-          />
-          <rect
-            x={tankX + 3}
-            y={waterY}
-            width={tankW - 6}
-            height={4}
-            fill={tint(SH.Cyan, 0.85)}
-          />
+          {anyFlow ? (
+            <g>
+              <path d={buildSineSurfacePath()} fill={tint(SH.Cyan, 0.54)}>
+                <animateTransform
+                  attributeName="transform"
+                  type="translate"
+                  from="0 0"
+                  to={`${waveSpan} 0`}
+                  dur="1.6s"
+                  repeatCount="indefinite"
+                />
+              </path>
+              <path
+                d={buildSineSurfacePath()}
+                fill="none"
+                stroke={tint(SH.Cyan, 0.92)}
+                strokeWidth={2}
+              >
+                <animateTransform
+                  attributeName="transform"
+                  type="translate"
+                  from="0 0"
+                  to={`${waveSpan} 0`}
+                  dur="1.6s"
+                  repeatCount="indefinite"
+                />
+              </path>
+            </g>
+          ) : (
+            <>
+              <rect
+                x={tankX + 3}
+                y={waterY}
+                width={tankW - 6}
+                height={waterH + 3}
+                fill={tint(SH.Cyan, 0.52)}
+              />
+              <rect
+                x={tankX + 3}
+                y={waterY}
+                width={tankW - 6}
+                height={3.5}
+                fill={tint(SH.Cyan, 0.85)}
+              />
+            </>
+          )}
         </g>
       )}
       <rect
@@ -151,7 +198,7 @@ export function SoDoBonNuoc({
         strokeWidth={2}
       />
 
-      {/* Phao duy nhat (GPIO 25) */}
+      {/* Phao duy nhất (GPIO 25) */}
       <circle
         cx={tankX + tankW - 11}
         cy={tankY + tankH * 0.18}
@@ -159,11 +206,11 @@ export function SoDoBonNuoc({
         fill={tankFull ? SH.Green : SH.TextOff}
       />
 
-      {/* Chan de bon */}
+      {/* Chân đế bồn */}
       <line x1={tankX + 10} y1={tankY + tankH} x2={tankX + 10} y2={145} stroke={SH.Border} strokeWidth={2.5} />
       <line x1={tankX + tankW - 10} y1={tankY + tankH} x2={tankX + tankW - 10} y2={145} stroke={SH.Border} strokeWidth={2.5} />
 
-      {/* Duong ong */}
+      {/* Đường ống */}
       {renderPipe(
         `M ${pumpCx + rPump} ${pumpCy} L ${riserX} ${pumpCy} L ${riserX} ${tankY + tankH - 3}`,
         tankPumpRunning,
@@ -181,7 +228,7 @@ export function SoDoBonNuoc({
         boostPumpRunning,
       )}
 
-      {/* Van mot chieu co khi */}
+      {/* Van một chiều cơ khí */}
       <g>
         <circle cx={valveCx} cy={cityY} r={8.5} fill={SH.Bg} stroke={cityFlowing ? SH.Cyan : SH.TextOff} strokeWidth={1.4} />
         <polygon
@@ -190,11 +237,11 @@ export function SoDoBonNuoc({
         />
       </g>
 
-      {/* Hai may bom */}
+      {/* Hai máy bơm */}
       {renderPump(pumpCx, pumpCy, rPump, tankPumpRunning)}
       {renderPump(boostCx, boostCy, rBoost, boostPumpRunning)}
 
-      {/* Nhan khong chong cheo */}
+      {/* Nhãn không chồng chéo */}
       <text x={pumpCx} y={pumpCy + rPump + 16} textAnchor="middle" fill={SH.TextDim} fontSize="10.5" fontWeight="600">
         Bơm lên bồn
       </text>
@@ -211,7 +258,7 @@ export function SoDoBonNuoc({
   );
 }
 
-/** Vong tron hien thi phan tram muc nuoc that. Null -> "--" (khong bao gio doan). */
+/** Vòng tròn hiển thị phần trăm mức nước thật. Null -> "--" (không bao giờ đoán). */
 export function VongMucNuoc({
   percent,
   size = 96,
@@ -267,7 +314,7 @@ export function VongMucNuoc({
   );
 }
 
-/** Bieu do cot nhom luong nuoc theo thang (Cyan = bom len bon, Green = nuoc may). */
+/** Biểu đồ cột nhóm lượng nước theo tháng (Cyan = bơm lên bồn, Green = nước máy). */
 export function BieuDoNuocThang({
   usage,
   maxMonths = 6,
@@ -444,6 +491,7 @@ export function HopThoaiCauHinhBom({
   const [brokerTls, setBrokerTls] = useState(config.brokerTls);
   const [brokerUser, setBrokerUser] = useState(config.brokerUser);
   const [brokerPass, setBrokerPass] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [xoaMatKhau, setXoaMatKhau] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -456,6 +504,7 @@ export function HopThoaiCauHinhBom({
     setBrokerTls(config.brokerTls);
     setBrokerUser(config.brokerUser);
     setBrokerPass('');
+    setShowPass(false);
     setXoaMatKhau(false);
   }, [open, config]);
 
@@ -541,13 +590,23 @@ export function HopThoaiCauHinhBom({
             </div>
             <div>
               <label className="block text-[#94A3B8] mb-1">Mật khẩu MQTT bơm</label>
-              <input
-                type="password"
-                value={brokerPass}
-                onChange={(e) => setBrokerPass(e.target.value)}
-                placeholder={config.coMatKhau ? 'Đã lưu — để trống giữ nguyên' : 'Nhập mật khẩu'}
-                className={inputCls}
-              />
+              <div className="flex gap-1.5">
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={brokerPass}
+                  onChange={(e) => setBrokerPass(e.target.value)}
+                  placeholder={config.coMatKhau ? 'Đã lưu — để trống giữ nguyên' : 'Nhập mật khẩu'}
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  title={showPass ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  className="rounded-xl border border-[#253459] bg-[#0E1627] px-2.5 text-[#94A3B8] hover:text-white cursor-pointer shrink-0"
+                >
+                  {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
             </div>
           </div>
 

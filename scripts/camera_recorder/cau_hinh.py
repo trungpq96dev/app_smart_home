@@ -34,7 +34,8 @@ def khoang_ngay_vn(ngay_str: str) -> tuple[int, int]:
 
 
 def _str(ten: str, mac_dinh: str = "") -> str:
-    return os.environ.get(ten, mac_dinh).strip()
+    v = os.environ.get(ten, "").strip()
+    return v if v else mac_dinh
 
 
 def _float(ten: str, mac_dinh: float) -> float:
@@ -129,7 +130,7 @@ class CauHinhRecorder:
     roi_box: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
     onnx_model_path: Path = Path("/data/models/yolov8n.onnx")
     onnx_model_url: str = (
-        "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.onnx"
+        "https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx"
     )
     onnx_threads: int = 2
 
@@ -202,7 +203,7 @@ class CauHinhRecorder:
             onnx_model_path=Path(_str("ONNX_MODEL_PATH", str(data_dir / "models" / "yolov8n.onnx"))),
             onnx_model_url=_str(
                 "ONNX_MODEL_URL",
-                "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.onnx",
+                "https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx",
             ),
             onnx_threads=max(1, _int("ONNX_THREADS", 2)),
             tg_enabled=tg_on,

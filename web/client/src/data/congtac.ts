@@ -208,6 +208,19 @@ export function buildOThietBiThat(params: {
   };
 }
 
+/** Trạng thái công tắc đã rõ ràng (không bịa OFF khi mất kết nối / chưa đọc được). */
+export function oThietBiRoRang(o: OThietBi): boolean {
+  if (o.kind === 'mau') return true;
+  return o.dangCho || (o.bridgeSong && o.online && o.bat !== null);
+}
+
+/** Giá trị bật/tắt để hiển thị trên sân khấu 2.5D hoặc nút khi đã rõ. */
+export function oThietBiBatHienThi(o: OThietBi, fallbackMau = false): boolean {
+  if (o.kind === 'mau') return o.bat ?? fallbackMau;
+  if (o.dangCho && o.mong !== null) return o.mong;
+  return o.bat === true;
+}
+
 export interface ChoCongTac {
   mong: boolean;
   id: string;

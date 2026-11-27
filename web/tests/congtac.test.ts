@@ -11,6 +11,12 @@ import {
   timCongTac,
   trangThaiCongTacCua,
 } from '../client/src/data/congtac.js';
+import { DemoData } from '../client/src/data/demoData.js';
+import {
+  THU_TU_PHONG,
+  tomTatDanhSachPhong,
+  tomTatPhong,
+} from '../client/src/screens/DevicesScreen.js';
 
 const INFO = JSON.stringify({
   bridge: 'congtac_bridge 1.0',
@@ -177,6 +183,73 @@ describe('CongTacState', () => {
       source: 'voice',
       id: 'cmd67890',
     });
+  });
+});
+
+describe('DevicesScreen summary (1:1 voi DevicesScreen.kt tren Tablet)', () => {
+  it('sap xep dung thu tu 6 phong tren luoi 3x2 va tong 18 o thiet bi', () => {
+    const rooms = DemoData.rooms();
+    const { dsPhong, tongDangBat, tongThietBi } = tomTatDanhSachPhong(
+      rooms,
+      createEmptyCongTacState(),
+    );
+    expect(dsPhong.map((p) => p.room.id)).toEqual([...THU_TU_PHONG]);
+    expect(tongThietBi).toBe(18);
+    expect(tongDangBat).toBe(9);
+    expect(dsPhong.every((p) => !p.coCongTacThat && p.mucThietBi.length === 3)).toBe(true);
+  });
+
+  it('cong tac that mat ket noi hoac bridge chet thi hien "—" chu khong bia "Tắt"', () => {
+    const bed1 = DemoData.rooms().find((r) => r.id === 'bed1')!;
+    let ct = nenTang();
+    ct = gopCongTac(
+      ct,
+      `${CongTacTopic.TIEN_TO_TB}bed1_den`,
+      '{"online":false,"is_on":true,"ly_do_loi":"mat dien"}',
+    );
+    ct = gopCongTac(
+      ct,
+      `${CongTacTopic.TIEN_TO_TB}bed1_quat`,
+      '{"online":true,"is_on":true}',
+    );
+
+    const tt = tomTatPhong(bed1, ct);
+    expect(tt.coCongTacThat).toBe(true);
+    expect(tt.mucThietBi[0].ten).toBe('Đèn');
+    expect(tt.mucThietBi[0].roRang).toBe(false);
+    expect(tt.mucThietBi[0].bat).toBe(false);
+    expect(tt.mucThietBi[0].chuTrangThai).toBe('—');
+
+    expect(tt.mucThietBi[1].ten).toBe('Quạt');
+    expect(tt.mucThietBi[1].roRang).toBe(true);
+    expect(tt.mucThietBi[1].bat).toBe(true);
+    expect(tt.mucThietBi[1].chuTrangThai).toBe('Bật');
+
+    // Bridge offline du retained van con is_on=true -> van hien "—"
+    const bridgeDead = gopCongTac(ct, CongTacTopic.TRANG_THAI, 'offline');
+    const ttDead = tomTatPhong(bed1, bridgeDead);
+    expect(ttDead.mucThietBi[1].roRang).toBe(false);
+    expect(ttDead.mucThietBi[1].chuTrangThai).toBe('—');
+  });
+
+  it('tom tat dung 3 o dac thu cua Nha bep va Hanh lang', () => {
+    const rooms = DemoData.rooms();
+    const kitchen = { ...rooms.find((r) => r.id === 'kitchen')!, fanOn: true, hoodSpeed: 2, stoveOn: true, stoveLevel: 6 };
+    const hall = rooms.find((r) => r.id === 'hall')!;
+
+    const kt = tomTatPhong(kitchen, createEmptyCongTacState());
+    expect(kt.mucThietBi.map((m) => [m.ten, m.chuTrangThai])).toEqual([
+      ['Đèn', 'Bật'],
+      ['Hút mùi', 'Cấp 2'],
+      ['Bếp từ', 'Mức 6'],
+    ]);
+
+    const hl = tomTatPhong(hall, createEmptyCongTacState());
+    expect(hl.mucThietBi.map((m) => [m.ten, m.chuTrangThai])).toEqual([
+      ['Đèn', '3/3 bật'],
+      ['Khóa cửa', 'Đã khóa'],
+      ['Camera', 'Bật'],
+    ]);
   });
 });
 

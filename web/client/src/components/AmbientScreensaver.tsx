@@ -101,6 +101,38 @@ export function AmbientScreensaver({
     return () => window.removeEventListener('keydown', onKey);
   }, [onWake]);
 
+  // Giữ màn hình iPhone/Tablet không tự khóa khi đang bật đồng hồ đêm (Screen Wake Lock API)
+  useEffect(() => {
+    let sentinel: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const nav = navigator as Navigator & {
+      wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> };
+    };
+
+    const acquire = async () => {
+      if (cancelled || !nav.wakeLock || document.visibilityState !== 'visible') return;
+      try {
+        sentinel = await nav.wakeLock.request('screen');
+      } catch {
+        // Ignore if unsupported or battery saver blocks Wake Lock
+      }
+    };
+
+    void acquire();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void acquire();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      if (sentinel) {
+        void sentinel.release().catch(() => {});
+      }
+    };
+  }, []);
+
   const dt = new Date(nowMs);
   const hh = String(dt.getHours()).padStart(2, '0');
   const mm = String(dt.getMinutes()).padStart(2, '0');
@@ -135,7 +167,7 @@ export function AmbientScreensaver({
       tabIndex={0}
       aria-label="Màn hình chờ ban đêm, chạm để đánh thức"
       onPointerDown={onWake}
-      className="fixed inset-0 z-50 bg-[#000000] select-none flex flex-col items-center justify-between px-6 py-8 cursor-pointer overflow-hidden"
+      className="fixed inset-0 z-50 bg-[#000000] select-none flex flex-col items-center justify-between pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] cursor-pointer overflow-hidden"
     >
       <div className="h-4 shrink-0" />
 

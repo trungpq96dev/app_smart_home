@@ -178,8 +178,8 @@ class DichVuCameraRecorder:
                 self.dong_bo_danh_sach_camera()
                 lan_do_cam = now
 
-            # 2. Đẩy nền lên Google Drive 5TB + dọn Hot Cache 10 GB mỗi 15s
-            if now - lan_upload_drive >= 15.0:
+            # 2. Đẩy nền lên Google Drive 5TB + dọn Hot Cache 10 GB mỗi 3s
+            if now - lan_upload_drive >= 3.0:
                 try:
                     self.storage.day_hang_doi_len_drive()
                     self.storage.don_hot_cache()

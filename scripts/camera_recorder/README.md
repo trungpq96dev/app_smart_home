@@ -68,7 +68,7 @@ ssh serverubuntu@192.168.0.50
 cd ~/camera_recorder
 mkdir -p data
 sudo chown -R 10002:10002 data rclone.conf
-chmod 600 rclone.conf
+sudo chmod 600 rclone.conf
 
 cp cau_hinh.mau.env .env
 nano .env

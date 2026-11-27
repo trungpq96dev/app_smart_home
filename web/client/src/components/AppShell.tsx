@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AlertTriangle, Home, Menu, X } from 'lucide-react';
 import { dangChayTrangThai } from '../data/giongnoi/types.js';
-import { DEST_ITEMS } from '../data/models.js';
+import { DEST_ITEMS, type DestRoute } from '../data/models.js';
 import { tinhCanhBaoSidebar } from '../data/sidebarStatus.js';
 import { AutomationScreen } from '../screens/AutomationScreen.js';
 import { CamBienScreen } from '../screens/CamBienScreen.js';
 import { CameraScreen } from '../screens/CameraScreen.js';
 import { ChiTietDienScreen } from '../screens/ChiTietDienScreen.js';
-import { DevicesScreen } from '../screens/DevicesScreen.js';
+import { DevicesScreen, tomTatDanhSachPhong } from '../screens/DevicesScreen.js';
 import { HomeScreen } from '../screens/HomeScreen.js';
 import { RoomDetailScreen } from '../screens/RoomDetailScreen.js';
 import { ServerScreen } from '../screens/ServerScreen.js';
@@ -20,8 +20,17 @@ import { SH, tint } from '../theme/colors.js';
 import { AdminPinModal } from './AdminPinModal.js';
 import { AmbientScreensaver } from './AmbientScreensaver.js';
 import { BangGiongNoi } from './BangGiongNoi.js';
-import { FlatButton, ToastHost, TopBar } from './Common.js';
+import { DestIcon, FlatButton, RoundIconButton, StatusPill, ToastHost, TopBar } from './Common.js';
 import { SideNav } from './SideNav.js';
+
+const MOBILE_PRIMARY_TABS: Array<{ route: DestRoute; label: string }> = [
+  { route: 'home', label: 'Trang chủ' },
+  { route: 'devices', label: 'Thiết bị' },
+  { route: 'camera', label: 'Camera' },
+  { route: 'automation', label: 'Tự động' },
+];
+
+const EXTRA_ROUTES: DestRoute[] = ['utilities', 'sensors', 'stats', 'server', 'settings'];
 
 export function AppShell() {
   const {
@@ -37,6 +46,7 @@ export function AppShell() {
     mqttStatus,
     cameraStatus,
     dien,
+    congtac,
     thoiTiet,
     server,
     bomNuoc,
@@ -89,23 +99,45 @@ export function AppShell() {
     ? rooms.find((r) => r.id === selectedRoomDetailId)
     : undefined;
 
+  const { dsPhong: devicesSummaryRooms, tongDangBat, tongThietBi } = useMemo(
+    () => tomTatDanhSachPhong(rooms, congtac),
+    [rooms, congtac],
+  );
+
   const topTitle = chiTietDienOpen
     ? 'Chi tiết điện EVN'
     : wifiOpen
       ? 'Quản trị WiFi & Router'
       : activeRoom
-        ? activeRoom.name
+        ? `Điều khiển ${activeRoom.name.toLowerCase()}`
         : (DEST_ITEMS.find((d) => d.route === currentDest)?.title ?? 'SmartHome');
 
   const topSubtitle = chiTietDienOpen
     ? 'Sản lượng từng ngày & công tơ trực tiếp'
     : wifiOpen
       ? 'Lưu lượng, thiết bị kết nối & bảo mật mạng'
-      : activeRoom
-        ? 'Điều khiển chi tiết & mô phỏng 2.5D trực quan'
-        : undefined;
+      : undefined;
 
   const hasBack = chiTietDienOpen || wifiOpen || Boolean(activeRoom);
+
+  const topBarExtra = activeRoom ? (
+    <RoundIconButton
+      onClick={() => navigateDest('home')}
+      color={SH.Blue}
+      size={32}
+      title="Về Trang chủ"
+    >
+      <Home size={16} />
+    </RoundIconButton>
+  ) : !hasBack && currentDest === 'devices' ? (
+    <div className="hidden sm:flex items-center gap-1.5">
+      <StatusPill label={`${devicesSummaryRooms.length} phòng`} color={SH.Blue} dot={false} />
+      <StatusPill
+        label={`${tongDangBat}/${tongThietBi} thiết bị đang bật`}
+        color={tongDangBat > 0 ? SH.Green : SH.TextOff}
+      />
+    </div>
+  ) : undefined;
 
   const renderMainContent = () => {
     if (chiTietDienOpen) return <ChiTietDienScreen />;
@@ -125,8 +157,11 @@ export function AppShell() {
     }
   };
 
+  const extraAlertColor = EXTRA_ROUTES.map((r) => canhBaoMuc[r]).find(Boolean);
+  const isExtraActive = !hasBack && EXTRA_ROUTES.includes(currentDest);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0B1220] text-[#E6EDF7]">
+    <div className="flex h-dvh min-h-screen w-full overflow-hidden bg-[#0B1220] text-[#E6EDF7]">
       <SideNav
         current={currentDest}
         onSelect={navigateDest}
@@ -151,15 +186,16 @@ export function AppShell() {
           voiceActive={voiceRunning}
           onVoiceToggle={() => {
             if (!voiceSheetOpen) setVoiceSheetOpen(true);
-            else batTatGiongNoi();
+            else handleBamTroLy();
           }}
           onOpenScreensaver={enterScreensaver}
           adminUnlocked={adminUnlocked}
           adminLockEnabled={adminLockEnabled}
           onLockAdmin={() => void lockAdmin()}
+          extra={topBarExtra}
         />
 
-        <main className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden p-3 flex flex-col gap-2.5">
+        <main className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden p-2.5 sm:p-3 pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))] flex flex-col gap-2.5">
           {emergencyAlert && (
             <div
               className="shrink-0 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl px-3.5 py-2.5 animate-pulse"
@@ -195,8 +231,61 @@ export function AppShell() {
             </div>
           )}
 
-          <div className="flex-1 min-h-0 w-full">{renderMainContent()}</div>
+          <div className="w-full lg:flex-1 lg:min-h-0">{renderMainContent()}</div>
         </main>
+
+        {/* Native-feel iPhone / Mobile Bottom Navigation Bar */}
+        <nav
+          aria-label="Điều hướng nhanh trên điện thoại"
+          className="md:hidden shrink-0 border-t border-[#253459] bg-[#0E1627]/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+        >
+          <div className="grid grid-cols-5 px-1 pt-1.5 pb-1">
+            {MOBILE_PRIMARY_TABS.map((item) => {
+              const active = !hasBack && currentDest === item.route;
+              const badge = canhBaoMuc[item.route];
+              return (
+                <button
+                  key={item.route}
+                  type="button"
+                  onClick={() => navigateDest(item.route)}
+                  className="relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors cursor-pointer"
+                  style={{ color: active ? SH.Blue : SH.TextSecondary }}
+                >
+                  <span className="relative">
+                    <DestIcon route={item.route} size={19} />
+                    {badge && (
+                      <span
+                        className="absolute -top-0.5 -right-1.5 h-2 w-2 rounded-full"
+                        style={{ backgroundColor: badge }}
+                      />
+                    )}
+                  </span>
+                  <span className="text-[10px] font-semibold leading-tight truncate max-w-full px-0.5">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-xl transition-colors cursor-pointer"
+              style={{ color: isExtraActive || mobileMenuOpen ? SH.Blue : SH.TextSecondary }}
+            >
+              <span className="relative">
+                <Menu size={19} />
+                {extraAlertColor && (
+                  <span
+                    className="absolute -top-0.5 -right-1.5 h-2 w-2 rounded-full"
+                    style={{ backgroundColor: extraAlertColor }}
+                  />
+                )}
+              </span>
+              <span className="text-[10px] font-semibold leading-tight">Thêm</span>
+            </button>
+          </div>
+        </nav>
       </div>
 
       <BangGiongNoi />
