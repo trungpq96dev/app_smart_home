@@ -27,7 +27,10 @@ from face_recognizer import (
     LuongNhanDienKhuonMat,
     SuKienChaoMat,
     chuyen_nguoi_la_thanh_nguoi_quen,
+    danh_sach_nguoi_quen,
     gui_ntfy_canh_bao,
+    luu_anh_mau_nguoi_quen,
+    xoa_nguoi_quen,
 )
 from mqtt_bridge import CauNoiMqttCamera, tao_payload_state
 from onvif_ptz import QuanLyPtzOnvif, doc_danh_sach_onvif
@@ -89,6 +92,10 @@ class DichVuCameraRecorder:
             privacy_cb=self.dat_che_do_rieng_tu,
             home_mode_cb=self.dat_che_do_nha,
             face_promote_cb=self.chuyen_anh_nguoi_la,
+            face_people_cb=self.lay_danh_sach_nguoi_quen,
+            face_enroll_camera_cb=self.them_mat_tu_camera,
+            face_enroll_upload_cb=self.them_mat_tu_anh,
+            face_delete_cb=self.xoa_mat_nguoi_quen,
         )
         self._chay = True
 
@@ -112,6 +119,43 @@ class DichVuCameraRecorder:
 
     def chuyen_anh_nguoi_la(self, filename: str, ten_nguoi: str) -> dict[str, Any]:
         ok, msg = chuyen_nguoi_la_thanh_nguoi_quen(self.cfg.face_dir, filename, ten_nguoi)
+        if ok:
+            self.face_worker.engine.lam_moi_thu_vien()
+            self.face_worker.quyet_dinh.xoa_cooldown_nguoi(ten_nguoi.strip())
+        return {"ok": ok, "message": msg}
+
+    def lay_danh_sach_nguoi_quen(self) -> list[dict[str, Any]]:
+        return danh_sach_nguoi_quen(self.cfg.face_dir)
+
+    def them_mat_tu_camera(self, ten_nguoi: str, camera: str) -> dict[str, Any]:
+        """Chụp khung hình HD trực tiếp từ camera an ninh (go2rtc) để thêm người quen."""
+        cam_hd = camera.strip().removesuffix("_sd")
+        jpeg = self.face_worker._lay_anh_go2rtc(cam_hd)
+        if not jpeg:
+            anh_tam = chup_anh_ngay(cam_hd, self.cfg, self.storage.thumbs_dir)
+            if anh_tam and anh_tam.exists():
+                jpeg = anh_tam.read_bytes()
+                anh_tam.unlink(missing_ok=True)
+        if not jpeg:
+            return {"ok": False, "message": f"Không chụp được ảnh từ camera '{cam_hd}'. Kiểm tra go2rtc."}
+        return self.them_mat_tu_anh(ten_nguoi, jpeg, nguon=f"cam_{cam_hd}")
+
+    def them_mat_tu_anh(self, ten_nguoi: str, jpeg_bytes: bytes, nguon: str = "tablet") -> dict[str, Any]:
+        """Kiểm tra khuôn mặt bằng YuNet, lưu vào `faces/<Ten_Nguoi>/` và nạp nóng thư viện AI."""
+        co_mat, so_mat = self.face_worker.engine.kiem_tra_co_khuon_mat(jpeg_bytes)
+        if not co_mat:
+            return {
+                "ok": False,
+                "message": "Không phát hiện khuôn mặt rõ trong ảnh — hãy đứng gần, đủ sáng và nhìn thẳng vào ống kính rồi thử lại.",
+            }
+        ok, msg, _, tong = luu_anh_mau_nguoi_quen(self.cfg.face_dir, ten_nguoi, jpeg_bytes, nguon=nguon)
+        if ok:
+            self.face_worker.engine.lam_moi_thu_vien()
+            self.face_worker.quyet_dinh.xoa_cooldown_nguoi(ten_nguoi.strip())
+        return {"ok": ok, "message": msg, "count": tong, "faces_detected": so_mat}
+
+    def xoa_mat_nguoi_quen(self, ten_nguoi: str) -> dict[str, Any]:
+        ok, msg = xoa_nguoi_quen(self.cfg.face_dir, ten_nguoi)
         if ok:
             self.face_worker.engine.lam_moi_thu_vien()
         return {"ok": ok, "message": msg}

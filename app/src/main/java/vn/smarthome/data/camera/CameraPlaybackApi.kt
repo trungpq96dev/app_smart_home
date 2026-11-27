@@ -2,11 +2,14 @@ package vn.smarthome.data.camera
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Base64
 import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -196,6 +199,158 @@ object CameraPlaybackApi {
             .mapCatching { goc -> goc.optString("message", "Đã đổi chế độ camera.") }
     }
 
+    // ----------------------------------------- Quan ly khuon mat nguoi quen
+
+    suspend fun taiDanhSachNguoiQuen(
+        c: CauHinhCamera,
+        congOverride: Int? = null,
+    ): Result<List<NguoiQuenMat>> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlDanhSachNguoiQuen(congOverride), "GET", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc -> phanTichDanhSachNguoiQuen(goc) }
+    }
+
+    suspend fun taiDanhSachNguoiLa(
+        c: CauHinhCamera,
+        congOverride: Int? = null,
+    ): Result<List<AnhNguoiLa>> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlDanhSachNguoiLa(congOverride), "GET", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc -> phanTichDanhSachNguoiLa(goc) }
+    }
+
+    suspend fun themMatTuCamera(
+        c: CauHinhCamera,
+        tenNguoi: String,
+        tenCam: String,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        val body = JSONObject().put("name", tenNguoi.trim()).put("camera", tenCam.trim()).toString()
+        goiJson(c.urlThemMatTuCam(congOverride), "POST", c.headerBasicAuth(), TIMEOUT_CHUP_MS, body)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã thêm ảnh khuôn mặt." else "Không thêm được ảnh.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    suspend fun themMatTuAnh(
+        c: CauHinhCamera,
+        tenNguoi: String,
+        jpegBytes: ByteArray,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        val b64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+        val body = JSONObject().put("name", tenNguoi.trim()).put("image_base64", b64).toString()
+        goiJson(c.urlThemMatUpload(congOverride), "POST", c.headerBasicAuth(), TIMEOUT_CHUP_MS, body)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã lưu ảnh từ tablet." else "Không lưu được ảnh.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    suspend fun chuyenNguoiLaThanhQuen(
+        c: CauHinhCamera,
+        filename: String,
+        tenNguoi: String,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        val body = JSONObject().put("filename", filename).put("name", tenNguoi.trim()).toString()
+        goiJson(c.urlChuyenNguoiLa(congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS, body)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã gán tên người quen." else "Lỗi gán tên.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    suspend fun xoaNguoiQuen(
+        c: CauHinhCamera,
+        tenNguoi: String,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        val body = JSONObject().put("name", tenNguoi.trim()).toString()
+        goiJson(c.urlXoaNguoiQuen(congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS, body)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã xóa người quen." else "Không xóa được.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    /** Thu gon anh chup tu camera tablet ve toi da 960px JPEG (~80-150KB) de gui nhanh len serverubuntu. */
+    suspend fun nenAnhChupTablet(file: File): ByteArray? = withContext(Dispatchers.IO) {
+        if (!file.exists() || file.length() <= 0L) return@withContext null
+        try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+            var sample = 1
+            while (maxDim / sample > 1400) sample *= 2
+            val bmp = BitmapFactory.decodeFile(
+                file.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample },
+            ) ?: return@withContext null
+
+            val scaled = if (maxOf(bmp.width, bmp.height) > 960) {
+                val scale = 960f / maxOf(bmp.width, bmp.height)
+                val w = (bmp.width * scale).toInt().coerceAtLeast(1)
+                val h = (bmp.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(bmp, w, h, true).also {
+                    if (it !== bmp) bmp.recycle()
+                }
+            } else bmp
+
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 86, out)
+            scaled.recycle()
+            out.toByteArray()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    internal fun phanTichDanhSachNguoiQuen(goc: JSONObject): List<NguoiQuenMat> {
+        val arr = goc.optJSONArray("people") ?: JSONArray()
+        val kq = ArrayList<NguoiQuenMat>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val name = o.optString("name", "").trim()
+            if (name.isBlank()) continue
+            kq.add(
+                NguoiQuenMat(
+                    name = name,
+                    count = o.optInt("count", 0),
+                    sampleUrl = o.optString("sample_url", "").ifBlank { null },
+                    updatedTs = o.optLong("updated_ts", 0L),
+                )
+            )
+        }
+        return kq
+    }
+
+    internal fun phanTichDanhSachNguoiLa(goc: JSONObject): List<AnhNguoiLa> {
+        val arr = goc.optJSONArray("items") ?: JSONArray()
+        val kq = ArrayList<AnhNguoiLa>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val fn = o.optString("filename", "").trim()
+            val url = o.optString("url", "").trim()
+            if (fn.isBlank() || url.isBlank()) continue
+            kq.add(AnhNguoiLa(fn, url, o.optLong("ts", 0L)))
+        }
+        return kq
+    }
+
     fun dienGiaiLoi(e: Throwable?, cong: Int = 1985): String = when {
         e == null -> "Lỗi không rõ"
         e is UnknownHostException ->
@@ -289,9 +444,11 @@ object CameraPlaybackApi {
         method: String,
         headers: Map<String, String>,
         timeoutMs: Int,
+        jsonBody: String? = null,
     ): Result<JSONObject> {
         var conn: HttpURLConnection? = null
         return try {
+            val bodyBytes = jsonBody?.toByteArray(Charsets.UTF_8)
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = timeoutMs
@@ -299,8 +456,16 @@ object CameraPlaybackApi {
                 headers.forEach { (k, v) -> setRequestProperty(k, v) }
                 if (method == "POST") {
                     doOutput = true
-                    setFixedLengthStreamingMode(0)
+                    if (bodyBytes != null) {
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setFixedLengthStreamingMode(bodyBytes.size)
+                    } else {
+                        setFixedLengthStreamingMode(0)
+                    }
                 }
+            }
+            if (method == "POST" && bodyBytes != null) {
+                conn.outputStream.use { it.write(bodyBytes) }
             }
             val ma = conn.responseCode
             if (ma == 401 || ma == 403) {
@@ -311,7 +476,10 @@ object CameraPlaybackApi {
             val luongDoc = if (ma in 200..299) conn.inputStream else conn.errorStream
             val than = luongDoc?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (ma !in 200..299) {
-                val tb = runCatching { JSONObject(than).optString("error") }.getOrNull()
+                val tb = runCatching {
+                    val jo = JSONObject(than)
+                    jo.optString("message").ifBlank { jo.optString("error") }
+                }.getOrNull()
                 return Result.failure(IOException(tb?.ifBlank { null } ?: "Đầu ghi trả mã HTTP $ma"))
             }
             Result.success(JSONObject(than))

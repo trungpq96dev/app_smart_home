@@ -131,6 +131,16 @@ export function proxyCameraRecorderHttp(
     }
     upstreamPath = `/api/face/snapshot/${name}`;
     timeoutMs = THUMB_TIMEOUT_MS;
+  } else if (method === 'GET' && subPath === '/face/people') {
+    upstreamPath = '/api/face/people';
+  } else if (method === 'GET' && subPath.startsWith('/face/sample/')) {
+    const rest = subPath.slice('/face/sample/'.length);
+    if (!rest || rest.includes('..')) {
+      sendJson(res, 400, { ok: false, error: 'Đường dẫn ảnh mẫu không hợp lệ.' });
+      return;
+    }
+    upstreamPath = `/api/face/sample/${rest}`;
+    timeoutMs = THUMB_TIMEOUT_MS;
   } else if (method === 'GET' && subPath === '/face/unknown') {
     upstreamPath = '/api/face/unknown';
   } else if (method === 'GET' && subPath === '/ptz/presets') {
@@ -144,9 +154,13 @@ export function proxyCameraRecorderHttp(
       subPath === '/ptz/preset' ||
       subPath === '/privacy' ||
       subPath === '/home_mode' ||
-      subPath === '/face/promote')
+      subPath === '/face/promote' ||
+      subPath === '/face/enroll/camera' ||
+      subPath === '/face/enroll/upload' ||
+      subPath === '/face/delete')
   ) {
     upstreamPath = `/api${subPath}${queryStr ? `?${queryStr}` : ''}`;
+    timeoutMs = SNAPSHOT_TIMEOUT_MS;
   } else {
     sendJson(res, 404, { ok: false, error: 'Đường dẫn Playback API không tồn tại.' });
     return;

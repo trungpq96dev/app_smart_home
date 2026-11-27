@@ -31,6 +31,9 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Chup anh khuon mat nguoi quen truc tiep bang camera may tinh bang -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!--
       Tuong thich Package Visibility tren Android 11+ (API 30+):

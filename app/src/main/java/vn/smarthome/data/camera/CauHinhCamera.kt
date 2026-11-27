@@ -111,6 +111,24 @@ data class CauHinhCamera(
     fun urlHomeMode(mode: String, congOverride: Int? = null): String =
         gocGhiHinh(congOverride) + "/api/home_mode?mode=" + Uri.encode(mode)
 
+    fun urlDanhSachNguoiQuen(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/people"
+
+    fun urlDanhSachNguoiLa(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/unknown"
+
+    fun urlThemMatTuCam(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/enroll/camera"
+
+    fun urlThemMatUpload(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/enroll/upload"
+
+    fun urlChuyenNguoiLa(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/promote"
+
+    fun urlXoaNguoiQuen(congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/face/delete"
+
     /**
      * Chon luong phu `_sd` (H.264) cho WebView tren Tab A7 Lite neu go2rtc co khai bao song song
      * luong chinh (HD) va luong phu (`<ten>_sd`), tranh den hinh H.265 va tiet kiem RAM.

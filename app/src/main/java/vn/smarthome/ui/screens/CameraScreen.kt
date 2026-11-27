@@ -98,6 +98,7 @@ import vn.smarthome.data.camera.dinhDangGioVn
 import vn.smarthome.ui.components.Dot
 import vn.smarthome.ui.components.FlatButton
 import vn.smarthome.ui.components.ImagePlaceholder
+import vn.smarthome.ui.components.KhungQuanLyKhuonMat
 import vn.smarthome.ui.components.LuongCamera
 import vn.smarthome.ui.components.MucZoomTimeline
 import vn.smarthome.ui.components.RoundIconButton
@@ -118,7 +119,7 @@ import java.util.Locale
 
 private val ZONA_VN: ZoneId = ZoneId.of("Asia/Ho_Chi_Minh")
 
-private enum class CheDoManCam { TRUC_TIEP, SU_KIEN, XEM_LAI }
+private enum class CheDoManCam { TRUC_TIEP, SU_KIEN, XEM_LAI, KHUON_MAT }
 
 /**
  * Man camera an ninh & Dau ghi thong minh 24/24 (Imou / EZVIZ style):
@@ -286,6 +287,15 @@ fun CameraScreen(
 
                 CheDoManCam.XEM_LAI -> KhungCheDoXemLai(
                     tenCamHienThi = cam?.name ?: "Camera",
+                    luongThat = luongThat,
+                    cauHinhCamera = cauHinhCamera,
+                    cameraRecorder = cameraRecorder,
+                    lanTai = lanTai,
+                    onNotice = onNotice,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+
+                CheDoManCam.KHUON_MAT -> KhungQuanLyKhuonMat(
                     luongThat = luongThat,
                     cauHinhCamera = cauHinhCamera,
                     cameraRecorder = cameraRecorder,
@@ -1504,6 +1514,7 @@ private fun NutChuyenCheDoCam(
         NutTabNho("Trực tiếp", cheDo == CheDoManCam.TRUC_TIEP) { onChon(CheDoManCam.TRUC_TIEP) }
         NutTabNho("Sự kiện", cheDo == CheDoManCam.SU_KIEN) { onChon(CheDoManCam.SU_KIEN) }
         NutTabNho("Xem lại", cheDo == CheDoManCam.XEM_LAI) { onChon(CheDoManCam.XEM_LAI) }
+        NutTabNho("Khuôn mặt", cheDo == CheDoManCam.KHUON_MAT) { onChon(CheDoManCam.KHUON_MAT) }
     }
 }
 

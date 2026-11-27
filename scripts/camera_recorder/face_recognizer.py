@@ -298,6 +298,86 @@ class BoQuyetDinhChaoMat:
         self._chuoi_la_so_khung.pop(camera, None)
         self._chuoi_la_lan_cuoi.pop(camera, None)
 
+    def xoa_cooldown_nguoi(self, ten_nguoi: str) -> None:
+        """Xóa cooldown chào của 1 người (dùng ngay sau khi vừa thêm/cập nhật ảnh mẫu)."""
+        self._lan_chao_nguoi_quen.pop(ten_nguoi, None)
+
+
+def lam_sach_ten_nguoi(ten_nguoi: str) -> str:
+    """Làm sạch tên thư mục khuôn mặt, chặn path traversal và các tên hệ thống."""
+    sach = "".join(ch for ch in ten_nguoi.strip() if ch not in '/\\:*?"<>|').strip(" .")
+    if not sach or sach.lower() in ("unknown", "_snapshots"):
+        return ""
+    return sach
+
+
+def danh_sach_nguoi_quen(faces_dir: Path) -> list[dict[str, Any]]:
+    """Liệt kê tất cả thành viên đã lưu ảnh mẫu trong `faces/<Ten_Nguoi>/`."""
+    if not faces_dir.exists():
+        return []
+    ket_qua: list[dict[str, Any]] = []
+    for sub in sorted(faces_dir.iterdir(), key=lambda p: p.name.lower()):
+        if not sub.is_dir() or sub.name.lower() in ("unknown", "_snapshots"):
+            continue
+        anh_ds = sorted(
+            (p for p in sub.iterdir() if p.is_file() and p.suffix.lower() in ANH_DUOI_HOP_LE),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not anh_ds:
+            continue
+        mau_moi = anh_ds[0]
+        ket_qua.append(
+            {
+                "name": sub.name,
+                "count": len(anh_ds),
+                "sample_url": (
+                    f"/api/face/sample/{urllib.parse.quote(sub.name, safe='')}/"
+                    f"{urllib.parse.quote(mau_moi.name, safe='')}"
+                ),
+                "updated_ts": int(mau_moi.stat().st_mtime),
+            }
+        )
+    return ket_qua
+
+
+def luu_anh_mau_nguoi_quen(
+    faces_dir: Path,
+    ten_nguoi: str,
+    jpeg_bytes: bytes,
+    nguon: str = "tablet",
+    ts: int | None = None,
+) -> tuple[bool, str, Path | None, int]:
+    """Lưu 1 ảnh mẫu JPEG vào `faces/<Ten_Nguoi>/` và trả về tổng số ảnh hiện có."""
+    ten_sach = lam_sach_ten_nguoi(ten_nguoi)
+    if not ten_sach:
+        return False, "Tên người quen không hợp lệ.", None, 0
+    if not jpeg_bytes or len(jpeg_bytes) < 512:
+        return False, "Ảnh quá nhỏ hoặc rỗng.", None, 0
+    now_ts = int(ts if ts is not None else time.time())
+    stamp = datetime.fromtimestamp(now_ts, tz=GIO_VN).strftime("%Y%m%d_%H%M%S")
+    duoi_nguon = "".join(ch for ch in nguon.lower() if ch.isalnum() or ch == "_") or "mau"
+    dich_dir = faces_dir / ten_sach
+    dich_dir.mkdir(parents=True, exist_ok=True)
+    dich = dich_dir / f"{stamp}_{duoi_nguon}.jpg"
+    if dich.exists():
+        dich = dich_dir / f"{stamp}_{duoi_nguon}_{int(time.time() * 1000) % 1000}.jpg"
+    dich.write_bytes(jpeg_bytes)
+    tong_anh = sum(1 for p in dich_dir.iterdir() if p.is_file() and p.suffix.lower() in ANH_DUOI_HOP_LE)
+    return True, f"Đã lưu ảnh mẫu cho '{ten_sach}' ({tong_anh} ảnh).", dich, tong_anh
+
+
+def xoa_nguoi_quen(faces_dir: Path, ten_nguoi: str) -> tuple[bool, str]:
+    """Xóa toàn bộ thư mục ảnh mẫu của 1 người quen."""
+    ten_sach = lam_sach_ten_nguoi(ten_nguoi)
+    if not ten_sach:
+        return False, "Tên người quen không hợp lệ."
+    dich_dir = faces_dir / ten_sach
+    if not dich_dir.exists() or not dich_dir.is_dir():
+        return False, f"Không tìm thấy người quen '{ten_sach}'."
+    shutil.rmtree(dich_dir, ignore_errors=False)
+    return True, f"Đã xóa người quen '{ten_sach}' khỏi thư viện khuôn mặt."
+
 
 def don_anh_nguoi_la_qua_han(unknown_dir: Path, retention_days: int = 7, now_ts: float | None = None) -> int:
     """Tự xóa ảnh trong `faces/unknown/` cũ hơn `retention_days` (mặc định 7 ngày)."""
@@ -503,6 +583,28 @@ class BoNhanDienKhuonMatYuNetSFace:
             self._gallery_sig = ""
             if self._detector is not None:
                 self._nap_thu_vien_neu_doi(force=True)
+
+    def kiem_tra_co_khuon_mat(self, jpeg_bytes: bytes) -> tuple[bool, int]:
+        """Dùng YuNet kiểm tra ảnh đăng ký có khuôn mặt rõ ràng không trước khi lưu vào thư viện."""
+        if cv2 is None or np is None:
+            return True, 1
+        if not self.dam_bao_san_sang():
+            return True, 1
+        arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return False, 0
+        h, w = img.shape[:2]
+        if max(w, h) > 1280:
+            scale = 1280.0 / max(w, h)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            h, w = img.shape[:2]
+        with self._lock:
+            assert self._detector is not None
+            self._detector.setInputSize((w, h))
+            _, faces = self._detector.detect(img)
+            so_mat = 0 if faces is None else sum(1 for m in faces if float(m[14]) >= 0.62)
+            return so_mat > 0, so_mat
 
     def nhan_dien_tu_jpeg(self, jpeg_bytes: bytes) -> list[KetQuaMat]:
         if not self.dam_bao_san_sang() or cv2 is None or np is None:

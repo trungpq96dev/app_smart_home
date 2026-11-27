@@ -77,6 +77,10 @@ class MayChuPlayback:
         privacy_cb: Callable[[bool], dict[str, Any]] | None = None,
         home_mode_cb: Callable[[str], dict[str, Any]] | None = None,
         face_promote_cb: Callable[[str, str], dict[str, Any]] | None = None,
+        face_people_cb: Callable[[], list[dict[str, Any]]] | None = None,
+        face_enroll_camera_cb: Callable[[str, str], dict[str, Any]] | None = None,
+        face_enroll_upload_cb: Callable[[str, bytes], dict[str, Any]] | None = None,
+        face_delete_cb: Callable[[str], dict[str, Any]] | None = None,
     ) -> None:
         self.cfg = cfg
         self.db = db
@@ -89,6 +93,10 @@ class MayChuPlayback:
         self.privacy_cb = privacy_cb
         self.home_mode_cb = home_mode_cb
         self.face_promote_cb = face_promote_cb
+        self.face_people_cb = face_people_cb
+        self.face_enroll_camera_cb = face_enroll_camera_cb
+        self.face_enroll_upload_cb = face_enroll_upload_cb
+        self.face_delete_cb = face_delete_cb
         self._httpd: ThreadingHTTPServer | None = None
         self._luong: threading.Thread | None = None
 
@@ -283,6 +291,35 @@ class MayChuPlayback:
                     self.wfile.write(du_lieu)
                     return
 
+                if path == "/api/face/people":
+                    ds = parent.face_people_cb() if parent.face_people_cb else []
+                    self._tra_json(HTTPStatus.OK, {"people": ds})
+                    return
+
+                if path.startswith("/api/face/sample/"):
+                    phan = path[len("/api/face/sample/") :].split("/", 1)
+                    if len(phan) != 2:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Đường dẫn ảnh mẫu không hợp lệ"})
+                        return
+                    ten_nguoi = Path(urllib.parse.unquote(phan[0])).name
+                    ten_file = Path(urllib.parse.unquote(phan[1])).name
+                    if not ten_nguoi or not ten_file or ten_nguoi in (".", "..", "unknown", "_snapshots"):
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Tên ảnh mẫu không hợp lệ"})
+                        return
+                    anh_p = parent.cfg.face_dir / ten_nguoi / ten_file
+                    if not anh_p.exists() or not anh_p.is_file():
+                        self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không tìm thấy ảnh mẫu"})
+                        return
+                    du_lieu = anh_p.read_bytes()
+                    self.send_response(HTTPStatus.OK)
+                    self._them_cors()
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Cache-Control", "public, max-age=3600")
+                    self.send_header("Content-Length", str(len(du_lieu)))
+                    self.end_headers()
+                    self.wfile.write(du_lieu)
+                    return
+
                 if path == "/api/face/unknown":
                     u_dir = parent.cfg.face_dir / "unknown"
                     ds_anh = []
@@ -306,12 +343,12 @@ class MayChuPlayback:
 
                 self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không có đường dẫn này"})
 
-            def _doc_json_body(self) -> dict[str, Any]:
+            def _doc_json_body(self, max_bytes: int = 65536) -> dict[str, Any]:
                 try:
                     n = int(self.headers.get("Content-Length", "0"))
                 except ValueError:
                     n = 0
-                if n <= 0 or n > 65536:
+                if n <= 0 or n > max_bytes:
                     return {}
                 try:
                     raw = self.rfile.read(n).decode("utf-8")
@@ -328,7 +365,8 @@ class MayChuPlayback:
                     return
 
                 path = parsed.path.rstrip("/")
-                body = self._doc_json_body()
+                max_len = 5 * 1024 * 1024 if path == "/api/face/enroll/upload" else 65536
+                body = self._doc_json_body(max_bytes=max_len)
                 if path == "/api/snapshot":
                     cam = qs.get("cam", [""])[0].strip() or str(body.get("camera", "")).strip()
                     if not cam:
@@ -395,6 +433,42 @@ class MayChuPlayback:
                         self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu filename hoặc name"})
                         return
                     kq = parent.face_promote_cb(filename, name)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
+                    return
+
+                if path == "/api/face/enroll/camera":
+                    name = str(body.get("name", "")).strip() or qs.get("name", [""])[0].strip()
+                    cam = str(body.get("camera", "")).strip() or qs.get("cam", [""])[0].strip()
+                    if not name or not cam or not parent.face_enroll_camera_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu tên người quen hoặc tên camera"})
+                        return
+                    kq = parent.face_enroll_camera_cb(name, cam)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
+                    return
+
+                if path == "/api/face/enroll/upload":
+                    name = str(body.get("name", "")).strip() or qs.get("name", [""])[0].strip()
+                    img_b64 = str(body.get("image_base64", "")).strip()
+                    if not name or not img_b64 or not parent.face_enroll_upload_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu tên người quen hoặc dữ liệu ảnh"})
+                        return
+                    if "," in img_b64 and img_b64.startswith("data:"):
+                        img_b64 = img_b64.split(",", 1)[1]
+                    try:
+                        img_bytes = base64.b64decode(img_b64, validate=False)
+                    except Exception:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Dữ liệu ảnh Base64 không hợp lệ"})
+                        return
+                    kq = parent.face_enroll_upload_cb(name, img_bytes)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
+                    return
+
+                if path == "/api/face/delete":
+                    name = str(body.get("name", "")).strip() or qs.get("name", [""])[0].strip()
+                    if not name or not parent.face_delete_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu tên người quen cần xóa"})
+                        return
+                    kq = parent.face_delete_cb(name)
                     self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
                     return
 

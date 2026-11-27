@@ -24,8 +24,11 @@ from face_recognizer import (
     BoQuyetDinhChaoMat,
     KetQuaMat,
     chuyen_nguoi_la_thanh_nguoi_quen,
+    danh_sach_nguoi_quen,
     don_anh_nguoi_la_qua_han,
     la_gio_ngu,
+    luu_anh_mau_nguoi_quen,
+    xoa_nguoi_quen,
 )
 from mqtt_bridge import CauNoiMqttCamera, tao_payload_state
 from onvif_ptz import (
@@ -569,6 +572,88 @@ class TestOnvifPtzPrivacyVaMiniNvrApi(unittest.TestCase):
                 with urllib.request.urlopen(req_ptz) as r:
                     self.assertTrue(json.loads(r.read().decode("utf-8"))["ok"])
                 self.assertEqual(ptz_calls[0], ("move", "cua_chinh", "left"))
+            finally:
+                api.dung()
+                db.dong()
+
+    def test_face_enroll_upload_camera_people_va_delete_api(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = CauHinhRecorder(
+                data_dir=root / "data",
+                face_dir=root / "data" / "faces",
+                api_host="127.0.0.1",
+                api_port=0,
+                api_user="u",
+                api_pass="p",
+                drive_enabled=False,
+            )
+            db = CameraDb(cfg.data_dir / "index.db")
+            storage = QuanLyLuuTru(cfg, db)
+            fake_jpeg = b"\xff\xd8\xff\xe0" + b"X" * 1024 + b"\xff\xd9"
+
+            def enroll_upload(name: str, data: bytes) -> dict:
+                ok, msg, _, cnt = luu_anh_mau_nguoi_quen(cfg.face_dir, name, data, nguon="tablet")
+                return {"ok": ok, "message": msg, "count": cnt}
+
+            def enroll_cam(name: str, cam: str) -> dict:
+                ok, msg, _, cnt = luu_anh_mau_nguoi_quen(cfg.face_dir, name, fake_jpeg, nguon=f"cam_{cam}")
+                return {"ok": ok, "message": msg, "count": cnt}
+
+            api = MayChuPlayback(
+                cfg,
+                db,
+                storage,
+                face_people_cb=lambda: danh_sach_nguoi_quen(cfg.face_dir),
+                face_enroll_camera_cb=enroll_cam,
+                face_enroll_upload_cb=enroll_upload,
+                face_delete_cb=lambda n: dict(zip(("ok", "message"), xoa_nguoi_quen(cfg.face_dir, n))),
+            )
+            port = api.bat_dau()
+            try:
+                hdr = {
+                    "Authorization": "Basic " + base64.b64encode(b"u:p").decode("ascii"),
+                    "Content-Type": "application/json",
+                }
+                base = f"http://127.0.0.1:{port}"
+
+                # 1. Đăng ký bằng ảnh chụp từ Tablet (upload base64)
+                body_up = json.dumps(
+                    {"name": "Trung", "image_base64": base64.b64encode(fake_jpeg).decode("ascii")}
+                ).encode("utf-8")
+                with urllib.request.urlopen(
+                    urllib.request.Request(f"{base}/api/face/enroll/upload", data=body_up, headers=hdr, method="POST")
+                ) as r:
+                    res = json.loads(r.read().decode("utf-8"))
+                self.assertTrue(res["ok"])
+                self.assertEqual(res["count"], 1)
+
+                # 2. Đăng ký thêm bằng chụp từ Camera an ninh
+                body_cam = json.dumps({"name": "Trung", "camera": "cam1"}).encode("utf-8")
+                with urllib.request.urlopen(
+                    urllib.request.Request(f"{base}/api/face/enroll/camera", data=body_cam, headers=hdr, method="POST")
+                ) as r:
+                    res2 = json.loads(r.read().decode("utf-8"))
+                self.assertTrue(res2["ok"])
+                self.assertEqual(res2["count"], 2)
+
+                # 3. Lấy danh sách người quen & tải ảnh đại diện mẫu
+                with urllib.request.urlopen(urllib.request.Request(f"{base}/api/face/people", headers=hdr)) as r:
+                    people = json.loads(r.read().decode("utf-8"))["people"]
+                self.assertEqual(len(people), 1)
+                self.assertEqual(people[0]["name"], "Trung")
+                self.assertEqual(people[0]["count"], 2)
+                sample_url = people[0]["sample_url"]
+                with urllib.request.urlopen(urllib.request.Request(f"{base}{sample_url}", headers=hdr)) as r:
+                    self.assertEqual(r.read(), fake_jpeg)
+
+                # 4. Xóa người quen
+                body_del = json.dumps({"name": "Trung"}).encode("utf-8")
+                with urllib.request.urlopen(
+                    urllib.request.Request(f"{base}/api/face/delete", data=body_del, headers=hdr, method="POST")
+                ) as r:
+                    self.assertTrue(json.loads(r.read().decode("utf-8"))["ok"])
+                self.assertEqual(danh_sach_nguoi_quen(cfg.face_dir), [])
             finally:
                 api.dung()
                 db.dong()

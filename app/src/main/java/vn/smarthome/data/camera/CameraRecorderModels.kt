@@ -34,6 +34,21 @@ data class PtzPreset(
     }
 }
 
+data class NguoiQuenMat(
+    val name: String,
+    val count: Int,
+    val sampleUrl: String?,
+    val updatedTs: Long = 0L,
+)
+
+data class AnhNguoiLa(
+    val filename: String,
+    val url: String,
+    val ts: Long,
+) {
+    fun gioStr(): String = dinhDangGioVn(ts)
+}
+
 /**
  * Su kien nhan dien khuon mat tu topic `camera/face/greet` (`retain=False`).
  */

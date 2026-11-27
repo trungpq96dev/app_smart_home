@@ -132,5 +132,18 @@ class FaceGreetAndCameraPtzTest {
         assertTrue(ds[0].laNguoiLa)
         assertTrue(ds[0].hasClip)
         assertEquals("Người lạ", ds[0].nhanHienThi())
+
+        val people = CameraPlaybackApi.phanTichDanhSachNguoiQuen(
+            JSONObject("""{"people":[{"name":"Trung","count":4,"sample_url":"/api/face/sample/Trung/a.jpg","updated_ts":1764250000}]}""")
+        )
+        assertEquals(1, people.size)
+        assertEquals("Trung", people[0].name)
+        assertEquals(4, people[0].count)
+
+        val unknowns = CameraPlaybackApi.phanTichDanhSachNguoiLa(
+            JSONObject("""{"items":[{"filename":"20261127_230005_cam1_unknown.jpg","url":"/api/face/snapshot/20261127_230005_cam1_unknown.jpg","ts":1764250005}]}""")
+        )
+        assertEquals(1, unknowns.size)
+        assertEquals("20261127_230005_cam1_unknown.jpg", unknowns[0].filename)
     }
 }
