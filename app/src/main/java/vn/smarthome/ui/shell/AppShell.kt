@@ -216,6 +216,13 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(chaoMatHienTai) {
+        if (chaoMatHienTai != null && showManCho) {
+            lastTouchMs = System.currentTimeMillis()
+            showManCho = false
+        }
+    }
+
     // Tu dong vao man hinh cho ban dem sau N phut khong cham
     LaunchedEffect(cauHinhBaoMat.manChoBat, cauHinhBaoMat.phutChoTuDong, showManCho, suCoKhanCap) {
         if (!cauHinhBaoMat.manChoBat || showManCho || suCoKhanCap != null) return@LaunchedEffect

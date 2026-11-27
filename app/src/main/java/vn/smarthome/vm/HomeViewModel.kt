@@ -590,12 +590,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private fun xuLyChaoKhuonMat(ev: FaceGreetEvent) {
         val nowSec = System.currentTimeMillis() / 1000L
         val gioVn = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).hour
+        val cfgBaoMat = cauHinhBaoMat.value
         val qd = FaceGreetLogic.quyetDinh(
             ev = ev,
             nowEpochSec = nowSec,
             gioHienTai = gioVn,
-            gioBatDauNgu = 23,
-            gioKetThucNgu = 6,
+            gioBatDauNgu = cfgBaoMat.gioBatDauDem,
+            gioKetThucNgu = cfgBaoMat.gioKetThucDem,
+            docChaoGioNgu = cfgBaoMat.docChaoGioNgu,
         )
         if (!qd.hopLe) return
         if (qd.hienPopup) {

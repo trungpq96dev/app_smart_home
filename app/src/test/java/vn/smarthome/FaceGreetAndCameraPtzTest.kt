@@ -74,6 +74,32 @@ class FaceGreetAndCameraPtzTest {
         val qdAway = FaceGreetLogic.quyetDinh(evAway, nowEpochSec = 1764250003L, gioHienTai = 10)
         assertFalse(qdAway.hienPopup)
         assertNull(qdAway.docTts)
+
+        // Khi bat cong tac docChaoGioNgu: khung 22:00-06:00 van doc TTS va hien banner/popup (ke ca khi server gui mode=sleep, silent=true)
+        val evNguoiQuenDem = FaceGreetEvent.parse(
+            """{"name":"Trung","is_known":true,"greeting":"Chào mừng về nhà, Trung!","camera":"cam1","confidence":0.86,"snapshot_url":"/api/face/snapshot/a.jpg","ts":1764250000,"mode":"sleep","silent":true}"""
+        )!!
+        val qdBatDem = FaceGreetLogic.quyetDinh(
+            evNguoiQuenDem,
+            nowEpochSec = 1764250003L,
+            gioHienTai = 23,
+            gioBatDauNgu = 22,
+            gioKetThucNgu = 6,
+            docChaoGioNgu = true,
+        )
+        assertTrue(qdBatDem.hopLe)
+        assertTrue(qdBatDem.hienPopup)
+        assertEquals("Chào mừng về nhà, Trung!", qdBatDem.docTts)
+
+        // Che do Vang nha (away) van giu im lang ke ca khi bat docChaoGioNgu
+        val qdAwayStillSilent = FaceGreetLogic.quyetDinh(
+            evAway,
+            nowEpochSec = 1764250003L,
+            gioHienTai = 23,
+            docChaoGioNgu = true,
+        )
+        assertFalse(qdAwayStillSilent.hienPopup)
+        assertNull(qdAwayStillSilent.docTts)
     }
 
     @Test

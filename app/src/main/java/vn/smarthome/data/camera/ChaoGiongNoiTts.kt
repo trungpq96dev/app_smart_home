@@ -35,8 +35,9 @@ object FaceGreetLogic {
         ev: FaceGreetEvent,
         nowEpochSec: Long,
         gioHienTai: Int,
-        gioBatDauNgu: Int = 23,
+        gioBatDauNgu: Int = 22,
         gioKetThucNgu: Int = 6,
+        docChaoGioNgu: Boolean = false,
     ): QuyetDinhChao {
         if (!ev.conMoi(nowEpochSec, MAX_AGE_SEC)) {
             return QuyetDinhChao(
@@ -48,13 +49,15 @@ object FaceGreetLogic {
             )
         }
 
-        val dangNguHoacVang = ev.silent ||
-            ev.mode.equals("away", ignoreCase = true) ||
-            ev.mode.equals("sleep", ignoreCase = true) ||
-            ManChoLogic.laKhungGioDem(gioHienTai, gioBatDauNgu, gioKetThucNgu)
+        val dangVangNha = ev.mode.equals("away", ignoreCase = true)
+        val dangGioNgu = ev.mode.equals("sleep", ignoreCase = true) ||
+            ManChoLogic.laKhungGioDem(gioHienTai, gioBatDauNgu, gioKetThucNgu) ||
+            (ev.silent && !dangVangNha)
 
-        if (dangNguHoacVang) {
-            // Ban đêm / Vắng nhà: im lặng hoàn toàn trên tablet (Telegram/ntfy đã báo điện thoại)
+        val imLang = dangVangNha || (dangGioNgu && !docChaoGioNgu)
+
+        if (imLang) {
+            // Ban đêm (khi tắt công tắc đọc giờ ngủ) hoặc Vắng nhà: im lặng trên tablet
             return QuyetDinhChao(
                 hopLe = true,
                 hienPopup = false,

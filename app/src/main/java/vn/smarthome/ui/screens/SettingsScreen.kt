@@ -1030,6 +1030,7 @@ private fun FormManChoBanDem(
     var phutCho by remember(cauHinh.phutChoTuDong) { mutableStateOf(cauHinh.phutChoTuDong) }
     var giamSangDem by remember(cauHinh.giamSangDem) { mutableStateOf(cauHinh.giamSangDem) }
     var doSangDem by remember(cauHinh.doSangDem) { mutableStateOf(cauHinh.doSangDem) }
+    var docChaoGioNgu by remember(cauHinh.docChaoGioNgu) { mutableStateOf(cauHinh.docChaoGioNgu) }
     var danhThucPir by remember(cauHinh.danhThucPir) { mutableStateOf(cauHinh.danhThucPir) }
     var topicPir by remember(cauHinh.topicPir) { mutableStateOf(cauHinh.topicPir) }
     var topicGas by remember(cauHinh.topicGas) { mutableStateOf(cauHinh.topicGas) }
@@ -1076,6 +1077,14 @@ private fun FormManChoBanDem(
 
         Spacer(Modifier.height(6.dp))
         CongTac(
+            bat = docChaoGioNgu,
+            onDoi = { docChaoGioNgu = it },
+            ten = "Đọc chào khuôn mặt khung 22:00 – 06:00",
+            phu = if (docChaoGioNgu) "Đang BẬT — vẫn đọc TTS & hiện popup vào ban đêm" else "Đang TẮT — giữ im lặng ban đêm (chỉ gửi Telegram)",
+        )
+
+        Spacer(Modifier.height(6.dp))
+        CongTac(
             bat = danhThucPir,
             onDoi = { danhThucPir = it },
             ten = "Đánh thức khi có chuyển động PIR",
@@ -1102,6 +1111,7 @@ private fun FormManChoBanDem(
                             phutChoTuDong = phutCho,
                             giamSangDem = giamSangDem,
                             doSangDem = doSangDem,
+                            docChaoGioNgu = docChaoGioNgu,
                             danhThucPir = danhThucPir,
                             topicPir = topicPir.trim().ifBlank { "smarthome/sensor/pir" },
                             topicGas = topicGas.trim().ifBlank { "smarthome/sensor/gas" },

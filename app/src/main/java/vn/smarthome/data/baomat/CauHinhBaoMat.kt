@@ -51,6 +51,7 @@ data class CauHinhBaoMat(
     val gioBatDauDem: Int = 22,
     val gioKetThucDem: Int = 6,
     val doSangDem: Float = 0.07f,
+    val docChaoGioNgu: Boolean = false,
     val danhThucPir: Boolean = true,
     val topicPir: String = "smarthome/sensor/pir",
     val topicGas: String = "smarthome/sensor/gas",
@@ -200,6 +201,7 @@ class CauHinhBaoMatStore(private val ctx: Context) {
         val GIO_BD_DEM = intPreferencesKey("gio_bd_dem")
         val GIO_KT_DEM = intPreferencesKey("gio_kt_dem")
         val DO_SANG_DEM = floatPreferencesKey("do_sang_dem")
+        val DOC_CHAO_GIO_NGU = booleanPreferencesKey("doc_chao_gio_ngu")
         val DANH_THUC_PIR = booleanPreferencesKey("danh_thuc_pir")
         val TOPIC_PIR = stringPreferencesKey("topic_pir")
         val TOPIC_GAS = stringPreferencesKey("topic_gas")
@@ -218,6 +220,7 @@ class CauHinhBaoMatStore(private val ctx: Context) {
             gioBatDauDem = (p[Kho.GIO_BD_DEM] ?: def.gioBatDauDem).coerceIn(0, 23),
             gioKetThucDem = (p[Kho.GIO_KT_DEM] ?: def.gioKetThucDem).coerceIn(0, 23),
             doSangDem = (p[Kho.DO_SANG_DEM] ?: def.doSangDem).coerceIn(0.03f, 0.30f),
+            docChaoGioNgu = p[Kho.DOC_CHAO_GIO_NGU] ?: def.docChaoGioNgu,
             danhThucPir = p[Kho.DANH_THUC_PIR] ?: def.danhThucPir,
             topicPir = p[Kho.TOPIC_PIR]?.takeIf { it.isNotBlank() } ?: def.topicPir,
             topicGas = p[Kho.TOPIC_GAS]?.takeIf { it.isNotBlank() } ?: def.topicGas,
@@ -236,6 +239,7 @@ class CauHinhBaoMatStore(private val ctx: Context) {
             p[Kho.GIO_BD_DEM] = c.gioBatDauDem.coerceIn(0, 23)
             p[Kho.GIO_KT_DEM] = c.gioKetThucDem.coerceIn(0, 23)
             p[Kho.DO_SANG_DEM] = c.doSangDem.coerceIn(0.03f, 0.30f)
+            p[Kho.DOC_CHAO_GIO_NGU] = c.docChaoGioNgu
             p[Kho.DANH_THUC_PIR] = c.danhThucPir
             p[Kho.TOPIC_PIR] = c.topicPir.trim().ifBlank { "smarthome/sensor/pir" }
             p[Kho.TOPIC_GAS] = c.topicGas.trim().ifBlank { "smarthome/sensor/gas" }
