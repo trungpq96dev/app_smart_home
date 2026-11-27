@@ -13,14 +13,15 @@ RUN pip install --no-cache-dir \
         paho-mqtt==2.1.0 \
         numpy==2.1.3 \
         Pillow==11.0.0 \
-        onnxruntime==1.20.1
+        onnxruntime==1.20.1 \
+        opencv-python-headless==4.10.0.84
 
 RUN useradd --create-home --uid 10002 recorder \
     && mkdir -p /data /config \
     && chown -R recorder:recorder /data /config
 
 WORKDIR /app
-COPY cau_hinh.py db.py storage.py telegram_notifier.py recorder.py detector.py api.py mqtt_bridge.py camera_recorder.py /app/
+COPY cau_hinh.py db.py storage.py telegram_notifier.py recorder.py detector.py onvif_ptz.py face_recognizer.py api.py mqtt_bridge.py camera_recorder.py /app/
 
 USER recorder
 

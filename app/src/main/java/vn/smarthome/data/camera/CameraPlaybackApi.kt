@@ -78,8 +78,13 @@ object CameraPlaybackApi {
         c: CauHinhCamera,
         eventId: Int,
         congOverride: Int? = null,
+    ): Bitmap? = taiAnhUrl(c, c.urlThumbnail(eventId, congOverride))
+
+    suspend fun taiAnhUrl(
+        c: CauHinhCamera,
+        url: String,
     ): Bitmap? = withContext(Dispatchers.IO) {
-        val url = c.urlThumbnail(eventId, congOverride)
+        if (url.isBlank()) return@withContext null
         cacheThumb.get(url)?.let { return@withContext it }
 
         var conn: HttpURLConnection? = null
@@ -100,6 +105,95 @@ object CameraPlaybackApi {
         } finally {
             conn?.disconnect()
         }
+    }
+
+    suspend fun taiDanhSachSuKien(
+        c: CauHinhCamera,
+        tenLuong: String?,
+        kind: String = "all",
+        congOverride: Int? = null,
+    ): Result<List<SuKienCamera>> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) {
+            return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        }
+        goiJson(c.urlSuKien(tenLuong, kind, 60, congOverride), "GET", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc -> phanTichDanhSachSuKien(goc) }
+    }
+
+    suspend fun taiPtzPresets(
+        c: CauHinhCamera,
+        tenLuong: String,
+        congOverride: Int? = null,
+    ): Result<List<PtzPreset>> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.success(PtzPreset.MAC_DINH)
+        goiJson(c.urlPtzPresets(tenLuong, congOverride), "GET", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc ->
+                val arr = goc.optJSONArray("presets") ?: return@mapCatching PtzPreset.MAC_DINH
+                val kq = ArrayList<PtzPreset>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id", "").ifBlank { o.optString("token", "") }
+                    val label = o.optString("label", id)
+                    val token = o.optString("token", id)
+                    if (id.isNotBlank()) kq.add(PtzPreset(id, label, token))
+                }
+                if (kq.isEmpty()) PtzPreset.MAC_DINH else kq
+            }
+    }
+
+    suspend fun dieuKhienPtzMove(
+        c: CauHinhCamera,
+        tenLuong: String,
+        direction: String,
+        speed: Float = 0.5f,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlPtzMove(tenLuong, direction, speed, congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã xoay camera." else "Lỗi xoay camera.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    suspend fun goiPtzPreset(
+        c: CauHinhCamera,
+        tenLuong: String,
+        preset: String,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlPtzPreset(tenLuong, preset, congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc ->
+                val ok = goc.optBoolean("ok", false)
+                val msg = goc.optString("message", if (ok) "Đã xoay tới góc lưu sẵn." else "Lỗi gọi preset.")
+                if (!ok) throw IOException(msg)
+                msg
+            }
+    }
+
+    suspend fun datCheDoRiengTu(
+        c: CauHinhCamera,
+        bat: Boolean,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlPrivacy(bat, congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc ->
+                goc.optString("message", if (bat) "Đã bật Chế độ Riêng tư." else "Đã tắt Chế độ Riêng tư.")
+            }
+    }
+
+    suspend fun datCheDoNha(
+        c: CauHinhCamera,
+        mode: String,
+        congOverride: Int? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!c.dayDu()) return@withContext Result.failure(IllegalStateException("Chưa khai báo địa chỉ camera"))
+        goiJson(c.urlHomeMode(mode, congOverride), "POST", c.headerBasicAuth(), TIMEOUT_NHANH_MS)
+            .mapCatching { goc -> goc.optString("message", "Đã đổi chế độ camera.") }
     }
 
     fun dienGiaiLoi(e: Throwable?, cong: Int = 1985): String = when {
@@ -152,21 +246,7 @@ object CameraPlaybackApi {
         }
 
         val evArr = goc.optJSONArray("events") ?: JSONArray()
-        val dsEv = ArrayList<SuKienCamera>(evArr.length())
-        for (i in 0 until evArr.length()) {
-            val e = evArr.optJSONObject(i) ?: continue
-            dsEv.add(
-                SuKienCamera(
-                    id = e.optInt("id"),
-                    kind = e.optString("kind", "person"),
-                    startTs = e.optLong("start_ts"),
-                    endTs = e.optLong("end_ts"),
-                    maxConf = e.optDouble("max_conf", 0.0).toFloat(),
-                    personCount = e.optInt("person_count", 1),
-                    hasThumb = e.optBoolean("has_thumb", false),
-                )
-            )
-        }
+        val dsEv = phanTichMangSuKien(evArr, goc.optString("camera", ""))
 
         return DongThoiGianNgay(
             camera = goc.optString("camera", ""),
@@ -176,6 +256,32 @@ object CameraPlaybackApi {
             segments = dsSeg,
             events = dsEv,
         )
+    }
+
+    internal fun phanTichDanhSachSuKien(goc: JSONObject): List<SuKienCamera> =
+        phanTichMangSuKien(goc.optJSONArray("events") ?: JSONArray(), "")
+
+    private fun phanTichMangSuKien(evArr: JSONArray, camMacDinh: String): List<SuKienCamera> {
+        val dsEv = ArrayList<SuKienCamera>(evArr.length())
+        for (i in 0 until evArr.length()) {
+            val e = evArr.optJSONObject(i) ?: continue
+            val labelRaw = if (e.isNull("label")) null else e.optString("label", "").ifBlank { null }
+            dsEv.add(
+                SuKienCamera(
+                    id = e.optInt("id"),
+                    kind = e.optString("kind", "person"),
+                    startTs = e.optLong("start_ts"),
+                    endTs = e.optLong("end_ts"),
+                    maxConf = e.optDouble("max_conf", 0.0).toFloat(),
+                    personCount = e.optInt("person_count", 1),
+                    hasThumb = e.optBoolean("has_thumb", false),
+                    camera = e.optString("camera", camMacDinh),
+                    label = labelRaw,
+                    hasClip = e.optBoolean("has_clip", false),
+                )
+            )
+        }
+        return dsEv
     }
 
     private fun goiJson(

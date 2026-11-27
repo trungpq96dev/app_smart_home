@@ -13,6 +13,9 @@ keystore.properties
 *.jks
 *.keystore
 
+# Bang ghi chu cau hinh mang noi bo that (dung CAU-HINH.example.txt cho ban mau)
+CAU-HINH.txt
+
 # Anh chup tu tablet o muc nay co the lot cua so noi / noi dung ca nhan
 # dang hien tren may. Chi day len cac anh trong docs/device/release/ da soat.
 docs/device/*.png

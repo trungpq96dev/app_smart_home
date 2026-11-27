@@ -4,13 +4,17 @@ Dịch vụ `camera_recorder` chạy hoàn toàn tự động trên `serverubunt
 - **Ghi 24/24** không cần chạm vào máy tính bảng (cắt đoạn 10 phút, chống hỏng file khi mất điện, giãn cách thông minh tránh Tuya khóa 4 phút).
 - **Hot Cache 10 GB** trên ổ cứng `serverubuntu` để xem lại các ngày gần nhất tức thì (< 0,5 giây), đồng thời đẩy nền toàn bộ lên **Google Drive 5TB cá nhân (`@gmail.com`)** qua `rclone`.
 - **AI phát hiện người 2 tầng nhẹ trên CPU** (lọc chuyển động -> YOLOv8n ONNX) + bắn ảnh khoanh người ngay về **Telegram**.
-- **HTTP Playback API (`:1985`) & MQTT (`camera/#`)** phục vụ giao diện **Xem lại Timeline + nhảy tới mốc có người** kiểu Imou/EZVIZ trên tablet.
+- **Nhận diện khuôn mặt YuNet + SFace (OpenCV CPU)** siêu nhẹ cho i5-3210M: chào người nhà qua TTS tiếng Việt trên tablet (`camera/face/greet`, `retain=False`), lọc đa khung hình chống báo nhầm người lạ, ưu tiên người quen, lưu ảnh người lạ 7 ngày.
+- **Điều khiển xoay 360° (ONVIF PTZ), Preset góc quay, Mini-NVR clip 25s (`ffmpeg -c copy`, ~0% CPU) & Chế độ Riêng tư 1 chạm**.
+- **HTTP Playback API (`:1985`) & MQTT (`camera/#`)** phục vụ giao diện **Trực tiếp + PTZ + Sự kiện Mini-NVR + Xem lại Timeline 24/24** trên tablet.
 
 ---
 
-## Bước 1: Kiểm tra cổng RTSP trên `go2rtc.yaml`
+## Bước 1: Cấu hình RTSP nội bộ cho 3 Camera trong `go2rtc.yaml` (Mục 2.1)
 
-Trên `serverubuntu`, mở file `go2rtc.yaml` và đảm bảo có bật nhánh `rtsp:` (mặc định cổng `8554`):
+1. Gán **IP tĩnh** trên router cho cả 3 camera: Imou Ranger 2 3MP, Ezviz C6N, Ezviz H6C.
+2. Trên app **Ezviz**: bật **RTSP cục bộ** và **tắt Mã hóa hình ảnh (Image Encryption)**.
+3. Xem file mẫu [`go2rtc.example.yaml`](./go2rtc.example.yaml) — khai báo đủ luồng chính (HD) cho đầu ghi + nhận diện khuôn mặt và luồng phụ `_sd` (H.264) cho WebView trên Tab A7 Lite tránh đen hình, đồng thời đảm bảo bật nhánh `rtsp:` (cổng `8554`):
 
 ```yaml
 rtsp:
@@ -18,6 +22,19 @@ rtsp:
 ```
 
 Nếu vừa sửa `go2rtc.yaml`, khởi động lại container `go2rtc`.
+
+---
+
+## Bước 1b: Ảnh mẫu Nhận diện khuôn mặt & ONVIF PTZ (Mục 2.2 & 2.3)
+
+- Tạo thư mục ảnh mẫu trên `serverubuntu` (nên có cả ảnh ban ngày & ảnh hồng ngoại ban đêm cho mỗi thành viên):
+  ```bash
+  mkdir -p ~/camera_recorder/data/faces/Trung
+  mkdir -p ~/camera_recorder/data/faces/Me
+  mkdir -p ~/camera_recorder/data/faces/unknown
+  ```
+  Dịch vụ tự động nạp lại ảnh mẫu khi bạn thêm/sửa ảnh mà không cần khởi động lại container.
+- Để bật điều khiển xoay 360° PTZ, 4 Preset góc quay và Chế độ Riêng tư úp ống kính vào tường: sao chép [`onvif_cameras.example.json`](./onvif_cameras.example.json) sang `~/camera_recorder/data/onvif_cameras.json` và điền IP tĩnh + mã an toàn từng camera (`chmod 600`).
 
 ---
 

@@ -71,12 +71,24 @@ class MayChuPlayback:
         storage: QuanLyLuuTru,
         chup_anh_cb: Callable[[str], dict[str, Any]] | None = None,
         trang_thai_cb: Callable[[], dict[str, Any]] | None = None,
+        ptz_move_cb: Callable[[str, str, float], dict[str, Any]] | None = None,
+        ptz_preset_cb: Callable[[str, str], dict[str, Any]] | None = None,
+        ptz_presets_list_cb: Callable[[str], list[dict[str, str]]] | None = None,
+        privacy_cb: Callable[[bool], dict[str, Any]] | None = None,
+        home_mode_cb: Callable[[str], dict[str, Any]] | None = None,
+        face_promote_cb: Callable[[str, str], dict[str, Any]] | None = None,
     ) -> None:
         self.cfg = cfg
         self.db = db
         self.storage = storage
         self.chup_anh_cb = chup_anh_cb
         self.trang_thai_cb = trang_thai_cb
+        self.ptz_move_cb = ptz_move_cb
+        self.ptz_preset_cb = ptz_preset_cb
+        self.ptz_presets_list_cb = ptz_presets_list_cb
+        self.privacy_cb = privacy_cb
+        self.home_mode_cb = home_mode_cb
+        self.face_promote_cb = face_promote_cb
         self._httpd: ThreadingHTTPServer | None = None
         self._luong: threading.Thread | None = None
 
@@ -222,7 +234,91 @@ class MayChuPlayback:
                     self.wfile.write(du_lieu)
                     return
 
+                if path == "/api/events":
+                    cam = qs.get("cam", [""])[0].strip() or None
+                    kind = qs.get("kind", ["all"])[0].strip() or "all"
+                    try:
+                        limit = int(qs.get("limit", ["60"])[0])
+                    except ValueError:
+                        limit = 60
+                    ds = parent.db.danh_sach_su_kien_gan_nhat(camera=cam, kind=kind, gioi_han=limit)
+                    self._tra_json(HTTPStatus.OK, {"events": ds})
+                    return
+
+                if path.startswith("/api/clip/"):
+                    duoi = path[len("/api/clip/") :].removesuffix(".mp4")
+                    if not duoi.isdigit():
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Mã clip sự kiện không hợp lệ"})
+                        return
+                    ev = parent.db.lay_event(int(duoi))
+                    clip_str = ev.get("clip_local") if ev else None
+                    clip_p = Path(clip_str) if clip_str else None
+                    if not clip_p or not clip_p.exists():
+                        self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Sự kiện này chưa có clip Mini-NVR."})
+                        return
+                    self._phat_file_range(clip_p, "video/mp4")
+                    return
+
+                if path.startswith("/api/face/snapshot/"):
+                    ten_file = Path(urllib.parse.unquote(path[len("/api/face/snapshot/") :])).name
+                    if not ten_file or ten_file in (".", ".."):
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Tên ảnh không hợp lệ"})
+                        return
+                    anh_p = None
+                    for thu_muc in (parent.cfg.face_dir / "unknown", parent.cfg.face_dir / "_snapshots"):
+                        ung_vien = thu_muc / ten_file
+                        if ung_vien.exists() and ung_vien.is_file():
+                            anh_p = ung_vien
+                            break
+                    if anh_p is None:
+                        self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không tìm thấy ảnh khuôn mặt"})
+                        return
+                    du_lieu = anh_p.read_bytes()
+                    self.send_response(HTTPStatus.OK)
+                    self._them_cors()
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Cache-Control", "public, max-age=3600")
+                    self.send_header("Content-Length", str(len(du_lieu)))
+                    self.end_headers()
+                    self.wfile.write(du_lieu)
+                    return
+
+                if path == "/api/face/unknown":
+                    u_dir = parent.cfg.face_dir / "unknown"
+                    ds_anh = []
+                    if u_dir.exists():
+                        for p in sorted(u_dir.glob("*.jpg"), key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
+                            ds_anh.append(
+                                {
+                                    "filename": p.name,
+                                    "url": f"/api/face/snapshot/{urllib.parse.quote(p.name, safe='')}",
+                                    "ts": int(p.stat().st_mtime),
+                                }
+                            )
+                    self._tra_json(HTTPStatus.OK, {"items": ds_anh})
+                    return
+
+                if path == "/api/ptz/presets":
+                    cam = qs.get("cam", [""])[0].strip()
+                    ds_p = parent.ptz_presets_list_cb(cam) if parent.ptz_presets_list_cb else []
+                    self._tra_json(HTTPStatus.OK, {"camera": cam, "presets": ds_p})
+                    return
+
                 self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không có đường dẫn này"})
+
+            def _doc_json_body(self) -> dict[str, Any]:
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    n = 0
+                if n <= 0 or n > 65536:
+                    return {}
+                try:
+                    raw = self.rfile.read(n).decode("utf-8")
+                    obj = json.loads(raw)
+                    return obj if isinstance(obj, dict) else {}
+                except Exception:
+                    return {}
 
             def do_POST(self) -> None:
                 parsed = urllib.parse.urlparse(self.path)
@@ -232,8 +328,9 @@ class MayChuPlayback:
                     return
 
                 path = parsed.path.rstrip("/")
+                body = self._doc_json_body()
                 if path == "/api/snapshot":
-                    cam = qs.get("cam", [""])[0].strip()
+                    cam = qs.get("cam", [""])[0].strip() or str(body.get("camera", "")).strip()
                     if not cam:
                         self._tra_json(HTTPStatus.BAD_REQUEST, {"error": "Thiếu tham số cam"})
                         return
@@ -243,6 +340,62 @@ class MayChuPlayback:
                     kq = parent.chup_anh_cb(cam)
                     ma = HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_GATEWAY
                     self._tra_json(ma, kq)
+                    return
+
+                if path == "/api/ptz/move":
+                    cam = qs.get("cam", [""])[0].strip() or str(body.get("camera", "")).strip()
+                    direction = qs.get("dir", [""])[0].strip() or str(body.get("direction", "stop")).strip()
+                    try:
+                        speed = float(qs.get("speed", [str(body.get("speed", 0.5))])[0])
+                    except ValueError:
+                        speed = 0.5
+                    if not cam or not parent.ptz_move_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu cam hoặc chưa bật PTZ"})
+                        return
+                    kq = parent.ptz_move_cb(cam, direction, speed)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_GATEWAY, kq)
+                    return
+
+                if path == "/api/ptz/preset":
+                    cam = qs.get("cam", [""])[0].strip() or str(body.get("camera", "")).strip()
+                    preset = qs.get("preset", [""])[0].strip() or str(body.get("preset", "")).strip()
+                    if not cam or not preset or not parent.ptz_preset_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu cam/preset hoặc chưa bật PTZ"})
+                        return
+                    kq = parent.ptz_preset_cb(cam, preset)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_GATEWAY, kq)
+                    return
+
+                if path == "/api/privacy":
+                    raw_val = qs.get("enabled", [""])[0].strip().lower()
+                    if raw_val:
+                        bat = raw_val not in ("0", "false", "off", "no")
+                    else:
+                        bat = bool(body.get("enabled", True))
+                    if not parent.privacy_cb:
+                        self._tra_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "Chưa nối Chế độ Riêng tư"})
+                        return
+                    kq = parent.privacy_cb(bat)
+                    self._tra_json(HTTPStatus.OK, kq)
+                    return
+
+                if path == "/api/home_mode":
+                    mode = (qs.get("mode", [""])[0].strip() or str(body.get("mode", "home")).strip()).lower()
+                    if not parent.home_mode_cb:
+                        self._tra_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "Chưa nối chế độ Nhà"})
+                        return
+                    kq = parent.home_mode_cb(mode)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
+                    return
+
+                if path == "/api/face/promote":
+                    filename = str(body.get("filename", "")).strip() or qs.get("filename", [""])[0].strip()
+                    name = str(body.get("name", "")).strip() or qs.get("name", [""])[0].strip()
+                    if not filename or not name or not parent.face_promote_cb:
+                        self._tra_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Thiếu filename hoặc name"})
+                        return
+                    kq = parent.face_promote_cb(filename, name)
+                    self._tra_json(HTTPStatus.OK if kq.get("ok") else HTTPStatus.BAD_REQUEST, kq)
                     return
 
                 self._tra_json(HTTPStatus.NOT_FOUND, {"error": "Không có đường dẫn này"})

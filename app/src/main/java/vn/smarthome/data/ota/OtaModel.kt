@@ -12,7 +12,12 @@ data class ReleaseInfo(
     val downloadUrl: String,
     val sizeBytes: Long,
     val publishedAt: String,
-)
+    val sha256Url: String? = null,
+    val expectedSha256: String? = null,
+) {
+    val coMaSha256: Boolean
+        get() = !sha256Url.isNullOrBlank() || !expectedSha256.isNullOrBlank()
+}
 
 /**
  * Trang thai cua qua trinh OTA Update.
@@ -33,6 +38,9 @@ sealed interface OtaStatus {
         val bytesDownloaded: Long,
         val totalBytes: Long,
     ) : OtaStatus
+
+    /** Dang kiem tra toan ven SHA-256 truoc khi cho cai dat */
+    data object Verifying : OtaStatus
 
     /** Da tai xong file APK, san sang cai dat */
     data class ReadyToInstall(

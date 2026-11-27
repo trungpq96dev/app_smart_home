@@ -37,10 +37,19 @@ def tao_payload_state(
     trang_thai_cam: dict[str, dict[str, Any]],
     loi_drive: str | None,
     tra_loi_id: str | None = None,
+    privacy_mode: bool = False,
+    home_mode: str = "home",
+    ptz_cameras: list[str] | None = None,
+    indoor_cameras: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "recording_enabled": bool(cfg.recording_enabled),
         "detect_person_enabled": bool(cfg.detect_person_enabled),
+        "face_recognition_enabled": bool(cfg.face_recognition_enabled),
+        "privacy_mode": bool(privacy_mode),
+        "home_mode": str(home_mode),
+        "ptz_cameras": list(ptz_cameras or []),
+        "indoor_cameras": list(indoor_cameras or []),
         "telegram_enabled": bool(cfg.tg_enabled),
         "drive_enabled": bool(cfg.drive_enabled),
         "api_port": int(cfg.api_port),
@@ -80,10 +89,20 @@ class CauNoiMqttCamera:
         cfg: CauHinhRecorder,
         lay_state_cb: Callable[[str | None], dict[str, Any]],
         chup_anh_cb: Callable[[str], dict[str, Any]],
+        ptz_move_cb: Callable[[str, str, float], dict[str, Any]] | None = None,
+        ptz_preset_cb: Callable[[str, str], dict[str, Any]] | None = None,
+        ptz_set_preset_cb: Callable[[str, str, str], dict[str, Any]] | None = None,
+        privacy_cb: Callable[[bool], dict[str, Any]] | None = None,
+        home_mode_cb: Callable[[str], dict[str, Any]] | None = None,
     ) -> None:
         self.cfg = cfg
         self.lay_state_cb = lay_state_cb
         self.chup_anh_cb = chup_anh_cb
+        self.ptz_move_cb = ptz_move_cb
+        self.ptz_preset_cb = ptz_preset_cb
+        self.ptz_set_preset_cb = ptz_set_preset_cb
+        self.privacy_cb = privacy_cb
+        self.home_mode_cb = home_mode_cb
         self.goc = cfg.mqtt_topic_goc.rstrip("/")
         self._hang_lenh: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=64)
         self._cl = None
@@ -168,6 +187,10 @@ class CauNoiMqttCamera:
         )
         self.phat_state()
 
+    def phat_chao_khuon_mat(self, payload: dict[str, Any]) -> None:
+        """Publish `camera/face/greet` với `retain=False` để không chào lặp khi app mở lại."""
+        self.pub(self.t("face/greet"), payload, retain=False)
+
     def _on_connect(self, cl, userdata, flags, rc, properties=None) -> None:
         ma = getattr(rc, "value", rc)
         if ma != 0:
@@ -232,6 +255,52 @@ class CauNoiMqttCamera:
                 "event_id": kq.get("event_id"),
                 "message": str(kq.get("message", "")),
             }
+
+        if action == "SET_FACE_RECOGNITION":
+            bat = bool(o.get("value", True))
+            self.cfg.face_recognition_enabled = bat
+            self.phat_state(tra_loi_id=ma_id)
+            return {
+                "tra_loi_id": ma_id,
+                "action": action,
+                "ok": True,
+                "message": "Đã bật nhận diện khuôn mặt" if bat else "Đã tắt nhận diện khuôn mặt",
+            }
+
+        if action == "PTZ_MOVE":
+            if not cam or not self.ptz_move_cb:
+                return {"tra_loi_id": ma_id, "action": action, "ok": False, "message": "Thiếu camera hoặc chưa bật ONVIF PTZ"}
+            huong = str(o.get("direction", "stop")).strip()
+            toc_do = float(o.get("speed", 0.5))
+            kq = self.ptz_move_cb(cam, huong, toc_do)
+            return {"tra_loi_id": ma_id, "action": action, "ok": bool(kq.get("ok")), "message": str(kq.get("message", ""))}
+
+        if action == "PTZ_PRESET":
+            preset = str(o.get("preset", "")).strip()
+            if not cam or not preset or not self.ptz_preset_cb:
+                return {"tra_loi_id": ma_id, "action": action, "ok": False, "message": "Thiếu camera/preset hoặc chưa bật ONVIF PTZ"}
+            kq = self.ptz_preset_cb(cam, preset)
+            return {"tra_loi_id": ma_id, "action": action, "ok": bool(kq.get("ok")), "message": str(kq.get("message", ""))}
+
+        if action == "PTZ_SET_PRESET":
+            preset = str(o.get("preset", "")).strip()
+            label = str(o.get("label", preset)).strip()
+            if not cam or not preset or not self.ptz_set_preset_cb:
+                return {"tra_loi_id": ma_id, "action": action, "ok": False, "message": "Thiếu camera/preset hoặc chưa bật ONVIF PTZ"}
+            kq = self.ptz_set_preset_cb(cam, preset, label)
+            return {"tra_loi_id": ma_id, "action": action, "ok": bool(kq.get("ok")), "message": str(kq.get("message", ""))}
+
+        if action == "SET_PRIVACY_MODE":
+            bat = bool(o.get("value", True))
+            kq = self.privacy_cb(bat) if self.privacy_cb else {"ok": False, "message": "Chưa nối Chế độ Riêng tư"}
+            self.phat_state(tra_loi_id=ma_id)
+            return {"tra_loi_id": ma_id, "action": action, "ok": bool(kq.get("ok")), "message": str(kq.get("message", ""))}
+
+        if action == "SET_HOME_MODE":
+            mode = str(o.get("value", "home")).strip().lower()
+            kq = self.home_mode_cb(mode) if self.home_mode_cb else {"ok": False, "message": "Chưa nối chế độ Nhà/Vắng nhà"}
+            self.phat_state(tra_loi_id=ma_id)
+            return {"tra_loi_id": ma_id, "action": action, "ok": bool(kq.get("ok")), "message": str(kq.get("message", ""))}
 
         return {"tra_loi_id": ma_id, "action": action, "ok": False, "message": f"Lệnh không hỗ trợ: {action}"}
 

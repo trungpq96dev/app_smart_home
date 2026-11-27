@@ -17,9 +17,13 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import vn.smarthome.data.baomat.ManChoLogic
+import vn.smarthome.data.bomnuoc.CheDoBon
 import vn.smarthome.ui.components.BangCanhBaoKhanCap
 import vn.smarthome.ui.components.HopThoaiPinAdmin
+import vn.smarthome.ui.components.HopThoaiXacNhan
 import vn.smarthome.ui.components.ManHinhCho
+import vn.smarthome.ui.components.PopupChaoKhuonMat
+import vn.smarthome.ui.components.YeuCauXacNhan
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
@@ -79,6 +83,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val cauHinhCamera by vm.cauHinhCamera.collectAsStateWithLifecycle()
     val trangThaiCam by vm.trangThaiCam.collectAsStateWithLifecycle()
     val cameraRecorder by vm.cameraRecorder.collectAsStateWithLifecycle()
+    val danhSachLuongGo2rtc by vm.danhSachLuongGo2rtc.collectAsStateWithLifecycle()
+    val chaoMatHienTai by vm.chaoMatHienTai.collectAsStateWithLifecycle()
     val dangChupAnh by vm.dangChupAnh.collectAsStateWithLifecycle()
     val thoiTiet by vm.thoiTiet.collectAsStateWithLifecycle()
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
@@ -115,6 +121,7 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     var dismissedAlertKey by remember { mutableStateOf<String?>(null) }
     var pendingPinAction by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
+    var pendingConfirm by remember { mutableStateOf<YeuCauXacNhan?>(null) }
 
     val dest = Dest.from(current)
     val snackbar = remember { SnackbarHostState() }
@@ -256,6 +263,17 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
         }
     }
 
+    val yeuCauXacNhan: (String, String, String, Boolean, () -> Unit) -> Unit =
+        { tieuDe, noiDung, nhanXacNhan, nguyHiem, hanhDong ->
+            pendingConfirm = YeuCauXacNhan(
+                tieuDe = tieuDe,
+                noiDung = noiDung,
+                nhanXacNhan = nhanXacNhan,
+                nguyHiem = nguyHiem,
+                hanhDong = hanhDong,
+            )
+        }
+
     BackHandler(enabled = showManCho) {
         danhThucManHinh()
     }
@@ -341,8 +359,36 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         room = room,
                         onBack = { openRoom = null },
                         onHome = { openRoom = null; current = Dest.HOME.route },
-                        onToggleLight = { vm.toggleLight(room.id) },
-                        onToggleFan = { vm.toggleFan(room.id) },
+                        onToggleLight = {
+                            if (congTac.laThat(room.id, "den")) {
+                                val tb = congTac.tim(room.id, "den")
+                                val dangBat = congTac.trangThaiCua(room.id, "den")?.bat == true
+                                val dongTu = if (dangBat) "Tắt" else "Bật"
+                                yeuCauXacNhan(
+                                    "$dongTu ${tb?.ten ?: "đèn thật"}?",
+                                    "Thao tác này sẽ gửi lệnh MQTT điều khiển công tắc vật lý trong nhà.",
+                                    dongTu,
+                                    false,
+                                ) { vm.toggleLight(room.id) }
+                            } else {
+                                vm.toggleLight(room.id)
+                            }
+                        },
+                        onToggleFan = {
+                            if (congTac.laThat(room.id, "quat")) {
+                                val tb = congTac.tim(room.id, "quat")
+                                val dangBat = congTac.trangThaiCua(room.id, "quat")?.bat == true
+                                val dongTu = if (dangBat) "Tắt" else "Bật"
+                                yeuCauXacNhan(
+                                    "$dongTu ${tb?.ten ?: "quạt thật"}?",
+                                    "Thao tác này sẽ gửi lệnh MQTT điều khiển công tắc vật lý trong nhà.",
+                                    dongTu,
+                                    false,
+                                ) { vm.toggleFan(room.id) }
+                            } else {
+                                vm.toggleFan(room.id)
+                            }
+                        },
                         onAcTemp = { d -> vm.changeAcTemp(room.id, d) },
                         onMode = { m -> vm.setMode(room.id, m) },
                         onToggleSchedule = { vm.toggleSchedule(room.id) },
@@ -355,7 +401,16 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onToggleCurtain = { vm.toggleCurtain(room.id) },
                         onCurtainOpen = { p -> vm.setCurtain(room.id, p) },
                         onHoodSpeed = { s -> vm.setHoodSpeed(room.id, s) },
-                        onToggleStove = { vm.toggleStove(room.id) },
+                        onToggleStove = {
+                            val dangBat = room.stoveOn
+                            yeuCauXacNhan(
+                                if (dangBat) "Tắt bếp từ?" else "Bật bếp từ?",
+                                if (dangBat) "Xác nhận ngắt nguồn bếp từ nhà bếp."
+                                else "Cảnh báo an toàn nhiệt: xác nhận bật bếp từ nhà bếp.",
+                                if (dangBat) "Tắt bếp" else "Bật bếp",
+                                !dangBat,
+                            ) { vm.toggleStove(room.id) }
+                        },
                         onStoveLevel = { d -> vm.changeStoveLevel(room.id, d) },
                         onGasAlert = { a -> vm.setGasAlert(room.id, a) },
                         onHallView = { v -> vm.setHallView(room.id, v) },
@@ -364,7 +419,16 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onToggleHallSurroundingLight = { vm.toggleHallSurroundingLight(room.id) },
                         onHallSurroundingBrightness = { b -> vm.setHallSurroundingBrightness(room.id, b) },
                         onToggleHallAllLights = { vm.toggleHallAllLights(room.id) },
-                        onToggleHallLock = { vm.toggleHallLock(room.id) },
+                        onToggleHallLock = {
+                            val dangKhoa = room.hallDoorLocked
+                            yeuCauXacNhan(
+                                if (dangKhoa) "Mở khóa cửa chính?" else "Khóa cửa chính?",
+                                if (dangKhoa) "Cảnh báo an ninh: xác nhận mở khóa cửa chính hành lang."
+                                else "Xác nhận khóa cửa chính hành lang.",
+                                if (dangKhoa) "Mở khóa" else "Khóa cửa",
+                                dangKhoa,
+                            ) { vm.toggleHallLock(room.id) }
+                        },
                         onToggleHallCamera = { vm.toggleHallCamera(room.id) },
                         onToggleHallIr = { vm.toggleHallIr(room.id) },
                         onToggleHallMotionAuto = { vm.toggleHallMotionAuto(room.id) },
@@ -395,9 +459,25 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     dest == Dest.SENSORS -> CamBienScreen(
                         cuktech = cuktech,
                         dangCho = choCuktech,
-                        onDatCong = { cong, bat -> vm.datCongSac(cong, bat, toast) },
+                        onDatCong = { cong, bat ->
+                            val dongTu = if (bat) "Bật" else "Tắt"
+                            yeuCauXacNhan(
+                                "$dongTu nguồn cổng sạc ${cong.nhan}?",
+                                if (bat) "Cấp điện trở lại cho cổng ${cong.nhan} trên củ sạc CUKTECH 10 Ultra."
+                                else "Ngắt điện cổng ${cong.nhan} ngay lập tức — thiết bị đang cắm sẽ ngừng sạc.",
+                                "$dongTu cổng",
+                                !bat,
+                            ) { vm.datCongSac(cong, bat, toast) }
+                        },
                         dangNoiLai = dangNoiLaiCuktech,
-                        onNoiLai = { vm.noiLaiCuktech(toast) },
+                        onNoiLai = {
+                            yeuCauXacNhan(
+                                "Nối lại Bluetooth củ sạc?",
+                                "Máy chủ sẽ ngắt và bắt tay lại Bluetooth với CUKTECH 10 Ultra (mất khoảng 40–90 giây).",
+                                "Nối lại",
+                                false,
+                            ) { vm.noiLaiCuktech(toast) }
+                        },
                         choCaiDat = choCaiDatCuktech,
                         onDatCaiDat = { piid, giaTri -> vm.datCaiDatCuktech(piid, giaTri, toast) },
                         onBack = { current = Dest.HOME.route },
@@ -430,7 +510,54 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onOpenLich = { current = Dest.UTILITIES.route },
                         congTac = congTac,
                         choCongTac = choCongTac,
-                        onRoomQuickAction = vm::thaoTacNhanhPhong,
+                        onRoomQuickAction = { roomId, actionId ->
+                            val r = state.rooms.firstOrNull { it.id == roomId }
+                            when {
+                                actionId == "light" && congTac.laThat(roomId, "den") -> {
+                                    val tb = congTac.tim(roomId, "den")
+                                    val dangBat = congTac.trangThaiCua(roomId, "den")?.bat == true
+                                    val dongTu = if (dangBat) "Tắt" else "Bật"
+                                    yeuCauXacNhan(
+                                        "$dongTu ${tb?.ten ?: "đèn thật"}?",
+                                        "Xác nhận gửi lệnh MQTT điều khiển công tắc vật lý.",
+                                        dongTu,
+                                        false,
+                                    ) { vm.thaoTacNhanhPhong(roomId, actionId) }
+                                }
+                                (actionId == "fan" || actionId == "hood") && congTac.laThat(roomId, "quat") -> {
+                                    val tb = congTac.tim(roomId, "quat")
+                                    val dangBat = congTac.trangThaiCua(roomId, "quat")?.bat == true
+                                    val dongTu = if (dangBat) "Tắt" else "Bật"
+                                    yeuCauXacNhan(
+                                        "$dongTu ${tb?.ten ?: "quạt thật"}?",
+                                        "Xác nhận gửi lệnh MQTT điều khiển công tắc vật lý.",
+                                        dongTu,
+                                        false,
+                                    ) { vm.thaoTacNhanhPhong(roomId, actionId) }
+                                }
+                                actionId == "hall_lock" && r != null -> {
+                                    val dangKhoa = r.hallDoorLocked
+                                    yeuCauXacNhan(
+                                        if (dangKhoa) "Mở khóa cửa chính?" else "Khóa cửa chính?",
+                                        if (dangKhoa) "Cảnh báo an ninh: xác nhận mở khóa cửa chính hành lang."
+                                        else "Xác nhận khóa cửa chính hành lang.",
+                                        if (dangKhoa) "Mở khóa" else "Khóa cửa",
+                                        dangKhoa,
+                                    ) { vm.thaoTacNhanhPhong(roomId, actionId) }
+                                }
+                                actionId == "stove" && r != null -> {
+                                    val dangBat = r.stoveOn
+                                    yeuCauXacNhan(
+                                        if (dangBat) "Tắt bếp từ?" else "Bật bếp từ?",
+                                        if (dangBat) "Xác nhận ngắt nguồn bếp từ nhà bếp."
+                                        else "Cảnh báo an toàn nhiệt: xác nhận bật bếp từ nhà bếp.",
+                                        if (dangBat) "Tắt bếp" else "Bật bếp",
+                                        !dangBat,
+                                    ) { vm.thaoTacNhanhPhong(roomId, actionId) }
+                                }
+                                else -> vm.thaoTacNhanhPhong(roomId, actionId)
+                            }
+                        },
                     )
 
                     dest == Dest.SETTINGS -> SettingsScreen(
@@ -448,7 +575,11 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onLuuThoiTiet = vm::luuCauHinhThoiTiet,
                         onLuuGiongNoi = { c -> yeuCauPinAdmin("Lưu khóa API Trợ lý giọng nói") { vm.luuCauHinhGiongNoi(c) } },
                         onKiemTraCapNhat = { vm.kiemTraCapNhat(thuCong = true) },
-                        onBatDauCapNhat = vm::batDauCapNhat,
+                        onBatDauCapNhat = { r ->
+                            yeuCauPinAdmin("Tải và cài đặt bản cập nhật OTA ${r.tagName}") {
+                                vm.batDauCapNhat(r)
+                            }
+                        },
                         onBack = { current = Dest.HOME.route },
                         cauHinhBomNuoc = cauHinhBomNuoc,
                         ketNoiBom = ketNoiBom,
@@ -457,11 +588,16 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onLuuBomNuoc = { c -> yeuCauPinAdmin("Lưu cấu hình bo bơm nước") { vm.luuCauHinhBomNuoc(c) } },
                         cauHinhBaoMat = cauHinhBaoMat,
                         adminUnlocked = adminUnlocked,
-                        onLuuBaoMat = vm::luuCauHinhBaoMat,
+                        onLuuBaoMat = { c ->
+                            yeuCauPinAdmin("Lưu cài đặt màn hình chờ & cảm biến an ninh") {
+                                vm.luuCauHinhBaoMat(c)
+                            }
+                        },
                         onDoiPinAdmin = vm::doiPinAdmin,
                         onDatBatTatPin = vm::datBatTatKhoaPin,
                         onKhoaAdminNgay = vm::lockAdminNow,
                         onXemThuManCho = { showManCho = true },
+                        onYeuCauPinAdmin = yeuCauPinAdmin,
                     )
 
                     dest == Dest.UTILITIES -> TienIchScreen(
@@ -477,9 +613,14 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         onNotice = toast,
                         onDoLai = vm::doLaiCamera,
                         cameraRecorder = cameraRecorder,
+                        danhSachLuongGo2rtc = danhSachLuongGo2rtc,
                         dangChupAnh = dangChupAnh,
                         onChupAnh = vm::chupAnhCamera,
                         onDatCanhNguoi = vm::datCanhNguoiCamera,
+                        onPtzMove = vm::dieuKhienPtzCamera,
+                        onPtzPreset = vm::goiPresetCamera,
+                        onDatRiengTu = vm::datCheDoRiengTuCamera,
+                        onDatCheDoNha = vm::datCheDoNhaCamera,
                     )
 
                     dest == Dest.DEVICES -> DevicesScreen(
@@ -499,10 +640,37 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                         choBomNuoc = choBomNuoc,
                         cauHinhBom = cauHinhBomNuoc,
                         nhatKyBom = nhatKyBomNuoc,
-                        onDatCheDoBon = vm::datCheDoBon,
-                        onDatBomTangAp = vm::datBomTangAp,
+                        onDatCheDoBon = { mode ->
+                            val cheDo = CheDoBon.tuChuoi(mode)
+                            yeuCauXacNhan(
+                                "Chuyển bơm lên bồn sang ${cheDo.nhan}?",
+                                when (mode) {
+                                    "on" -> "Bơm chính sẽ chạy liên tục bằng tay (phao đầy vẫn tự cắt chống tràn). Xác nhận gửi lệnh xuống bo AquaControl?"
+                                    "off" -> "Ngừng bơm lên bồn cho tới khi đổi lại chế độ. Xác nhận gửi lệnh?"
+                                    else -> "Chuyển bơm lên bồn về chế độ tự động theo phao bồn."
+                                },
+                                "Gửi lệnh",
+                                mode == "on",
+                            ) { vm.datCheDoBon(mode) }
+                        },
+                        onDatBomTangAp = { bat ->
+                            yeuCauXacNhan(
+                                if (bat) "Bật bơm tăng áp?" else "Tắt bơm tăng áp?",
+                                if (bat) "Bơm tăng áp sẽ chạy ngay (tự ngắt sau 15 phút). Xác nhận bật?"
+                                else "Ngừng hoạt động bơm tăng áp ngay lập tức.",
+                                if (bat) "Bật bơm áp" else "Tắt bơm áp",
+                                bat,
+                            ) { vm.datBomTangAp(bat) }
+                        },
                         onDatDenPhuBom = vm::datDenPhuBom,
-                        onXoaLoiBom = vm::xoaLoiBom,
+                        onXoaLoiBom = {
+                            yeuCauXacNhan(
+                                "Xoá lỗi và mở khoá bảo vệ bơm?",
+                                "Cảnh báo: chỉ mở khoá sau khi đã kiểm tra nguồn nước, lưu lượng và nhiệt độ bơm an toàn.",
+                                "Xoá lỗi & Mở khoá",
+                                true,
+                            ) { vm.xoaLoiBom() }
+                        },
                         onTatCoiBom = vm::tatCoiBom,
                         onThuCoiBom = vm::thuCoiBom,
                         onLuuBaoVeBom = vm::luuBaoVeBom,
@@ -542,12 +710,30 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                 .padding(start = Dim.SidebarWidth + Dim.MainPadding, bottom = Dim.MainPadding),
         )
 
-        // Pop-up thong bao co ban cap nhat moi tren Git
+        // Pop-up thong bao co ban cap nhat moi tren Git (yeu cau PIN truoc khi cai dat)
         if (showUpdateDialog) {
             OtaUpdateDialog(
                 status = otaStatus,
                 onDismiss = vm::dongHopThoaiCapNhat,
-                onStartUpdate = vm::batDauCapNhat,
+                onStartUpdate = { r ->
+                    yeuCauPinAdmin("Tải và cài đặt bản cập nhật OTA ${r.tagName}") {
+                        vm.batDauCapNhat(r)
+                    }
+                },
+            )
+        }
+
+        // Hop thoai xac nhan thao tac nhay cam (bom AquaControl, cong tac that, khoa cua...)
+        val confirmReq = pendingConfirm
+        if (confirmReq != null) {
+            HopThoaiXacNhan(
+                yeuCau = confirmReq,
+                onXacNhan = {
+                    val action = confirmReq.hanhDong
+                    pendingConfirm = null
+                    action()
+                },
+                onHuy = { pendingConfirm = null },
             )
         }
 
@@ -572,6 +758,27 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     pendingPinAction = null
                     pinError = null
                 },
+            )
+        }
+
+        // Banner 5s chao nguoi quen / Popup 10s anh chup khach la (`camera/face/greet`)
+        val chaoMat = chaoMatHienTai
+        if (chaoMat != null && !showManCho) {
+            PopupChaoKhuonMat(
+                ev = chaoMat.first,
+                cauHinhCamera = cauHinhCamera,
+                congApi = cameraRecorder.apiPort,
+                onMoCamera = {
+                    vm.anPopupChaoMat()
+                    openRoom = null
+                    showChiTietDien = false
+                    showWifi = false
+                    current = Dest.CAMERA.route
+                },
+                onDong = vm::anPopupChaoMat,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = Dim.MainPadding, end = Dim.MainPadding),
             )
         }
 

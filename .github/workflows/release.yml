@@ -35,42 +35,38 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      # Neu da cau hinh Keystore trong GitHub Secrets thi giai ma de ky ban release chuan.
-      #
-      # KHONG dat lai `if: env.HAS_KEYSTORE == 'true'` o day. Bien env khai bao
-      # ngay trong buoc nay CHUA ton tai luc GitHub tinh dieu kien `if` cua chinh
-      # no, nen dieu kien luon sai va buoc nay luon bi bo qua - ke ca khi secret
-      # da co. Hau qua khong lo ra ngay: build van xanh, release van co file APK,
-      # nhung APK do ky bang khoa DEBUG. Cai de len may dang chay ban ky bang
-      # khoa release thi Android tu choi, bao "chua cai dat duoc goi do xung dot".
-      # (Dung dung `if: secrets.* != ''` de thay the: buoc `if` khong doc duoc
-      # context `secrets`.) Kiem bang shell trong `run` thi khong vuong cho nao.
-      - name: Restore Keystore from Secrets (neu co)
+      # Bat buoc ky bang keystore release co dinh luu trong GitHub Secrets.
+      # Khong bao gio am tham roi ve khoa debug tren ban phat hanh OTA - vi
+      # APK ky debug se khong cai de duoc len tablet dang chay ban release.
+      - name: Restore Keystore from Secrets (bat buoc)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 -d > smarthome-release.jks
-            printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
-            echo "Da nap keystore that -> APK se duoc ky bang khoa release."
-          else
-            echo "::warning::Thieu secret KEYSTORE_BASE64 - APK se ky bang khoa DEBUG."
-            echo "::warning::Ban nay KHONG cai de len duoc may dang chay ban ky bang khoa release."
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PROPERTIES" ]; then
+            echo "::error::Thiếu GitHub Secrets KEYSTORE_BASE64 hoặc KEYSTORE_PROPERTIES."
+            echo "::error::Vào Settings > Secrets and variables > Actions để cấu hình keystore cố định trước khi phát hành OTA."
+            exit 1
           fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > smarthome-release.jks
+          printf '%s\n' "$KEYSTORE_PROPERTIES" > keystore.properties
+          echo "Đã nạp keystore cố định -> APK sẽ được ký bằng khóa release."
 
       - name: Build Release APK
         run: ./gradlew assembleRelease
 
-      # In ra khoa da ky, de lan sau nhin log la biet ngay thay vi phai cai thu
-      # len may tinh bang moi phat hien sai khoa.
-      - name: In chu ky cua APK
+      # Xac minh chu ky APK nghiem ngat bang apksigner.
+      - name: Verify APK Signature
         run: |
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::Không tìm thấy file APK release sau khi build."
+            exit 1
+          fi
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
-          "$APKSIGNER" verify --print-certs "$APK" | grep -iE "certificate DN|SHA-256 digest" || true
+          "$APKSIGNER" verify --print-certs "$APK"
 
-      - name: Prepare APK Asset
+      - name: Prepare APK & SHA-256 Checksum Asset
         id: prepare_asset
         run: |
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
@@ -82,16 +78,27 @@ jobs:
             TAG_NAME="v0.3.0"
           fi
           RELEASE_APK="SmartHome-${TAG_NAME}.apk"
+          CHECKSUM_FILE="${RELEASE_APK}.sha256"
           cp "$APK_PATH" "$RELEASE_APK"
+          sha256sum "$RELEASE_APK" > "$CHECKSUM_FILE"
+          sha256sum -c "$CHECKSUM_FILE"
+          APK_SHA256=$(awk '{print $1}' "$CHECKSUM_FILE")
+          echo "SHA-256 (${RELEASE_APK}): ${APK_SHA256}"
           echo "apk_path=$RELEASE_APK" >> $GITHUB_OUTPUT
+          echo "sha256_path=$CHECKSUM_FILE" >> $GITHUB_OUTPUT
+          echo "apk_sha256=$APK_SHA256" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release & Upload APK
+      - name: Create GitHub Release & Upload APK + SHA-256
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.prepare_asset.outputs.apk_path }}
+          files: |
+            ${{ steps.prepare_asset.outputs.apk_path }}
+            ${{ steps.prepare_asset.outputs.sha256_path }}
           tag_name: ${{ steps.prepare_asset.outputs.tag_name }}
           name: Bản cập nhật ${{ steps.prepare_asset.outputs.tag_name }}
+          body: |
+            SHA-256: `${{ steps.prepare_asset.outputs.apk_sha256 }}`
           generate_release_notes: true
           draft: false
           prerelease: false

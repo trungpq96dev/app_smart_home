@@ -20,8 +20,23 @@ from api import MayChuPlayback, phan_tich_http_range
 from cau_hinh import CauHinhRecorder, khoang_ngay_vn, phan_tich_roi
 from db import CameraDb
 from detector import BoGomSuKien, BoLocChuyenDong, HopNguoi, loc_nms, loc_theo_roi
+from face_recognizer import (
+    BoQuyetDinhChaoMat,
+    KetQuaMat,
+    chuyen_nguoi_la_thanh_nguoi_quen,
+    don_anh_nguoi_la_qua_han,
+    la_gio_ngu,
+)
 from mqtt_bridge import CauNoiMqttCamera, tao_payload_state
-from recorder import BackoffTuya, phan_tich_moc_tu_ten_file, thu_hoach_staging_cam
+from onvif_ptz import (
+    CauHinhOnvifCam,
+    QuanLyPtzOnvif,
+    doc_danh_sach_onvif,
+    huong_sang_vector,
+    phan_tich_presets_xml,
+    tao_wsse_header,
+)
+from recorder import BackoffTuya, MiniNvrClipper, phan_tich_moc_tu_ten_file, thu_hoach_staging_cam
 from storage import BYTE_MOI_GB, QuanLyLuuTru
 from telegram_notifier import TelegramNotifier, tao_multipart_photo
 
@@ -344,6 +359,219 @@ class TestHttpPlaybackApiVaMqtt(unittest.TestCase):
         kq_snap = mqtt_br.xu_ly_mot_lenh({"action": "SNAPSHOT", "camera": "cua_chinh", "id": "lenh_02"})
         self.assertTrue(kq_snap["ok"])
         self.assertEqual(kq_snap["event_id"], 88)
+
+
+class TestNhanDienKhuonMatVaChongBaoNham(unittest.TestCase):
+    def test_chao_nguoi_quen_cooldown_va_uu_tien_nguoi_quen_5_phut(self) -> None:
+        bo = BoQuyetDinhChaoMat(
+            known_cooldown_sec=1200.0,
+            unknown_confirm_sec=2.5,
+            unknown_confirm_frames=2,
+            known_grace_sec=300.0,
+        )
+        # 10:00 giờ VN (ban ngày)
+        dau_ngay, _ = khoang_ngay_vn("2026-11-27")
+        t = float(dau_ngay + 10 * 3600)
+
+        # Khung hình có CẢ người nhà ("Trung") và người lạ -> chỉ chào Trung, KHÔNG báo người lạ
+        kq1 = bo.xu_ly_khung(
+            "cua_chinh",
+            [KetQuaMat("Trung", True, 0.72), KetQuaMat("unknown", False, 0.85)],
+            now_ts=t,
+            home_mode="home",
+        )
+        self.assertEqual(len(kq1), 1)
+        self.assertTrue(kq1[0]["is_known"])
+        self.assertEqual(kq1[0]["name"], "Trung")
+        self.assertFalse(kq1[0]["silent"])
+
+        # 5 phút sau vẫn trong cooldown 20 phút của Trung -> không chào lặp lại
+        kq2 = bo.xu_ly_khung("cua_chinh", [KetQuaMat("Trung", True, 0.75)], now_ts=t + 200.0, home_mode="home")
+        self.assertEqual(kq2, [])
+
+        # Trong 5 phút ưu tiên người quen (grace=300s), chỉ có người lạ đứng đó -> vẫn bỏ qua
+        for dt in (210.0, 212.0, 214.0):
+            self.assertEqual(
+                bo.xu_ly_khung("cua_chinh", [KetQuaMat("unknown", False, 0.9)], now_ts=t + dt, home_mode="home"),
+                [],
+            )
+
+        # Sau 5 phút kể từ lần cuối thấy người quen (t + 200 + 305 = t + 505):
+        # Xác nhận đa khung hình 2.5s cho người lạ: khung đầu chưa báo, khung sau >= 2.5s mới báo!
+        self.assertEqual(
+            bo.xu_ly_khung("cua_chinh", [KetQuaMat("unknown", False, 0.88)], now_ts=t + 505.0, home_mode="home"),
+            [],
+        )
+        kq_la = bo.xu_ly_khung("cua_chinh", [KetQuaMat("unknown", False, 0.91)], now_ts=t + 508.0, home_mode="home")
+        self.assertEqual(len(kq_la), 1)
+        self.assertFalse(kq_la[0]["is_known"])
+        self.assertEqual(kq_la[0]["greeting"], "Có khách ở cửa")
+        self.assertFalse(kq_la[0]["silent"])
+        self.assertFalse(kq_la[0]["send_alert"])
+
+    def test_nguoi_la_vang_nha_va_gio_ngu_im_lang_tablet_gui_telegram(self) -> None:
+        bo = BoQuyetDinhChaoMat(unknown_confirm_sec=2.0, unknown_confirm_frames=2)
+        dau_ngay, _ = khoang_ngay_vn("2026-11-27")
+        # 23:30 giờ VN (giờ ngủ)
+        t_dem = float(dau_ngay + 23 * 3600 + 1800)
+        self.assertTrue(la_gio_ngu(t_dem, 23, 6))
+
+        bo.xu_ly_khung("cua_chinh", [KetQuaMat("unknown", False, 0.8)], now_ts=t_dem, home_mode="home")
+        kq = bo.xu_ly_khung("cua_chinh", [KetQuaMat("unknown", False, 0.85)], now_ts=t_dem + 2.5, home_mode="home")
+        self.assertEqual(len(kq), 1)
+        self.assertEqual(kq[0]["mode"], "sleep")
+        self.assertTrue(kq[0]["silent"])
+        self.assertTrue(kq[0]["send_alert"])
+
+    def test_don_anh_nguoi_la_7_ngay_va_chuyen_thanh_nguoi_quen(self) -> None:
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            faces = Path(tmp) / "faces"
+            unk = faces / "unknown"
+            unk.mkdir(parents=True)
+            cu = unk / "old.jpg"
+            moi = unk / "new.jpg"
+            cu.write_bytes(b"OLD")
+            moi.write_bytes(b"NEW")
+            now = 1764250000.0
+            os.utime(cu, (now - 8 * 86400, now - 8 * 86400))
+            os.utime(moi, (now - 1 * 86400, now - 1 * 86400))
+
+            da_xoa = don_anh_nguoi_la_qua_han(unk, retention_days=7, now_ts=now)
+            self.assertEqual(da_xoa, 1)
+            self.assertFalse(cu.exists())
+            self.assertTrue(moi.exists())
+
+            ok, _ = chuyen_nguoi_la_thanh_nguoi_quen(faces, "new.jpg", "Trung")
+            self.assertTrue(ok)
+            self.assertFalse(moi.exists())
+            self.assertTrue((faces / "Trung" / "new.jpg").exists())
+
+
+class TestOnvifPtzPrivacyVaMiniNvrApi(unittest.TestCase):
+    def test_wsse_va_ptz_move_preset_privacy_mode(self) -> None:
+        wsse = tao_wsse_header("admin", "123456", nonce=b"0123456789abcdef", created="2026-11-27T15:00:00Z")
+        self.assertIn("PasswordDigest", wsse)
+        self.assertIn("<Username>admin</Username>", wsse)
+        self.assertEqual(huong_sang_vector("left", 0.6), (-0.6, 0.0, 0.0))
+
+        xml_resp = b"""<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+            <s:Body><GetPresetsResponse xmlns="http://www.onvif.org/ver20/ptz/wsdl">
+                <Preset token="1"><Name>Cua chinh</Name></Preset>
+                <Preset token="2"><Name>Ban an</Name></Preset>
+            </GetPresetsResponse></s:Body></s:Envelope>"""
+        presets = phan_tich_presets_xml(xml_resp)
+        self.assertEqual(len(presets), 2)
+        self.assertEqual(presets[0]["label"], "Cua chinh")
+
+        da_gui: list[tuple[str, str]] = []
+
+        def fake_soap(url: str, payload: bytes, action: str) -> tuple[int, bytes]:
+            da_gui.append((url, action))
+            return 200, b"<ok/>"
+
+        cams = doc_danh_sach_onvif(
+            json.dumps(
+                {
+                    "cua_chinh": {"host": "192.168.0.101", "indoor": False},
+                    "phong_khach": {"host": "192.168.0.102", "indoor": True, "privacy_preset": "99"},
+                }
+            )
+        )
+        ptz = QuanLyPtzOnvif(cams, soap_sender=fake_soap, step_duration_sec=0.2)
+
+        r_move = ptz.di_chuyen("phong_khach", "right", 0.5, auto_stop=False)
+        self.assertTrue(r_move["ok"])
+        r_pre = ptz.goi_preset("phong_khach", "ban_an")
+        self.assertTrue(r_pre["ok"])
+
+        # Privacy Mode chỉ xoay camera trong nhà (`phong_khach`), không đụng camera ngoài cửa (`cua_chinh`)
+        r_priv = ptz.dat_che_do_rieng_tu(True)
+        self.assertTrue(r_priv["privacy_mode"])
+        self.assertEqual(r_priv["affected_cameras"], ["phong_khach"])
+
+        r_priv_off = ptz.dat_che_do_rieng_tu(False)
+        self.assertFalse(r_priv_off["privacy_mode"])
+        self.assertEqual(r_priv_off["affected_cameras"], ["phong_khach"])
+
+    def test_mini_nvr_clip_api_events_va_ptz_endpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = CauHinhRecorder(
+                data_dir=root / "data",
+                face_dir=root / "data" / "faces",
+                api_host="127.0.0.1",
+                api_port=0,
+                api_user="u",
+                api_pass="p",
+                drive_enabled=False,
+                clip_duration_sec=25,
+            )
+            db = CameraDb(cfg.data_dir / "index.db")
+            storage = QuanLyLuuTru(cfg, db)
+            clipper = MiniNvrClipper(cfg, db)
+            cmd = clipper.tao_lenh_clip("cua_chinh", root / "c.mp4")
+            self.assertIn("-c:v", cmd)
+            self.assertIn("copy", cmd)
+            self.assertIn("25", cmd)
+
+            clip_file = root / "clip_ev.mp4"
+            clip_file.write_bytes(b"MP4CLIPDATA" * 100)
+            ev_id = db.them_event(
+                "cua_chinh",
+                "face_unknown",
+                1764250000,
+                1764250025,
+                0.92,
+                1,
+                label="Người lạ",
+                clip_local=str(clip_file),
+            )
+            snap_dir = cfg.face_dir / "unknown"
+            snap_dir.mkdir(parents=True, exist_ok=True)
+            (snap_dir / "test_la.jpg").write_bytes(b"\xff\xd8SNAP\xff\xd9")
+
+            ptz_calls: list[tuple] = []
+            api = MayChuPlayback(
+                cfg,
+                db,
+                storage,
+                ptz_move_cb=lambda c, d, s: (ptz_calls.append(("move", c, d)) or {"ok": True, "message": "OK"}),
+                ptz_preset_cb=lambda c, p: (ptz_calls.append(("preset", c, p)) or {"ok": True, "message": "OK"}),
+                ptz_presets_list_cb=lambda c: [{"id": "cua_chinh", "label": "Cửa chính", "token": "1"}],
+                privacy_cb=lambda b: {"ok": True, "privacy_mode": b, "message": "OK"},
+                home_mode_cb=lambda m: {"ok": True, "home_mode": m, "message": "OK"},
+            )
+            port = api.bat_dau()
+            try:
+                hdr = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode("ascii")}
+                base = f"http://127.0.0.1:{port}"
+
+                with urllib.request.urlopen(urllib.request.Request(f"{base}/api/events?kind=face_unknown", headers=hdr)) as r:
+                    evs = json.loads(r.read().decode("utf-8"))["events"]
+                self.assertEqual(len(evs), 1)
+                self.assertEqual(evs[0]["label"], "Người lạ")
+                self.assertTrue(evs[0]["has_clip"])
+
+                with urllib.request.urlopen(urllib.request.Request(f"{base}/api/clip/{ev_id}.mp4", headers=hdr)) as r:
+                    self.assertEqual(r.read(), b"MP4CLIPDATA" * 100)
+
+                with urllib.request.urlopen(urllib.request.Request(f"{base}/api/face/snapshot/test_la.jpg", headers=hdr)) as r:
+                    self.assertEqual(r.read(), b"\xff\xd8SNAP\xff\xd9")
+
+                req_ptz = urllib.request.Request(
+                    f"{base}/api/ptz/move?cam=cua_chinh&dir=left",
+                    data=b"{}",
+                    headers={**hdr, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req_ptz) as r:
+                    self.assertTrue(json.loads(r.read().decode("utf-8"))["ok"])
+                self.assertEqual(ptz_calls[0], ("move", "cua_chinh", "left"))
+            finally:
+                api.dung()
+                db.dong()
 
 
 if __name__ == "__main__":

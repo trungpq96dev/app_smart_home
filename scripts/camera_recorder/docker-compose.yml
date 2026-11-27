@@ -20,7 +20,7 @@ services:
       - ./rclone.conf:/config/rclone.conf
 
     # Giới hạn tài nguyên để AI không bao giờ chiếm hết CPU/RAM của serverubuntu
-    mem_limit: 768m
+    mem_limit: 1024m
     cpus: 1.5
 
     security_opt:

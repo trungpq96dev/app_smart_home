@@ -38,8 +38,14 @@ import vn.smarthome.data.camera.CameraPlaybackApi
 import vn.smarthome.data.camera.CameraRecorderState
 import vn.smarthome.data.camera.CauHinhCamera
 import vn.smarthome.data.camera.CauHinhCameraStore
+import vn.smarthome.data.camera.ChaoGiongNoiTts
+import vn.smarthome.data.camera.FaceGreetEvent
+import vn.smarthome.data.camera.FaceGreetLogic
 import vn.smarthome.data.camera.Go2rtc
+import vn.smarthome.data.camera.QuyetDinhChao
 import vn.smarthome.data.camera.TrangThaiCam
+import java.time.ZonedDateTime
+import java.time.ZoneId
 import vn.smarthome.data.thoitiet.CauHinhThoiTiet
 import vn.smarthome.data.thoitiet.CauHinhThoiTietStore
 import vn.smarthome.data.thoitiet.OpenMeteo
@@ -353,6 +359,18 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Trang thai dau ghi camera 24/24 + AI phat hien nguoi tren serverubuntu (`camera/#`). */
     val cameraRecorder: StateFlow<CameraRecorderState> = mqtt.cameraRec
 
+    /** Danh sach ten tat ca luong tren go2rtc (ke ca `_sd`) de WebView tu chon SD H.264 nhe RAM. */
+    private val _danhSachLuongGo2rtc = MutableStateFlow<List<String>>(emptyList())
+    val danhSachLuongGo2rtc: StateFlow<List<String>> = _danhSachLuongGo2rtc.asStateFlow()
+
+    /** Su kien chao khuon mat / khach la dang hien thi tren man hinh (tu an sau 5s / 10s). */
+    private val _chaoMatHienTai = MutableStateFlow<Pair<FaceGreetEvent, QuyetDinhChao>?>(null)
+    val chaoMatHienTai: StateFlow<Pair<FaceGreetEvent, QuyetDinhChao>?> = _chaoMatHienTai.asStateFlow()
+    private var chaoMatAnJob: Job? = null
+
+    /** Bo doc TTS tieng Viet + chuong ting-tong (khoi tao luoi de khong anh huong Robolectric). */
+    private val chaoTts by lazy { ChaoGiongNoiTts(app, viewModelScope) }
+
     private val _dangChupAnh = MutableStateFlow(false)
     val dangChupAnh: StateFlow<Boolean> = _dangChupAnh.asStateFlow()
 
@@ -562,6 +580,38 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 quanLyBom.ketNoi(c)
             }
         }
+        // Nhan dien khuon mat (`camera/face/greet`): kiem tra ts < 30s, gio ngu 23h-06h,
+        // phat TTS tieng Viet / ting-tong va hien banner 5s (nguoi quen) hoac popup 10s (nguoi la).
+        viewModelScope.launch {
+            mqtt.faceGreet.collect { ev -> xuLyChaoKhuonMat(ev) }
+        }
+    }
+
+    private fun xuLyChaoKhuonMat(ev: FaceGreetEvent) {
+        val nowSec = System.currentTimeMillis() / 1000L
+        val gioVn = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).hour
+        val qd = FaceGreetLogic.quyetDinh(
+            ev = ev,
+            nowEpochSec = nowSec,
+            gioHienTai = gioVn,
+            gioBatDauNgu = 23,
+            gioKetThucNgu = 6,
+        )
+        if (!qd.hopLe) return
+        if (qd.hienPopup) {
+            chaoTts.phat(qd)
+            _chaoMatHienTai.value = ev to qd
+            chaoMatAnJob?.cancel()
+            chaoMatAnJob = viewModelScope.launch {
+                delay(qd.thoiLuongMs)
+                _chaoMatHienTai.value = null
+            }
+        }
+    }
+
+    fun anPopupChaoMat() {
+        chaoMatAnJob?.cancel()
+        _chaoMatHienTai.value = null
     }
 
     /** Gop trang thai that tu broker vao `rooms`, va go hang cho neu khop ma lenh. */
@@ -683,6 +733,76 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Dieu khien xoay 360° (PTZ) qua ONVIF tren serverubuntu (HTTP + fallback MQTT). */
+    fun dieuKhienPtzCamera(tenLuong: String, huong: String) {
+        viewModelScope.launch {
+            val c = cauHinhCamera.value
+            val cong = cameraRecorder.value.apiPort
+            CameraPlaybackApi.dieuKhienPtzMove(c, tenLuong, huong, 0.55f, cong)
+                .onFailure {
+                    when (val kq = mqtt.guiLenhCamera("PTZ_MOVE", camera = tenLuong) {
+                        put("direction", huong)
+                        put("speed", 0.55)
+                    }) {
+                        is KetQuaGui.DaGui -> Unit
+                        else -> _thongBao.tryEmit(CameraPlaybackApi.dienGiaiLoi(it, cong ?: c.congGhiHinh))
+                    }
+                }
+        }
+    }
+
+    /** Goi goc quay Preset ONVIF (Cua chinh, Ban an, Cau thang, Toan canh). */
+    fun goiPresetCamera(tenLuong: String, preset: String) {
+        viewModelScope.launch {
+            val c = cauHinhCamera.value
+            val cong = cameraRecorder.value.apiPort
+            CameraPlaybackApi.goiPtzPreset(c, tenLuong, preset, cong)
+                .onSuccess { msg -> _thongBao.tryEmit(msg) }
+                .onFailure { e ->
+                    when (mqtt.guiLenhCamera("PTZ_PRESET", camera = tenLuong) { put("preset", preset) }) {
+                        is KetQuaGui.DaGui -> _thongBao.tryEmit("Đã gửi lệnh xoay tới góc $preset.")
+                        else -> _thongBao.tryEmit(CameraPlaybackApi.dienGiaiLoi(e, cong ?: c.congGhiHinh))
+                    }
+                }
+        }
+    }
+
+    /** Che do Rieng tu 1 cham: xoay up ong kinh camera trong nha & tam ngat luong hien thi. */
+    fun datCheDoRiengTuCamera(bat: Boolean) {
+        val kqMqtt = mqtt.guiLenhCamera("SET_PRIVACY_MODE", value = bat)
+        viewModelScope.launch {
+            val c = cauHinhCamera.value
+            val cong = cameraRecorder.value.apiPort
+            CameraPlaybackApi.datCheDoRiengTu(c, bat, cong)
+                .onSuccess { msg -> _thongBao.tryEmit(msg) }
+                .onFailure { e ->
+                    if (kqMqtt is KetQuaGui.DaGui) {
+                        _thongBao.tryEmit(if (bat) "Đã bật Chế độ Riêng tư." else "Đã tắt Chế độ Riêng tư.")
+                    } else {
+                        _thongBao.tryEmit(CameraPlaybackApi.dienGiaiLoi(e, cong ?: c.congGhiHinh))
+                    }
+                }
+        }
+    }
+
+    /** Chuyen che do canh bao khuon mat: "home" (ban ngay ting-tong) / "away" (im lang + Telegram). */
+    fun datCheDoNhaCamera(mode: String) {
+        val kqMqtt = mqtt.guiLenhCamera("SET_HOME_MODE") { put("value", mode) }
+        viewModelScope.launch {
+            val c = cauHinhCamera.value
+            val cong = cameraRecorder.value.apiPort
+            CameraPlaybackApi.datCheDoNha(c, mode, cong)
+                .onSuccess { msg -> _thongBao.tryEmit(msg) }
+                .onFailure { e ->
+                    if (kqMqtt is KetQuaGui.DaGui) {
+                        _thongBao.tryEmit("Đã chuyển chế độ camera: $mode.")
+                    } else {
+                        _thongBao.tryEmit(CameraPlaybackApi.dienGiaiLoi(e, cong ?: c.congGhiHinh))
+                    }
+                }
+        }
+    }
+
     /**
      * Hoi go2rtc dang giu nhung luong nao va dung lai danh sach camera.
      *
@@ -699,15 +819,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         _trangThaiCam.value = TrangThaiCam.DangDo
         Go2rtc.danhSachLuong(c)
             .onSuccess { ten ->
+                _danhSachLuongGo2rtc.value = ten
                 if (ten.isEmpty()) {
                     _trangThaiCam.value =
                         TrangThaiCam.Loi("go2rtc chạy nhưng chưa khai luồng nào trong go2rtc.yaml.")
                     _state.update { it.copy(cameras = emptyList(), selectedCamera = 0) }
                 } else {
-                    _trangThaiCam.value = TrangThaiCam.Co(ten.size)
+                    // Gom cap luong HD & SD (`cua_chinh` + `cua_chinh_sd`) thanh 1 muc camera duy nhat
+                    val tap = ten.toSet()
+                    val hienThi = ten.filterNot { it.endsWith("_sd") && it.removeSuffix("_sd") in tap }
+                    _trangThaiCam.value = TrangThaiCam.Co(hienThi.size)
                     _state.update { s ->
                         s.copy(
-                            cameras = ten.map { t ->
+                            cameras = hienThi.map { t ->
                                 CameraFeed(id = t, name = t, icon = Icons.Filled.Videocam,
                                     accent = SH.Blue, luong = t)
                             },
@@ -727,6 +851,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        chaoMatAnJob?.cancel()
+        runCatching { chaoTts.dong() }
         mqtt.ngat()
         quanLyBom.ngat()
         super.onCleared()
@@ -1918,16 +2044,39 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun batDauCapNhat(release: ReleaseInfo) {
         viewModelScope.launch {
             _otaStatus.value = OtaStatus.Downloading(0, 0, release.sizeBytes)
+            var apkFile: File? = null
             try {
-                val apkFile = otaManager.downloadApk(release.downloadUrl) { percent, read, total ->
+                val downloaded = otaManager.downloadApk(release.downloadUrl) { percent, read, total ->
                     _otaStatus.value = OtaStatus.Downloading(percent, read, total)
                 }
-                // Tai xong -> dong hop thoai va kich hoat trinh cai dat cua Android
+                apkFile = downloaded
+
+                // Kiem tra toan ven SHA-256 truoc khi cho phep cai dat APK.
+                _otaStatus.value = OtaStatus.Verifying
+                val expectedSha256 = otaManager.fetchExpectedSha256(release)
+                if (expectedSha256.isNullOrBlank()) {
+                    downloaded.delete()
+                    _otaStatus.value = OtaStatus.Error(
+                        "Bản phát hành chưa có mã kiểm tra SHA-256 nên đã chặn cài đặt để đảm bảo an toàn."
+                    )
+                    return@launch
+                }
+                val hopLe = OtaManager.verifyApkSha256(downloaded, expectedSha256)
+                if (!hopLe) {
+                    downloaded.delete()
+                    _otaStatus.value = OtaStatus.Error(
+                        "Mã SHA-256 của file APK không khớp! File có thể bị hỏng hoặc bị can thiệp — đã hủy cài đặt."
+                    )
+                    return@launch
+                }
+
+                // Xac minh thanh cong -> dong hop thoai va kich hoat trinh cai dat cua Android
                 _showUpdateDialog.value = false
                 _otaStatus.value = OtaStatus.Idling
-                otaManager.installApk(apkFile)
+                otaManager.installApk(downloaded)
             } catch (e: Exception) {
-                _otaStatus.value = OtaStatus.Error("Tải bản cập nhật thất bại: ${e.message}")
+                apkFile?.delete()
+                _otaStatus.value = OtaStatus.Error("Tải/xác minh bản cập nhật thất bại: ${e.message}")
             }
         }
     }

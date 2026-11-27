@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS events (
     person_count INTEGER NOT NULL DEFAULT 1,
     thumb_local TEXT,
     thumb_drive TEXT,
-    notified_tg INTEGER NOT NULL DEFAULT 0
+    notified_tg INTEGER NOT NULL DEFAULT 0,
+    label TEXT,
+    clip_local TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_cam_time
@@ -65,7 +67,19 @@ class CameraDb:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(SCHEMA_SQL)
+            self._nang_cap_cot_events()
             self._conn.commit()
+
+    def _nang_cap_cot_events(self) -> None:
+        """Tự thêm cột `label` và `clip_local` nếu đang nâng cấp từ index.db bản cũ."""
+        cols = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(events)").fetchall()
+        }
+        if "label" not in cols:
+            self._conn.execute("ALTER TABLE events ADD COLUMN label TEXT")
+        if "clip_local" not in cols:
+            self._conn.execute("ALTER TABLE events ADD COLUMN clip_local TEXT")
 
     def dong(self) -> None:
         with self._lock:
@@ -177,12 +191,14 @@ class CameraDb:
         max_conf: float = 0.0,
         person_count: int = 1,
         thumb_local: str | None = None,
+        label: str | None = None,
+        clip_local: str | None = None,
     ) -> int:
         with self._lock:
             cur = self._conn.execute(
                 """
-                INSERT INTO events(camera, kind, start_ts, end_ts, max_conf, person_count, thumb_local)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO events(camera, kind, start_ts, end_ts, max_conf, person_count, thumb_local, label, clip_local)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     camera,
@@ -192,10 +208,69 @@ class CameraDb:
                     float(max_conf),
                     int(person_count),
                     thumb_local,
+                    label,
+                    clip_local,
                 ),
             )
             self._conn.commit()
             return int(cur.lastrowid)
+
+    def cap_nhat_clip_event(self, event_id: int, clip_local: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE events SET clip_local = ? WHERE id = ?",
+                (clip_local, event_id),
+            )
+            self._conn.commit()
+
+    def danh_sach_su_kien_gan_nhat(
+        self,
+        camera: str | None = None,
+        kind: str | None = None,
+        gioi_han: int = 60,
+    ) -> list[dict[str, Any]]:
+        """Trả về danh sách sự kiện mới nhất phục vụ tab 'Sự kiện' Mini-NVR trên Tablet."""
+        dk: list[str] = []
+        tham_so: list[Any] = []
+        if camera:
+            dk.append("camera = ?")
+            tham_so.append(camera)
+        if kind and kind != "all":
+            dk.append("kind = ?")
+            tham_so.append(kind)
+        where_sql = ("WHERE " + " AND ".join(dk)) if dk else ""
+        tham_so.append(max(1, min(200, int(gioi_han))))
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT id, camera, kind, start_ts, end_ts, max_conf, person_count,
+                       thumb_local, thumb_drive, label, clip_local
+                FROM events
+                {where_sql}
+                ORDER BY start_ts DESC, id DESC
+                LIMIT ?
+                """,
+                tuple(tham_so),
+            ).fetchall()
+        ket_qua: list[dict[str, Any]] = []
+        for e in rows:
+            co_thumb = (bool(e["thumb_local"]) and Path(e["thumb_local"]).exists()) or bool(e["thumb_drive"])
+            co_clip = bool(e["clip_local"]) and Path(e["clip_local"]).exists()
+            ket_qua.append(
+                {
+                    "id": int(e["id"]),
+                    "camera": str(e["camera"]),
+                    "kind": str(e["kind"]),
+                    "start_ts": int(e["start_ts"]),
+                    "end_ts": int(e["end_ts"]),
+                    "max_conf": round(float(e["max_conf"]), 3),
+                    "person_count": int(e["person_count"]),
+                    "has_thumb": co_thumb,
+                    "has_clip": co_clip,
+                    "label": e["label"],
+                }
+            )
+        return ket_qua
 
     def cap_nhat_event(
         self,
@@ -345,7 +420,7 @@ class CameraDb:
             ).fetchall()
             evs = self._conn.execute(
                 """
-                SELECT id, kind, start_ts, end_ts, max_conf, person_count, thumb_local, thumb_drive
+                SELECT id, kind, start_ts, end_ts, max_conf, person_count, thumb_local, thumb_drive, label, clip_local
                 FROM events
                 WHERE camera = ?
                   AND end_ts > ?
@@ -372,6 +447,7 @@ class CameraDb:
         ds_ev = []
         for e in evs:
             co_thumb = (bool(e["thumb_local"]) and Path(e["thumb_local"]).exists()) or bool(e["thumb_drive"])
+            co_clip = bool(e["clip_local"]) and Path(e["clip_local"]).exists()
             ds_ev.append(
                 {
                     "id": int(e["id"]),
@@ -381,6 +457,8 @@ class CameraDb:
                     "max_conf": round(float(e["max_conf"]), 3),
                     "person_count": int(e["person_count"]),
                     "has_thumb": co_thumb,
+                    "has_clip": co_clip,
+                    "label": e["label"],
                 }
             )
 

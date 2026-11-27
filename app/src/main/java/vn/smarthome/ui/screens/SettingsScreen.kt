@@ -125,6 +125,7 @@ fun SettingsScreen(
     onDatBatTatPin: (String, Boolean) -> String? = { _, _ -> null },
     onKhoaAdminNgay: () -> Unit = {},
     onXemThuManCho: () -> Unit = {},
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val coBanMoi = otaStatus is OtaStatus.UpdateAvailable
@@ -187,10 +188,10 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
             ) {
                 SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
-                    FormBroker(cauHinh, onLuu)
+                    FormBroker(cauHinh, onLuu, onYeuCauPinAdmin)
                 }
                 SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
-                    FormCamera(cauHinhCamera, trangThaiCam, onLuuCamera)
+                    FormCamera(cauHinhCamera, trangThaiCam, onLuuCamera, onYeuCauPinAdmin)
                 }
                 SmartCard(Modifier.weight(1f).fillMaxHeight(), padding = 14.dp) {
                     FormThoiTiet(cauHinhThoiTiet, onLuuThoiTiet)
@@ -202,7 +203,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
             ) {
                 SmartCard(Modifier.weight(3f).fillMaxHeight(), padding = 14.dp) {
-                    FormGiongNoi(cauHinhGiongNoi, onLuuGiongNoi)
+                    FormGiongNoi(cauHinhGiongNoi, onLuuGiongNoi, onYeuCauPinAdmin)
                 }
                 SmartCard(Modifier.weight(2f).fillMaxHeight(), padding = 14.dp) {
                     ThongKeGiongNoi(mucDungGiongNoi, cauHinhGiongNoi)
@@ -217,7 +218,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(Dim.CardGap),
             ) {
                 SmartCard(Modifier.weight(1.3f).fillMaxHeight(), padding = 14.dp) {
-                    FormBomNuoc(cauHinhBomNuoc, onLuuBomNuoc)
+                    FormBomNuoc(cauHinhBomNuoc, onLuuBomNuoc, onYeuCauPinAdmin)
                 }
                 SmartCard(Modifier.weight(0.7f).fillMaxHeight(), padding = 14.dp) {
                     TrangThaiBomNuocCard(cauHinhBomNuoc, ketNoiBom, kenhBom, bomNuoc)
@@ -302,7 +303,11 @@ private fun TabButton(
 // ---------------------------------------------------------------- Broker
 
 @Composable
-private fun FormBroker(cauHinh: CauHinhMqtt, onLuu: (CauHinhMqtt) -> Unit) {
+private fun FormBroker(
+    cauHinh: CauHinhMqtt,
+    onLuu: (CauHinhMqtt) -> Unit,
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
+) {
     var host by remember(cauHinh.host) { mutableStateOf(cauHinh.host) }
     var cong by remember(cauHinh.cong) { mutableStateOf(cauHinh.cong.toString()) }
     var tls by remember(cauHinh.tls) { mutableStateOf(cauHinh.tls) }
@@ -339,7 +344,13 @@ private fun FormBroker(cauHinh: CauHinhMqtt, onLuu: (CauHinhMqtt) -> Unit) {
         O("Tài khoản MQTT", taiKhoan, { taiKhoan = it }, "để trống nếu broker không yêu cầu")
         Spacer(Modifier.height(8.dp))
 
-        OMatKhau("Mật khẩu MQTT", matKhau, { matKhau = it }, "để trống nếu broker không yêu cầu")
+        OMatKhau(
+            nhan = "Mật khẩu MQTT",
+            giaTri = matKhau,
+            onDoi = { matKhau = it },
+            goiY = "để trống nếu broker không yêu cầu",
+            onYeuCauHienMatKhau = { hien -> onYeuCauPinAdmin("Xem mật khẩu Broker MQTT", hien) },
+        )
         Spacer(Modifier.height(8.dp))
 
         O("Client ID", clientId, { clientId = it }, "để trống thì app tự sinh")
@@ -392,6 +403,7 @@ private fun FormCamera(
     cauHinh: CauHinhCamera,
     trangThai: TrangThaiCam,
     onLuu: (CauHinhCamera) -> Unit,
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
 ) {
     var host by remember(cauHinh.host) { mutableStateOf(cauHinh.host) }
     var cong by remember(cauHinh.cong) { mutableStateOf(cauHinh.cong.toString()) }
@@ -430,7 +442,13 @@ private fun FormCamera(
 
         O("Tài khoản go2rtc", taiKhoan, { taiKhoan = it }, "để trống nếu go2rtc không đặt")
         Spacer(Modifier.height(8.dp))
-        OMatKhau("Mật khẩu go2rtc", matKhau, { matKhau = it }, "để trống nếu go2rtc không đặt")
+        OMatKhau(
+            nhan = "Mật khẩu go2rtc",
+            giaTri = matKhau,
+            onDoi = { matKhau = it },
+            goiY = "để trống nếu go2rtc không đặt",
+            onYeuCauHienMatKhau = { hien -> onYeuCauPinAdmin("Xem mật khẩu Camera go2rtc", hien) },
+        )
 
         if (trangThai is TrangThaiCam.Loi) {
             Text(
@@ -565,7 +583,11 @@ private fun FormThoiTiet(cauHinh: CauHinhThoiTiet, onLuu: (CauHinhThoiTiet) -> U
 // ---------------------------------------------------------- Tro ly giong noi
 
 @Composable
-private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> Unit) {
+private fun FormGiongNoi(
+    cauHinh: CauHinhGiongNoi,
+    onLuu: (CauHinhGiongNoi) -> Unit,
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
+) {
     var khoa by remember(cauHinh.khoaApi) { mutableStateOf(cauHinh.khoaApi) }
     var model by remember(cauHinh.model) { mutableStateOf(cauHinh.model) }
     var giong by remember(cauHinh.giongDoc) { mutableStateOf(cauHinh.giongDoc) }
@@ -599,7 +621,13 @@ private fun FormGiongNoi(cauHinh: CauHinhGiongNoi, onLuu: (CauHinhGiongNoi) -> U
         )
         Spacer(Modifier.height(10.dp))
 
-        OMatKhau("Khóa API Gemini", khoa, { khoa = it }, "lấy ở Google AI Studio")
+        OMatKhau(
+            nhan = "Khóa API Gemini",
+            giaTri = khoa,
+            onDoi = { khoa = it },
+            goiY = "lấy ở Google AI Studio",
+            onYeuCauHienMatKhau = { hien -> onYeuCauPinAdmin("Xem khóa API Gemini", hien) },
+        )
         Spacer(Modifier.height(8.dp))
 
         O("Model", model, { model = it }, CauHinhGiongNoi.MODEL_MAC_DINH)
@@ -874,6 +902,7 @@ private fun GhiChuGiongNoi() {
 private fun FormBomNuoc(
     cauHinh: CauHinhBomNuoc,
     onLuu: (CauHinhBomNuoc) -> Unit,
+    onYeuCauPinAdmin: (String, () -> Unit) -> Unit = { _, fn -> fn() },
 ) {
     var espHost by remember(cauHinh.espHost) { mutableStateOf(cauHinh.espHost) }
     var uuTienLan by remember(cauHinh.uuTienLan) { mutableStateOf(cauHinh.uuTienLan) }
@@ -922,7 +951,13 @@ private fun FormBomNuoc(
 
         O("Tài khoản MQTT bơm", brokerUser, { brokerUser = it }, "")
         Spacer(Modifier.height(8.dp))
-        OMatKhau("Mật khẩu MQTT bơm", brokerPass, { brokerPass = it }, "")
+        OMatKhau(
+            nhan = "Mật khẩu MQTT bơm",
+            giaTri = brokerPass,
+            onDoi = { brokerPass = it },
+            goiY = "",
+            onYeuCauHienMatKhau = { hien -> onYeuCauPinAdmin("Xem mật khẩu MQTT bo bơm nước", hien) },
+        )
         Spacer(Modifier.height(12.dp))
 
         Button(
@@ -1258,6 +1293,7 @@ private fun OMatKhau(
     giaTri: String,
     onDoi: (String) -> Unit,
     goiY: String,
+    onYeuCauHienMatKhau: ((() -> Unit) -> Unit)? = null,
 ) {
     var hien by remember { mutableStateOf(false) }
     OutlinedTextField(
@@ -1269,7 +1305,17 @@ private fun OMatKhau(
         visualTransformation = if (hien) VisualTransformation.None
         else PasswordVisualTransformation(),
         trailingIcon = {
-            IconButton(onClick = { hien = !hien }) {
+            IconButton(
+                onClick = {
+                    if (hien) {
+                        hien = false
+                    } else if (onYeuCauHienMatKhau != null) {
+                        onYeuCauHienMatKhau { hien = true }
+                    } else {
+                        hien = true
+                    }
+                }
+            ) {
                 Icon(
                     if (hien) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                     contentDescription = if (hien) "Ẩn mật khẩu" else "Hiện mật khẩu",
@@ -1411,7 +1457,9 @@ private fun FormOtaUpdate(
                 onClick = onKiemTra,
                 colors = ButtonDefaults.buttonColors(containerColor = SH.Card2),
                 shape = RoundedCornerShape(8.dp),
-                enabled = otaStatus !is OtaStatus.Checking && otaStatus !is OtaStatus.Downloading,
+                enabled = otaStatus !is OtaStatus.Checking &&
+                    otaStatus !is OtaStatus.Downloading &&
+                    otaStatus !is OtaStatus.Verifying,
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(16.dp), tint = SH.Text)
                 Spacer(Modifier.width(6.dp))
@@ -1501,6 +1549,17 @@ private fun FormOtaUpdate(
                         }
                     }
 
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = if (info.coMaSha256) {
+                            "Bảo mật OTA: Có mã SHA-256 — app sẽ tự xác minh trước khi cài đặt."
+                        } else {
+                            "Cảnh báo: Chưa thấy file .sha256 đi kèm — app sẽ chặn cài đặt để bảo vệ thiết bị."
+                        },
+                        style = SHType.Caption,
+                        color = if (info.coMaSha256) SH.Green else SH.Amber,
+                    )
+
                     if (info.notes.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
                         Text("Nhật ký cập nhật (Changelog):", style = SHType.Caption, color = SH.TextDim)
@@ -1554,6 +1613,32 @@ private fun FormOtaUpdate(
                         style = SHType.Caption,
                         color = SH.TextDim,
                     )
+                }
+            }
+
+            is OtaStatus.Verifying -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SH.Bg)
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Đang xác minh toàn vẹn SHA-256 của file APK...",
+                            style = SHType.Body,
+                            color = SH.Green,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            Modifier.fillMaxWidth(0.7f).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                            color = SH.Green,
+                            trackColor = SH.Border,
+                        )
+                    }
                 }
             }
 

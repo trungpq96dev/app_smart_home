@@ -113,9 +113,40 @@ export function proxyCameraRecorderHttp(
     }
     upstreamPath = `/api/thumb/${evRaw}.jpg`;
     timeoutMs = THUMB_TIMEOUT_MS;
+  } else if (method === 'GET' && subPath === '/events') {
+    upstreamPath = `/api/events${queryStr ? `?${queryStr}` : ''}`;
+  } else if (method === 'GET' && subPath.startsWith('/clip/')) {
+    const evRaw = subPath.slice('/clip/'.length).replace(/\.mp4$/i, '');
+    if (!/^\d+$/.test(evRaw)) {
+      sendJson(res, 400, { ok: false, error: 'Mã clip sự kiện không hợp lệ.' });
+      return;
+    }
+    upstreamPath = `/api/clip/${evRaw}.mp4`;
+    timeoutMs = VIDEO_STREAM_TIMEOUT_MS;
+  } else if (method === 'GET' && subPath.startsWith('/face/snapshot/')) {
+    const name = subPath.slice('/face/snapshot/'.length);
+    if (!name || name.includes('..') || name.includes('/')) {
+      sendJson(res, 400, { ok: false, error: 'Tên ảnh khuôn mặt không hợp lệ.' });
+      return;
+    }
+    upstreamPath = `/api/face/snapshot/${name}`;
+    timeoutMs = THUMB_TIMEOUT_MS;
+  } else if (method === 'GET' && subPath === '/face/unknown') {
+    upstreamPath = '/api/face/unknown';
+  } else if (method === 'GET' && subPath === '/ptz/presets') {
+    upstreamPath = `/api/ptz/presets${queryStr ? `?${queryStr}` : ''}`;
   } else if (method === 'POST' && subPath === '/snapshot') {
     upstreamPath = `/api/snapshot${queryStr ? `?${queryStr}` : ''}`;
     timeoutMs = SNAPSHOT_TIMEOUT_MS;
+  } else if (
+    method === 'POST' &&
+    (subPath === '/ptz/move' ||
+      subPath === '/ptz/preset' ||
+      subPath === '/privacy' ||
+      subPath === '/home_mode' ||
+      subPath === '/face/promote')
+  ) {
+    upstreamPath = `/api${subPath}${queryStr ? `?${queryStr}` : ''}`;
   } else {
     sendJson(res, 404, { ok: false, error: 'Đường dẫn Playback API không tồn tại.' });
     return;

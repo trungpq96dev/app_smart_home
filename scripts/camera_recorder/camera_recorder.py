@@ -23,8 +23,15 @@ from api import MayChuPlayback
 from cau_hinh import CauHinhRecorder
 from db import CameraDb
 from detector import BoNhanDienNguoiOnnx, LuongNhanDienCamera
+from face_recognizer import (
+    LuongNhanDienKhuonMat,
+    SuKienChaoMat,
+    chuyen_nguoi_la_thanh_nguoi_quen,
+    gui_ntfy_canh_bao,
+)
 from mqtt_bridge import CauNoiMqttCamera, tao_payload_state
-from recorder import LuongGhiCamera, chup_anh_ngay
+from onvif_ptz import QuanLyPtzOnvif, doc_danh_sach_onvif
+from recorder import LuongGhiCamera, MiniNvrClipper, chup_anh_ngay
 from storage import QuanLyLuuTru
 from telegram_notifier import TelegramNotifier
 
@@ -38,24 +45,76 @@ class DichVuCameraRecorder:
         self.storage = QuanLyLuuTru(cfg, self.db)
         self.tg = TelegramNotifier(cfg)
         self.yolo = BoNhanDienNguoiOnnx(cfg)
+        self.clipper = MiniNvrClipper(cfg, self.db)
+        self.ptz = QuanLyPtzOnvif(
+            cameras=doc_danh_sach_onvif(cfg.onvif_cameras_json, cfg.onvif_config_path)
+        )
+        self.home_mode = cfg.home_mode if cfg.home_mode in ("home", "away", "sleep") else "home"
 
         self._lock_cam = threading.Lock()
         self.recorders: dict[str, LuongGhiCamera] = {}
         self.detectors: dict[str, LuongNhanDienCamera] = {}
 
+        self.face_worker = LuongNhanDienKhuonMat(
+            cfg=cfg,
+            lay_danh_sach_cam_cb=self._danh_sach_ten_cam,
+            lay_home_mode_cb=lambda: self.home_mode,
+            la_rieng_tu_cb=lambda cam: self.ptz.privacy_mode and self.ptz.la_cam_trong_nha(cam),
+            on_su_kien_mat=self._khi_nhan_dien_mat,
+        )
+
         self.mqtt = CauNoiMqttCamera(
             cfg=cfg,
             lay_state_cb=self.tao_state_hien_tai,
             chup_anh_cb=self.chup_anh_va_luu,
+            ptz_move_cb=self.ptz.di_chuyen,
+            ptz_preset_cb=self.ptz.goi_preset,
+            ptz_set_preset_cb=self.ptz.luu_preset,
+            privacy_cb=self.dat_che_do_rieng_tu,
+            home_mode_cb=self.dat_che_do_nha,
         )
         self.api = MayChuPlayback(
             cfg=cfg,
             db=self.db,
             storage=self.storage,
             chup_anh_cb=self.chup_anh_va_luu,
-            trang_thai_cb=lambda: {"cameras": self._anh_chup_trang_thai_cam()},
+            trang_thai_cb=lambda: {
+                "cameras": self._anh_chup_trang_thai_cam(),
+                "privacy_mode": self.ptz.privacy_mode,
+                "home_mode": self.home_mode,
+            },
+            ptz_move_cb=self.ptz.di_chuyen,
+            ptz_preset_cb=self.ptz.goi_preset,
+            ptz_presets_list_cb=self.ptz.danh_sach_preset,
+            privacy_cb=self.dat_che_do_rieng_tu,
+            home_mode_cb=self.dat_che_do_nha,
+            face_promote_cb=self.chuyen_anh_nguoi_la,
         )
         self._chay = True
+
+    def _danh_sach_ten_cam(self) -> list[str]:
+        with self._lock_cam:
+            return sorted(self.recorders.keys())
+
+    def dat_che_do_rieng_tu(self, bat: bool) -> dict[str, Any]:
+        kq = self.ptz.dat_che_do_rieng_tu(bat)
+        self.mqtt.phat_state()
+        return kq
+
+    def dat_che_do_nha(self, mode: str) -> dict[str, Any]:
+        m = mode.strip().lower()
+        if m not in ("home", "away", "sleep"):
+            return {"ok": False, "message": f"Chế độ không hợp lệ: {mode} (chọn home|away|sleep)"}
+        self.home_mode = m
+        self.mqtt.phat_state()
+        nhan = {"home": "Ở nhà", "away": "Vắng nhà", "sleep": "Đi ngủ"}[m]
+        return {"ok": True, "home_mode": m, "message": f"Đã chuyển chế độ camera sang: {nhan}."}
+
+    def chuyen_anh_nguoi_la(self, filename: str, ten_nguoi: str) -> dict[str, Any]:
+        ok, msg = chuyen_nguoi_la_thanh_nguoi_quen(self.cfg.face_dir, filename, ten_nguoi)
+        if ok:
+            self.face_worker.engine.lam_moi_thu_vien()
+        return {"ok": ok, "message": msg}
 
     def _anh_chup_trang_thai_cam(self) -> dict[str, dict[str, Any]]:
         with self._lock_cam:
@@ -70,13 +129,64 @@ class DichVuCameraRecorder:
 
     def tao_state_hien_tai(self, tra_loi_id: str | None = None) -> dict[str, Any]:
         tk = self.db.thong_ke_tong_hop()
+        ptz_info = self.ptz.trang_thai_tom_tat()
         return tao_payload_state(
             cfg=self.cfg,
             thong_ke_db=tk,
             trang_thai_cam=self._anh_chup_trang_thai_cam(),
             loi_drive=self.storage.loi_drive_gan_nhat,
             tra_loi_id=tra_loi_id,
+            privacy_mode=ptz_info["privacy_mode"],
+            home_mode=self.home_mode,
+            ptz_cameras=ptz_info["ptz_cameras"],
+            indoor_cameras=ptz_info["indoor_cameras"],
         )
+
+    def _khi_nhan_dien_mat(self, ev: SuKienChaoMat, gui_canh_bao_tu_xa: bool) -> None:
+        log.info(
+            "[%s] Nhận diện khuôn mặt: %s (quen=%s, %.0f%%, mode=%s, silent=%s)",
+            ev.camera,
+            ev.name,
+            ev.is_known,
+            ev.confidence * 100,
+            ev.mode,
+            ev.silent,
+        )
+        kind = "face_known" if ev.is_known else "face_unknown"
+        label = ev.name if ev.is_known else "Người lạ"
+        ev_id = self.db.them_event(
+            camera=ev.camera,
+            kind=kind,
+            start_ts=ev.ts,
+            end_ts=ev.ts + 3,
+            max_conf=ev.confidence,
+            person_count=1,
+            thumb_local=str(ev.snapshot_path) if ev.snapshot_path else None,
+            label=label,
+        )
+        # Người lạ -> ghi ngay Mini-NVR clip 20-30s bằng ffmpeg -c copy (~0% CPU)
+        if not ev.is_known:
+            self.clipper.ghi_clip_su_kien(ev.camera, ev_id, kind, ev.ts)
+
+        # Publish MQTT camera/face/greet (retain=False) cho Tablet chào / popup
+        self.mqtt.phat_chao_khuon_mat(ev.thanh_mqtt_dict())
+
+        # Chế độ Vắng nhà / Ngủ: gửi ảnh chụp người lạ về Telegram / ntfy
+        if gui_canh_bao_tu_xa and not ev.is_known:
+            self.tg.bao_nguoi_la(
+                camera=ev.camera,
+                start_ts=ev.ts,
+                mode=ev.mode,
+                anh_path=ev.snapshot_path,
+                on_da_gui=lambda: self.db.danh_dau_event_telegram(ev_id),
+            )
+            if self.cfg.ntfy_url:
+                gui_ntfy_canh_bao(
+                    self.cfg.ntfy_url,
+                    f"Nguoi la tai {ev.camera}",
+                    f"Phat hien nguoi la ({ev.mode}) tai {ev.camera}",
+                    ev.snapshot_path,
+                )
 
     def _khi_phat_hien_nguoi(
         self,
@@ -87,6 +197,8 @@ class DichVuCameraRecorder:
         confidence: float,
         thumb_path: Path | None,
     ) -> None:
+        if self.ptz.privacy_mode and self.ptz.la_cam_trong_nha(camera):
+            return
         log.info(
             "[%s] Phát hiện người #%d (%d người, %.0f%%)",
             camera,
@@ -94,6 +206,8 @@ class DichVuCameraRecorder:
             person_count,
             confidence * 100,
         )
+        # Ghi Mini-NVR clip 20-30s bằng ffmpeg -c copy để tab 'Sự kiện' phát lại tức thì
+        self.clipper.ghi_clip_su_kien(camera, event_id, "person", start_ts)
         self.mqtt.phat_su_kien_nguoi(event_id, camera, start_ts, person_count, confidence)
         self.tg.bao_phat_hien_nguoi(
             camera=camera,
@@ -164,6 +278,7 @@ class DichVuCameraRecorder:
         self.tg.bat_dau()
         self.api.bat_dau()
         self.mqtt.bat_dau()
+        self.face_worker.bat_dau()
 
         lan_do_cam = 0.0
         lan_upload_drive = 0.0
@@ -187,10 +302,11 @@ class DichVuCameraRecorder:
                     log.warning("Lỗi vòng đồng bộ Drive/Cache: %s", e)
                 lan_upload_drive = now
 
-            # 3. Dọn file quá hạn lưu trữ trên Drive mỗi 6 giờ
+            # 3. Dọn file quá hạn lưu trữ trên Drive & Mini-NVR clips mỗi 6 giờ
             if now - lan_don_qua_han >= 6 * 3600.0:
                 try:
                     self.storage.don_du_lieu_qua_han()
+                    self.clipper.don_clip_qua_han()
                 except Exception as e:
                     log.warning("Lỗi dọn dữ liệu quá hạn: %s", e)
                 lan_don_qua_han = now
@@ -215,6 +331,7 @@ class DichVuCameraRecorder:
             return
         log.info("Đang dừng camera_recorder an toàn...")
         self._chay = False
+        self.face_worker.dung()
         with self._lock_cam:
             ds_rec = list(self.recorders.values())
             ds_det = list(self.detectors.values())

@@ -134,12 +134,35 @@ class CauHinhRecorder:
     )
     onnx_threads: int = 2
 
-    # Telegram cảnh báo khi phát hiện người
+    # Telegram cảnh báo khi phát hiện người / người lạ
     tg_enabled: bool = True
     tg_bot_token: str = ""
     tg_chat_id: str = ""
     tg_cooldown_sec: float = 45.0
     offline_alert_min: float = 10.0
+    ntfy_url: str = ""
+
+    # Nhận diện khuôn mặt YuNet + SFace (Mục 2.2)
+    face_recognition_enabled: bool = True
+    face_dir: Path = Path("/data/faces")
+    face_cameras: list[str] = field(default_factory=list)
+    face_poll_sec: float = 1.5
+    face_match_thresh: float = 0.363
+    face_greet_cooldown_sec: float = 1200.0
+    face_unknown_confirm_sec: float = 2.5
+    face_unknown_confirm_frames: int = 2
+    face_known_grace_sec: float = 300.0
+    face_unknown_retention_days: int = 7
+    face_sleep_start_hour: int = 23
+    face_sleep_end_hour: int = 6
+
+    # Mini-NVR Event Clip (-c copy, 20-30s) & ONVIF PTZ / Chế độ Riêng tư (Mục 2.3)
+    clip_enabled: bool = True
+    clip_duration_sec: int = 25
+    clip_retention_days: int = 14
+    onvif_cameras_json: str = ""
+    onvif_config_path: Path = Path("/data/onvif_cameras.json")
+    home_mode: str = "home"
 
     # HTTP Playback API cho Tablet SmartHomeApp
     api_host: str = "0.0.0.0"
@@ -167,6 +190,8 @@ class CauHinhRecorder:
         tg_token = _str("TG_BOT_TOKEN", "")
         tg_chat = _str("TG_CHAT_ID", "")
         tg_on = _bool("TG_ENABLED", True) and bool(tg_token and tg_chat)
+        face_cams_raw = _str("FACE_CAMERAS", "")
+        face_cams = [c.strip() for c in face_cams_raw.split(",") if c.strip()]
 
         return cls(
             data_dir=data_dir,
@@ -211,6 +236,25 @@ class CauHinhRecorder:
             tg_chat_id=tg_chat,
             tg_cooldown_sec=max(5.0, _float("TG_COOLDOWN_SEC", 45.0)),
             offline_alert_min=max(2.0, _float("OFFLINE_ALERT_MIN", 10.0)),
+            ntfy_url=_str("NTFY_URL", ""),
+            face_recognition_enabled=_bool("FACE_RECOGNITION_ENABLED", True),
+            face_dir=Path(_str("FACE_DIR", str(data_dir / "faces"))),
+            face_cameras=face_cams,
+            face_poll_sec=max(0.8, min(5.0, _float("FACE_POLL_SEC", 1.5))),
+            face_match_thresh=max(0.2, min(0.8, _float("FACE_MATCH_THRESH", 0.363))),
+            face_greet_cooldown_sec=max(30.0, _float("FACE_GREET_COOLDOWN_SEC", 1200.0)),
+            face_unknown_confirm_sec=max(1.0, _float("FACE_UNKNOWN_CONFIRM_SEC", 2.5)),
+            face_unknown_confirm_frames=max(1, _int("FACE_UNKNOWN_CONFIRM_FRAMES", 2)),
+            face_known_grace_sec=max(0.0, _float("FACE_KNOWN_GRACE_SEC", 300.0)),
+            face_unknown_retention_days=max(1, _int("FACE_UNKNOWN_RETENTION_DAYS", 7)),
+            face_sleep_start_hour=_int("FACE_SLEEP_START_HOUR", 23) % 24,
+            face_sleep_end_hour=_int("FACE_SLEEP_END_HOUR", 6) % 24,
+            clip_enabled=_bool("CLIP_ENABLED", True),
+            clip_duration_sec=max(10, min(60, _int("CLIP_DURATION_SEC", 25))),
+            clip_retention_days=max(1, _int("CLIP_RETENTION_DAYS", 14)),
+            onvif_cameras_json=_str("ONVIF_CAMERAS_JSON", ""),
+            onvif_config_path=Path(_str("ONVIF_CONFIG_PATH", str(data_dir / "onvif_cameras.json"))),
+            home_mode=_str("HOME_MODE", "home").lower(),
             api_host=_str("API_HOST", "0.0.0.0"),
             api_port=_int("API_PORT", 1985),
             api_user=api_user,

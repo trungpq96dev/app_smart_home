@@ -1,0 +1,175 @@
+===============================================================================
+ SMARTHOME APP - BẢNG TRA CẤU HÌNH (BẢN MẪU - KHÔNG CHỨA THÔNG TIN THẬT)
+ Sao chép file này thành CAU-HINH.txt để ghi chú riêng cho mạng nội bộ.
+ File CAU-HINH.txt đã được thêm vào .gitignore để không bao giờ đẩy lên Git.
+ LƯU Ý: KHÔNG ghi mật khẩu vào đây. Mật khẩu nằm ở DataStore trên tablet
+        và ở file .env (chmod 600) trên serverubuntu.
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+1. CÁC MÁY TRONG MẠNG (ĐIỀN IP NỘI BỘ CỦA BẠN)
+-------------------------------------------------------------------------------
+192.168.x.1     Router gia đình              (trang quản trị, tài khoản admin)
+192.168.x.50    serverubuntu                 (Mosquitto + go2rtc + collectors)
+192.168.x.104   Camera nội bộ                (RTSP hoặc go2rtc)
+                Máy tính bảng Samsung Galaxy Tab A7 Lite (SM-T225, Android 13)
+
+
+-------------------------------------------------------------------------------
+2. MQTT - BROKER MOSQUITTO  (màn Cài đặt > tab Dịch vụ & Kết nối)
+-------------------------------------------------------------------------------
+Host            192.168.x.50
+Cổng            1883  (hoặc 8883 nếu bật TLS)
+TLS             TẮT / BẬT tuỳ cấu hình broker
+Tài khoản       <TAI_KHOAN_MQTT_TABLET>  (vd: tablet_kiosk sau khi bật ACL)
+Mật khẩu        <không ghi ở đây - điền trong màn Cài đặt>
+Client ID       để trống -> app tự sinh "tablet-smarthome-<6 số ngẫu nhiên>"
+                PHẢI khác client id của bo bơm và các collector; trùng id là
+                broker đá cả hai bên ra.
+
+Khuyến nghị: cấu hình acl_file trên Mosquitto tách riêng từng tài khoản cho
+tablet và từng collector, không mở broker ra Internet.
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/dien/CauHinhMqtt.kt
+
+
+-------------------------------------------------------------------------------
+3. CÁC TOPIC MQTT CHÍNH
+-------------------------------------------------------------------------------
+App subscribe: dien/#  wifi/#  server/#  congtac/#  cuktech/charger/#  cuktech/rssi/#  camera/#
+App publish:   wifi/cmd  (lệnh "reboot" modem)
+               smarthome/control  (lệnh bật/tắt công tắc, KHÔNG retained)
+               cuktech/charger/port, cuktech/charger/settings, cuktech/charger/ble
+               camera/cmd
+
+--- dien/#  (nguồn: script dien_evn chạy Docker trên serverubuntu) ------------
+dien/trangthai          "ok" | "loi"
+dien/ngay/sanluong      kWh ngày gần nhất EVN đã chốt
+dien/ngay/ngay          YYYY-MM-DD
+dien/thang/sanluong     kWh lũy kế từ ngày chốt chỉ số
+dien/thang/tien         tiền ước tính, đã gồm VAT
+dien/congto/chiso       chỉ số công tơ
+dien/congno/sotien      công nợ
+dien/lichsu             JSON [{"ngay":"YYYY-MM-DD","kwh":0.0}, ...]
+dien/capnhat            YYYY-MM-DD HH:MM:SS
+dien/loi                rỗng = không sao
+APP KHÔNG BAO GIỜ GHI VÀO dien/ - ghi vào là đè lên số thật của đường ống.
+
+--- wifi/#  (nguồn: scripts/wifi_collector.py) --------------------------------
+wifi/info               JSON: ssid, security, signal_dbm, download_mbps, ...
+wifi/devices            JSON mảng thiết bị đang nối
+wifi/usage              JSON mảng 24 số (biểu đồ 24h)
+wifi/trangthai          "ok" | "loi"
+wifi/capnhat            mốc thời gian
+wifi/cmd                <-- APP GHI VÀO ĐÂY ("reboot")
+wifi/cmd/result         kết quả lệnh
+
+--- server/#  (nguồn: scripts/server_collector/) ------------------------------
+server/info             hostname, os, kernel, cpu, ram tổng, disk tổng, uptime
+server/metrics          cpu%, ram, disk, nhiệt độ, load, mạng Rx/Tx
+server/docker           danh sách container
+server/nhietdo          các cảm biến nhiệt độ
+server/diennang         pin + RAPL CPU
+server/diennang_ngay    điện năng CPU theo ngày
+server/capnhat          mốc thời gian
+
+--- cuktech/rssi/#  (nguồn: scripts/cuktech_rssi/) ----------------------------
+cuktech/rssi/<nguồn>    JSON sức sóng BLE đo tại từng điểm, retained.
+                        Payload RỖNG = LWT, điểm đo đó chết -> app bỏ dòng.
+
+--- congtac/#  (nguồn: scripts/congtac_bridge/) -------------------------------
+congtac/info            JSON danh sách công tắc bridge đang quản.
+congtac/thietbi/<mã>    JSON trạng thái một công tắc (<phòng>_<thiết bị>).
+congtac/trangthai       "online" | "offline"  <-- LWT của bridge
+congtac/capnhat         mốc thời gian mỗi vòng poll
+congtac/cmd/result      kết quả một lệnh vừa thực thi (KHÔNG retained)
+smarthome/control       <-- APP GHI VÀO ĐÂY.
+
+Ví dụ khai báo công tắc trong .env trên server (KHÔNG ghi mã thật vào repo):
+  Đèn Phòng ngủ 1   Tuya/Smart Life  192.168.x.100  TCP 6668  protocol 3.3
+                    MAC <MAC_TUYA>   device_id <TUYA_DEVICE_ID>
+                    local_key: nằm trong .env trên server
+  Quạt Phòng ngủ 1  CozyLife         192.168.x.103  TCP 5555
+                    MAC <MAC_COZYLIFE>  did <COZYLIFE_DID>
+
+Kiểm tra nhanh trên server:
+  mosquitto_sub -h 192.168.x.50 -u <USER> -P <PASS> -t "dien/#" -v
+
+
+-------------------------------------------------------------------------------
+4. CAMERA - GO2RTC  (màn Cài đặt > tab Dịch vụ & Kết nối)
+-------------------------------------------------------------------------------
+Host            192.168.x.50
+Cổng xem        1984
+Cổng ghi hình   1985  (scripts/camera_recorder/)
+TLS             TẮT (LAN) / BẬT (HTTPS)
+Tài khoản       <đặt trong go2rtc.yaml mục api: username/password>
+Mật khẩu        <không ghi ở đây>
+
+Bắt buộc đặt api: username/password trong go2rtc.yaml để tránh lộ URL nguồn
+khi gọi /api/streams.
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/camera/CauHinhCamera.kt
+
+
+-------------------------------------------------------------------------------
+5. THỜI TIẾT - OPEN-METEO
+-------------------------------------------------------------------------------
+Địa điểm mặc định    Hà Nội
+Lat / Lon            21.0278 / 105.8342
+API                  https://api.open-meteo.com/v1/forecast  (không cần khóa)
+Nhịp tải lại         15 phút/lần, dự báo 4 ngày
+
+
+-------------------------------------------------------------------------------
+6. CẬP NHẬT TỰ ĐỘNG (OTA) & XÁC MINH SHA-256
+-------------------------------------------------------------------------------
+Repo            <owner>/<repo>  (mặc định: trungpq96dev/app_smart_home)
+API             https://api.github.com/repos/<repo>/releases/latest
+Cơ chế          App tự kiểm tra sau khi khởi động 4 giây -> tải *.apk và file
+                *.apk.sha256 -> kiểm tra toàn vẹn SHA-256 -> chỉ cho phép cài
+                khi mã băm khớp hoàn toàn và đã xác nhận PIN kỹ thuật.
+Phát hành       đẩy tag v* lên GitHub -> .github/workflows/release.yml ký APK
+                bằng keystore cố định (GitHub Secrets) và tạo kèm file .sha256.
+
+File mã nguồn: app/src/main/java/vn/smarthome/data/ota/OtaManager.kt
+
+
+-------------------------------------------------------------------------------
+7. BUILD & KÝ RELEASE
+-------------------------------------------------------------------------------
+applicationId   vn.smarthome        (debug: vn.smarthome.debug)
+minSdk 26  /  targetSdk 35  /  compileSdk 35  /  Java 17
+Khóa ký         keystore.properties + smarthome-release.jks ở thư mục gốc
+                (CẢ HAI ĐỀU KHÔNG NẰM TRONG GIT)
+CI              GitHub Actions (.github/workflows/release.yml)
+                BẮT BUỘC cấu hình GitHub Secrets:
+                  - KEYSTORE_BASE64
+                  - KEYSTORE_PROPERTIES
+
+
+-------------------------------------------------------------------------------
+8. BƠM NƯỚC ESP32 — AQUACONTROL
+-------------------------------------------------------------------------------
+Kênh kết nối    1) LAN HTTP: http://<espHost>/api/state, /api/cmd, /api/usage
+                2) MQTT: bomnuoc/state, bomnuoc/status, bomnuoc/usage, bomnuoc/cmd
+Cấu hình lưu    DataStore riêng: cau_hinh_bom_nuoc (đã loại khỏi sao lưu mây).
+                KHÔNG nhúng host/tài khoản/mật khẩu bơm nước trong mã nguồn.
+
+
+-------------------------------------------------------------------------------
+9. CHỖ LƯU MẬT KHẨU & BẢO MẬT
+-------------------------------------------------------------------------------
+Trên máy tính bảng   DataStore nội bộ (đã loại khỏi sao lưu đám mây trong
+                     backup_rules.xml & data_extraction_rules.xml):
+                     - cau_hinh           (MQTT)
+                     - cau_hinh_camera    (go2rtc)
+                     - cau_hinh_thoitiet  (Open-Meteo)
+                     - cau_hinh_bom_nuoc  (AquaControl)
+                     - cau_hinh_giong_noi (Gemini Live API key)
+                     - cau_hinh_bao_mat   (PIN hash + muối, màn hình chờ)
+Trên serverubuntu    File .env (chmod 600) và go2rtc.yaml
+Trong mã nguồn       KHÔNG CÓ mật khẩu hay thông tin mạng nội bộ thật nào.
+
+===============================================================================

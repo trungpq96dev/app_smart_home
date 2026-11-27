@@ -110,6 +110,36 @@ class TelegramNotifier:
             log.warning("Hàng đợi Telegram đầy, bỏ qua 1 thông báo.")
             return False
 
+    def bao_nguoi_la(
+        self,
+        camera: str,
+        start_ts: int,
+        mode: str,
+        anh_path: Path | None,
+        on_da_gui: Callable[[], None] | None = None,
+    ) -> bool:
+        """Gửi cảnh báo ảnh chụp người lạ về Telegram khi ở chế độ Vắng nhà hoặc Giờ ngủ (23:00-06:00)."""
+        if not self.cfg.tg_enabled:
+            return False
+        nhan_che_do = "Vắng nhà" if mode == "away" else "Giờ ngủ"
+        caption = (
+            f"🚨 Phát hiện người lạ ({nhan_che_do})\n"
+            f"📷 Camera: {camera}\n"
+            f"🕒 Lúc: {gio_vn_str(start_ts)}"
+        )
+        muc = {
+            "loai": "photo" if (anh_path and anh_path.exists()) else "text",
+            "caption": caption,
+            "anh_path": anh_path,
+            "on_da_gui": on_da_gui,
+        }
+        try:
+            self._q.put_nowait(muc)
+            return True
+        except queue.Full:
+            log.warning("Hàng đợi Telegram đầy, bỏ qua cảnh báo người lạ.")
+            return False
+
     def gui_anh_chup_tay(self, camera: str, ts: int, anh_path: Path) -> bool:
         if not self.cfg.tg_enabled or not anh_path.exists():
             return False

@@ -14,8 +14,71 @@ object CameraTopic {
     const val TRANG_THAI = "camera/trangthai"
     const val STATE = "camera/state"
     const val PERSON = "camera/person"
+    const val FACE_GREET = "camera/face/greet"
     const val CMD = "camera/cmd"
     const val KET_QUA = "camera/cmd/result"
+}
+
+data class PtzPreset(
+    val id: String,
+    val label: String,
+    val token: String,
+) {
+    companion object {
+        val MAC_DINH: List<PtzPreset> = listOf(
+            PtzPreset("cua_chinh", "Cửa chính", "1"),
+            PtzPreset("ban_an", "Bàn ăn", "2"),
+            PtzPreset("cau_thang", "Cầu thang", "3"),
+            PtzPreset("toan_canh", "Toàn cảnh", "4"),
+        )
+    }
+}
+
+/**
+ * Su kien nhan dien khuon mat tu topic `camera/face/greet` (`retain=False`).
+ */
+data class FaceGreetEvent(
+    val name: String,
+    val isKnown: Boolean,
+    val greeting: String,
+    val camera: String,
+    val confidence: Float,
+    val snapshotUrl: String,
+    val ts: Long,
+    val mode: String = "home",
+    val silent: Boolean = false,
+) {
+    fun conMoi(nowEpochSec: Long, maxAgeSec: Long = 30L): Boolean =
+        ts > 0L && kotlin.math.abs(nowEpochSec - ts) < maxAgeSec
+
+    fun gioStr(): String = dinhDangGioVn(ts)
+
+    companion object {
+        fun parse(payload: String): FaceGreetEvent? {
+            val txt = payload.trim()
+            if (txt.isEmpty()) return null
+            return runCatching {
+                val o = JSONObject(txt)
+                val name = o.optString("name", "").trim()
+                if (name.isEmpty()) return null
+                val isKnown = o.optBoolean("is_known", !name.equals("unknown", ignoreCase = true))
+                val greeting = o.optString("greeting", "").trim().ifEmpty {
+                    if (isKnown) "Chào mừng $name về nhà!" else "Có khách ở cửa"
+                }
+                FaceGreetEvent(
+                    name = name,
+                    isKnown = isKnown,
+                    greeting = greeting,
+                    camera = o.optString("camera", ""),
+                    confidence = o.optDouble("confidence", 0.0).toFloat(),
+                    snapshotUrl = o.optString("snapshot_url", ""),
+                    ts = o.optLong("ts", 0L),
+                    mode = o.optString("mode", "home").ifBlank { "home" },
+                    silent = o.optBoolean("silent", false),
+                )
+            }.getOrNull()
+        }
+    }
 }
 
 private val MUI_GIO_VN: ZoneId = ZoneId.of("Asia/Ho_Chi_Minh")
@@ -57,6 +120,11 @@ data class CameraRecorderState(
     val online: Boolean? = null,
     val recordingEnabled: Boolean? = null,
     val detectPersonEnabled: Boolean? = null,
+    val faceRecognitionEnabled: Boolean? = null,
+    val privacyMode: Boolean = false,
+    val homeMode: String = "home",
+    val ptzCameras: List<String> = emptyList(),
+    val indoorCameras: List<String> = emptyList(),
     val telegramEnabled: Boolean = false,
     val driveEnabled: Boolean = false,
     val apiPort: Int? = null,
@@ -76,8 +144,15 @@ data class CameraRecorderState(
     val dangSong: Boolean get() = online == true
 
     fun camDangGhi(tenLuong: String?): Boolean =
-        dangSong && recordingEnabled == true &&
+        dangSong && recordingEnabled == true && !camBiAnRiengTu(tenLuong) &&
             (tenLuong == null || cameras[tenLuong]?.dangGhi == true)
+
+    fun camBiAnRiengTu(tenLuong: String?): Boolean {
+        if (!privacyMode) return false
+        if (indoorCameras.isEmpty()) return true
+        val goc = tenLuong?.removeSuffix("_sd") ?: return true
+        return goc in indoorCameras
+    }
 
     companion object {
         fun gop(cur: CameraRecorderState, topic: String, payload: String): CameraRecorderState {
@@ -107,10 +182,35 @@ data class CameraRecorderState(
                                 )
                             }
                         }
+                        val ptzList = buildList {
+                            o.optJSONArray("ptz_cameras")?.let { arr ->
+                                for (i in 0 until arr.length()) {
+                                    val s = arr.optString(i, "").trim()
+                                    if (s.isNotEmpty()) add(s)
+                                }
+                            }
+                        }
+                        val indoorList = buildList {
+                            o.optJSONArray("indoor_cameras")?.let { arr ->
+                                for (i in 0 until arr.length()) {
+                                    val s = arr.optString(i, "").trim()
+                                    if (s.isNotEmpty()) add(s)
+                                }
+                            }
+                        }
                         cur.copy(
                             online = cur.online ?: true,
                             recordingEnabled = o.optBoolean("recording_enabled", true),
                             detectPersonEnabled = o.optBoolean("detect_person_enabled", true),
+                            faceRecognitionEnabled = if (o.has("face_recognition_enabled")) {
+                                o.optBoolean("face_recognition_enabled", true)
+                            } else cur.faceRecognitionEnabled,
+                            privacyMode = if (o.has("privacy_mode")) {
+                                o.optBoolean("privacy_mode", false)
+                            } else cur.privacyMode,
+                            homeMode = o.optString("home_mode", cur.homeMode).ifBlank { "home" },
+                            ptzCameras = if (o.has("ptz_cameras")) ptzList else cur.ptzCameras,
+                            indoorCameras = if (o.has("indoor_cameras")) indoorList else cur.indoorCameras,
                             telegramEnabled = o.optBoolean("telegram_enabled", false),
                             driveEnabled = o.optBoolean("drive_enabled", false),
                             apiPort = o.optInt("api_port", 0).takeIf { it in 1..65535 },
@@ -191,10 +291,22 @@ data class SuKienCamera(
     val maxConf: Float,
     val personCount: Int,
     val hasThumb: Boolean,
+    val camera: String = "",
+    val label: String? = null,
+    val hasClip: Boolean = false,
 ) {
-    val laNguoi: Boolean get() = kind == "person"
+    val laNguoi: Boolean get() = kind == "person" || kind == "face_known" || kind == "face_unknown"
+    val laNguoiLa: Boolean get() = kind == "face_unknown"
+    val laNguoiQuen: Boolean get() = kind == "face_known"
     val thoiLuongGiay: Int get() = max(1, (endTs - startTs).toInt())
     fun gioBatDau(): String = dinhDangGioVn(startTs)
+    fun nhanHienThi(): String = when {
+        !label.isNullOrBlank() -> label
+        laNguoiLa -> "Người lạ"
+        laNguoiQuen -> "Người quen"
+        kind == "snapshot" -> "Ảnh chụp tay"
+        else -> "$personCount người"
+    }
 }
 
 data class ViTriPhat(

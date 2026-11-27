@@ -74,6 +74,52 @@ data class CauHinhCamera(
 
     fun urlChupAnh(tenLuong: String, congOverride: Int? = null): String =
         gocGhiHinh(congOverride) + "/api/snapshot?cam=" + Uri.encode(tenLuong)
+
+    fun urlSuKien(tenLuong: String?, kind: String = "all", limit: Int = 60, congOverride: Int? = null): String {
+        val params = buildList {
+            if (!tenLuong.isNullOrBlank()) add("cam=" + Uri.encode(tenLuong))
+            if (kind.isNotBlank() && kind != "all") add("kind=" + Uri.encode(kind))
+            add("limit=$limit")
+        }.joinToString("&")
+        return gocGhiHinh(congOverride) + "/api/events?" + params
+    }
+
+    fun urlClipSuKien(eventId: Int, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/clip/" + eventId + ".mp4"
+
+    fun urlAnhMat(snapshotUrl: String, congOverride: Int? = null): String {
+        val s = snapshotUrl.trim()
+        if (s.startsWith("http://") || s.startsWith("https://")) return s
+        val duong = if (s.startsWith("/")) s else "/$s"
+        return gocGhiHinh(congOverride) + duong
+    }
+
+    fun urlPtzPresets(tenLuong: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/ptz/presets?cam=" + Uri.encode(tenLuong)
+
+    fun urlPtzMove(tenLuong: String, direction: String, speed: Float = 0.5f, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/ptz/move?cam=" + Uri.encode(tenLuong) +
+            "&dir=" + Uri.encode(direction) + "&speed=$speed"
+
+    fun urlPtzPreset(tenLuong: String, preset: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/ptz/preset?cam=" + Uri.encode(tenLuong) +
+            "&preset=" + Uri.encode(preset)
+
+    fun urlPrivacy(bat: Boolean, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/privacy?enabled=" + if (bat) "1" else "0"
+
+    fun urlHomeMode(mode: String, congOverride: Int? = null): String =
+        gocGhiHinh(congOverride) + "/api/home_mode?mode=" + Uri.encode(mode)
+
+    /**
+     * Chon luong phu `_sd` (H.264) cho WebView tren Tab A7 Lite neu go2rtc co khai bao song song
+     * luong chinh (HD) va luong phu (`<ten>_sd`), tranh den hinh H.265 va tiet kiem RAM.
+     */
+    fun tenLuongWebView(tenLuong: String, dsTatCaLuong: Collection<String>): String {
+        if (tenLuong.endsWith("_sd")) return tenLuong
+        val sd = "${tenLuong}_sd"
+        return if (sd in dsTatCaLuong) sd else tenLuong
+    }
 }
 
 private val Context.dsCamera by preferencesDataStore(name = "cau_hinh_camera")

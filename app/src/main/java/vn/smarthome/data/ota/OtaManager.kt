@@ -10,16 +10,58 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 class OtaManager(private val context: Context) {
 
     companion object {
         const val DEFAULT_REPO = "trungpq96dev/app_smart_home"
         private const val GITHUB_API_URL = "https://api.github.com/repos/%s/releases/latest"
+        private val SHA256_REGEX = Regex("\\b([a-fA-F0-9]{64})\\b")
+
+        /**
+         * Tinh ma bam SHA-256 (chu thuong 64 ky tu hex) theo tung khoi 8KB
+         * de khong ton RAM tren Tab A7 Lite.
+         */
+        fun computeSha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        /**
+         * Trich xuat chuoi SHA-256 64 ky tu hex tu file .sha256 (`sha256sum`),
+         * truong `digest` cua GitHub API (`sha256:<hex>`), hoac dong mo ta release.
+         */
+        fun parseSha256(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            val cleaned = raw.trim().removePrefix("sha256:").removePrefix("SHA256:")
+            return SHA256_REGEX.find(cleaned)?.groupValues?.getOrNull(1)?.lowercase()
+        }
+
+        /**
+         * So sanh hang thoi gian (constant-time) SHA-256 cua file APK voi ma ky vong.
+         */
+        fun verifyApkSha256(apkFile: File, expectedSha256: String): Boolean {
+            if (!apkFile.exists() || !apkFile.isFile) return false
+            val normalizedExpected = parseSha256(expectedSha256) ?: return false
+            val actual = computeSha256(apkFile)
+            return MessageDigest.isEqual(
+                actual.toByteArray(Charsets.UTF_8),
+                normalizedExpected.toByteArray(Charsets.UTF_8),
+            )
+        }
     }
 
     /**
@@ -95,19 +137,31 @@ class OtaManager(private val context: Context) {
             val notes = json.optString("body", "Không có mô tả cập nhật.")
             val publishedAt = json.optString("published_at", "")
 
-            // Tim file APK trong danh sach assets
+            // Tim file APK va file checksum .sha256 trong danh sach assets
             val assets = json.optJSONArray("assets")
             var apkUrl = ""
             var apkSize = 0L
+            var apkNameLower = ""
+            var apkDigest: String? = null
+            var sha256Url: String? = null
 
             if (assets != null) {
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
                     val assetName = asset.optString("name", "").lowercase()
-                    if (assetName.endsWith(".apk")) {
+                    if (assetName.endsWith(".apk") && apkUrl.isBlank()) {
                         apkUrl = asset.optString("browser_download_url", "")
                         apkSize = asset.optLong("size", 0L)
-                        break
+                        apkNameLower = assetName
+                        apkDigest = parseSha256(asset.optString("digest", ""))
+                    } else if (
+                        assetName.endsWith(".apk.sha256") ||
+                        assetName.endsWith(".sha256") ||
+                        assetName == "sha256sums.txt"
+                    ) {
+                        if (sha256Url.isNullOrBlank() || (apkNameLower.isNotBlank() && assetName.startsWith(apkNameLower))) {
+                            sha256Url = asset.optString("browser_download_url", "").ifBlank { null }
+                        }
                     }
                 }
             }
@@ -115,6 +169,8 @@ class OtaManager(private val context: Context) {
             if (apkUrl.isBlank()) {
                 return@withContext Result.failure(Exception("Bản phát hành $tagName không chứa file APK nào."))
             }
+
+            val expectedSha256 = apkDigest ?: parseSha256(notes)
 
             Result.success(
                 ReleaseInfo(
@@ -124,6 +180,8 @@ class OtaManager(private val context: Context) {
                     downloadUrl = apkUrl,
                     sizeBytes = apkSize,
                     publishedAt = publishedAt,
+                    sha256Url = sha256Url,
+                    expectedSha256 = expectedSha256,
                 )
             )
         } catch (e: Exception) {
@@ -195,6 +253,43 @@ class OtaManager(private val context: Context) {
         }
 
         apkFile
+    }
+
+    /**
+     * Tai file .sha256 tu GitHub Release (neu co) hoac dung ma SHA-256 da doc tu metadata.
+     */
+    suspend fun fetchExpectedSha256(info: ReleaseInfo): String? = withContext(Dispatchers.IO) {
+        info.expectedSha256?.let { parseSha256(it) }?.let { return@withContext it }
+        val checksumUrl = info.sha256Url?.takeIf { it.isNotBlank() } ?: return@withContext null
+
+        var currentUrl = checksumUrl
+        var redirectCount = 0
+        while (true) {
+            val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = 10000
+                readTimeout = 10000
+                setRequestProperty("User-Agent", "SmartHome-OTA-Client")
+            }
+            val status = conn.responseCode
+            if (status in 300..399) {
+                val newUrl = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (newUrl.isNullOrBlank() || redirectCount++ > 5) {
+                    throw IllegalStateException("Không tải được file SHA-256 (chuyển hướng lỗi).")
+                }
+                currentUrl = newUrl
+            } else if (status in 200..299) {
+                val content = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                return@withContext parseSha256(content)
+            } else {
+                conn.disconnect()
+                throw IllegalStateException("Không tải được file SHA-256 (Mã lỗi $status).")
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        null
     }
 
     /**

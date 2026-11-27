@@ -19,6 +19,7 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import vn.smarthome.data.camera.CameraRecorderState
 import vn.smarthome.data.camera.CameraTopic
+import vn.smarthome.data.camera.FaceGreetEvent
 import vn.smarthome.data.congtac.CongTacState
 import vn.smarthome.data.congtac.CongTacTopic
 import vn.smarthome.data.congtac.LenhCongTac
@@ -92,6 +93,9 @@ class MqttDien {
 
     private val _cameraRec = MutableStateFlow(CameraRecorderState())
     val cameraRec: StateFlow<CameraRecorderState> = _cameraRec.asStateFlow()
+
+    private val _faceGreet = MutableSharedFlow<FaceGreetEvent>(extraBufferCapacity = 8)
+    val faceGreet: SharedFlow<FaceGreetEvent> = _faceGreet.asSharedFlow()
 
     private val _ketNoi = MutableStateFlow<KetNoi>(KetNoi.ChuaCauHinh)
     val ketNoi: StateFlow<KetNoi> = _ketNoi.asStateFlow()
@@ -178,9 +182,18 @@ class MqttDien {
                 } else if (topic.startsWith("cuktech/")) {
                     _cuktech.update { CuktechState.gop(it, topic, payload) }
                 } else if (topic.startsWith("camera/")) {
-                    _cameraRec.update { CameraRecorderState.gop(it, topic, payload) }
-                    if (topic == CameraTopic.PERSON && !message.isRetained) {
-                        _pirMotion.tryEmit(System.currentTimeMillis())
+                    if (topic == CameraTopic.FACE_GREET) {
+                        if (!message.isRetained) {
+                            FaceGreetEvent.parse(payload)?.let { ev ->
+                                _faceGreet.tryEmit(ev)
+                                if (!ev.silent) _pirMotion.tryEmit(System.currentTimeMillis())
+                            }
+                        }
+                    } else {
+                        _cameraRec.update { CameraRecorderState.gop(it, topic, payload) }
+                        if (topic == CameraTopic.PERSON && !message.isRetained) {
+                            _pirMotion.tryEmit(System.currentTimeMillis())
+                        }
                     }
                 }
             }
@@ -248,6 +261,7 @@ class MqttDien {
         action: String,
         value: Boolean? = null,
         camera: String? = null,
+        extra: (org.json.JSONObject.() -> Unit)? = null,
     ): KetQuaGui {
         val c = client ?: return KetQuaGui.ChuaNoiBroker
         if (!c.isConnected) return KetQuaGui.ChuaNoiBroker
@@ -258,6 +272,7 @@ class MqttDien {
             .apply {
                 if (value != null) put("value", value)
                 if (!camera.isNullOrBlank()) put("camera", camera)
+                extra?.invoke(this)
             }
             .toString()
         return try {

@@ -502,3 +502,106 @@ def chup_anh_ngay(camera: str, cfg: CauHinhRecorder, thumbs_dir: Path) -> Path |
 
     dich.unlink(missing_ok=True)
     return None
+
+
+class MiniNvrClipper:
+    """Mini-NVR ghi clip sự kiện 20-30 giây bằng `ffmpeg -c copy` (~0% CPU, không giải mã).
+
+    Khi phát hiện người lạ hoặc chuyển động có người, tự mở tiến trình `ffmpeg -c copy`
+    ghi đúng `clip_duration_sec` giây ra `/data/clips/<cam>/<YYYY-MM-DD>/` và gắn vào `events.clip_local`
+    để tab 'Sự kiện' trên Tablet phát lại mượt ngay lập tức.
+    """
+
+    def __init__(self, cfg: CauHinhRecorder, db: CameraDb) -> None:
+        self.cfg = cfg
+        self.db = db
+        self.clips_dir = cfg.data_dir / "clips"
+        self.clips_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._dang_ghi_cam: set[str] = set()
+
+    def ghi_clip_su_kien(self, camera: str, event_id: int, kind: str, start_ts: int) -> bool:
+        """Bắt đầu ghi clip nền 20-30s cho sự kiện (chống chồng chéo trên cùng 1 camera)."""
+        if not self.cfg.clip_enabled or shutil.which("ffmpeg") is None:
+            return False
+        with self._lock:
+            if camera in self._dang_ghi_cam:
+                return False
+            self._dang_ghi_cam.add(camera)
+
+        t = threading.Thread(
+            target=self._luong_ghi_clip,
+            args=(camera, event_id, kind, start_ts),
+            name=f"clip-{camera}-{event_id}",
+            daemon=True,
+        )
+        t.start()
+        return True
+
+    def tao_lenh_clip(self, camera: str, dich: Path) -> list[str]:
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-rtsp_transport",
+            "tcp",
+            "-i",
+            self.cfg.rtsp_url(camera),
+            "-t",
+            str(self.cfg.clip_duration_sec),
+            "-map",
+            "0:v:0",
+            "-c:v",
+            "copy",
+        ]
+        if self.cfg.audio_codec == "none":
+            cmd.append("-an")
+        elif self.cfg.audio_codec == "copy":
+            cmd.extend(["-map", "0:a?", "-c:a", "copy"])
+        else:
+            cmd.extend(["-map", "0:a?", "-c:a", "aac", "-b:a", "64k", "-ar", "16000"])
+        cmd.extend(["-movflags", "+faststart", "-y", str(dich)])
+        return cmd
+
+    def _luong_ghi_clip(self, camera: str, event_id: int, kind: str, start_ts: int) -> None:
+        ngay = ngay_vn_str(start_ts)
+        gio = datetime.fromtimestamp(start_ts, tz=GIO_VN).strftime("%H-%M-%S")
+        dich_dir = self.clips_dir / camera / ngay
+        dich_dir.mkdir(parents=True, exist_ok=True)
+        dich = dich_dir / f"{gio}_{kind}_{event_id}.mp4"
+        tam = dich.with_suffix(".part.mp4")
+        try:
+            proc = subprocess.run(
+                self.tao_lenh_clip(camera, tam),
+                capture_output=True,
+                timeout=self.cfg.clip_duration_sec + 25.0,
+                check=False,
+            )
+            if proc.returncode == 0 and tam.exists() and tam.stat().st_size > 4096:
+                tam.replace(dich)
+                self.db.cap_nhat_clip_event(event_id, str(dich))
+                log.info("[%s] Đã lưu Mini-NVR clip sự kiện #%d (%s)", camera, event_id, dich.name)
+            else:
+                tam.unlink(missing_ok=True)
+        except Exception as e:
+            log.debug("[%s] Ghi Mini-NVR clip #%d lỗi: %s", camera, event_id, e)
+            tam.unlink(missing_ok=True)
+        finally:
+            with self._lock:
+                self._dang_ghi_cam.discard(camera)
+
+    def don_clip_qua_han(self, now_ts: float | None = None) -> int:
+        if not self.clips_dir.exists():
+            return 0
+        moc = (now_ts if now_ts is not None else time.time()) - self.cfg.clip_retention_days * 86400.0
+        da_xoa = 0
+        for p in self.clips_dir.rglob("*.mp4"):
+            try:
+                if p.stat().st_mtime < moc:
+                    p.unlink(missing_ok=True)
+                    da_xoa += 1
+            except OSError:
+                pass
+        return da_xoa
+

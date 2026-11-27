@@ -1,0 +1,53 @@
+{
+  "cua_chinh": {
+    "host": "192.168.0.101",
+    "port": 80,
+    "user": "admin",
+    "password": "SAFETY_CODE_IMOU",
+    "ptz_path": "/onvif/ptz_service",
+    "profile_token": "Profile_1",
+    "indoor": false,
+    "privacy_preset": "privacy",
+    "home_preset": "1",
+    "presets": [
+      { "id": "cua_chinh", "label": "Cửa chính", "token": "1" },
+      { "id": "san_truoc", "label": "Sân trước", "token": "2" },
+      { "id": "cong", "label": "Cổng", "token": "3" },
+      { "id": "toan_canh", "label": "Toàn cảnh", "token": "4" }
+    ]
+  },
+  "phong_khach": {
+    "host": "192.168.0.102",
+    "port": 80,
+    "user": "admin",
+    "password": "VERIFY_CODE_EZVIZ_C6N",
+    "ptz_path": "/onvif/ptz_service",
+    "profile_token": "Profile_1",
+    "indoor": true,
+    "privacy_preset": "privacy",
+    "home_preset": "1",
+    "presets": [
+      { "id": "cua_chinh", "label": "Cửa chính", "token": "1" },
+      { "id": "ban_an", "label": "Bàn ăn", "token": "2" },
+      { "id": "cau_thang", "label": "Cầu thang", "token": "3" },
+      { "id": "toan_canh", "label": "Toàn cảnh", "token": "4" }
+    ]
+  },
+  "cau_thang": {
+    "host": "192.168.0.103",
+    "port": 80,
+    "user": "admin",
+    "password": "VERIFY_CODE_EZVIZ_H6C",
+    "ptz_path": "/onvif/ptz_service",
+    "profile_token": "Profile_1",
+    "indoor": true,
+    "privacy_preset": "privacy",
+    "home_preset": "1",
+    "presets": [
+      { "id": "cau_thang", "label": "Cầu thang", "token": "1" },
+      { "id": "hanh_lang", "label": "Hành lang", "token": "2" },
+      { "id": "cua_phong", "label": "Cửa phòng", "token": "3" },
+      { "id": "toan_canh", "label": "Toàn cảnh", "token": "4" }
+    ]
+  }
+}
