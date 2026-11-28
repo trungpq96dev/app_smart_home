@@ -20,7 +20,7 @@ import { TelegramAlertService } from './telegramAlerts.js';
 import { TunnelWatcher } from './tunnelWatcher.js';
 import { WebAccessAuthService } from './webAccessAuth.js';
 
-const APP_VERSION = '0.9.4-web';
+const APP_VERSION = '0.9.10-web';
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 

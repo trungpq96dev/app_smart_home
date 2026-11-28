@@ -45,6 +45,7 @@ export function ServerScreen() {
     adminLockEnabled,
     adminUnlocked,
     requireAdminPin,
+    requireConfirm,
     lockAdmin,
     dockerControlStatus,
     dockerBusyName,
@@ -105,9 +106,24 @@ export function ServerScreen() {
 
   const handleContainerAction = (c: ServerContainer, action: DockerContainerAction) => {
     const verb = action === 'start' ? 'Bật' : action === 'stop' ? 'Dừng' : 'Khởi động lại';
-    requireAdminPin(`${verb} container ${c.name}`, async () => {
-      await controlDockerContainer(c.name, action);
-    });
+    const runWithPin = () => {
+      requireAdminPin(`${verb} container ${c.name}`, async () => {
+        await controlDockerContainer(c.name, action);
+      });
+    };
+    if (action === 'stop') {
+      requireConfirm(
+        {
+          title: `Dừng container ${c.name}?`,
+          message: `Tạm dừng "${c.name}" sẽ giải phóng CPU/RAM đang chiếm giữ cho đến khi bạn bấm Bật lại.`,
+          confirmLabel: 'Dừng container',
+          danger: true,
+        },
+        runWithPin,
+      );
+      return;
+    }
+    runWithPin();
   };
 
   const handleRefreshDocker = async () => {

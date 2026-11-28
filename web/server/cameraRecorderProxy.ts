@@ -180,6 +180,14 @@ export function proxyCameraRecorderHttp(
   if (req.headers['if-modified-since']) {
     headers['if-modified-since'] = req.headers['if-modified-since'];
   }
+  if (method === 'POST') {
+    if (req.headers['content-type']) {
+      headers['content-type'] = req.headers['content-type'];
+    }
+    if (req.headers['content-length']) {
+      headers['content-length'] = req.headers['content-length'];
+    }
+  }
   const auth = basicAuthHeader(cam);
   if (auth) {
     headers.authorization = auth;

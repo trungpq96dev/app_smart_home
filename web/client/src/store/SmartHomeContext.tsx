@@ -39,8 +39,13 @@ import {
   CameraTopic,
   createEmptyCameraRecorderState,
   gopCameraRecorder,
+  isFaceGreetFresh,
+  parseFaceGreetEvent,
   type CameraRecorderState,
+  type FaceGreetEvent,
 } from '../data/cameraRecorder.js';
+import { phatChaoGiongNoi } from '../data/chaoGiongNoi.js';
+import type { ConfirmPromptState } from '../components/ConfirmDialog.js';
 import {
   buildOThietBiThat,
   createEmptyCongTacState,
@@ -222,8 +227,8 @@ export type UpdateCheckState =
   | { status: 'available'; release: GithubReleaseInfo }
   | { status: 'error'; message: string };
 
-export const APP_WEB_VERSION = '0.9.4-web';
-export const ANDROID_BASE_VERSION = '0.9.4';
+export const APP_WEB_VERSION = '0.9.10-web';
+export const ANDROID_BASE_VERSION = '0.9.10';
 
 function isNewerVersion(remoteRaw: string, localRaw: string): boolean {
   const parse = (v: string) =>
@@ -398,6 +403,18 @@ interface SmartHomeContextValue {
   selectCamera: (index: number) => void;
   chupAnhCamera: (tenLuong: string) => Promise<void>;
   datCanhNguoiCamera: (bat: boolean) => void;
+  chaoMatHienTai: FaceGreetEvent | null;
+  anPopupChaoMat: () => void;
+  docThuChaoMat: (ten: string) => void;
+  dieuKhienPtz: (cam: string, direction: string, speed?: number) => Promise<void>;
+  goiPtzPreset: (cam: string, preset: string) => Promise<void>;
+  datCheDoRiengTuCamera: (bat: boolean) => Promise<void>;
+
+  // Confirm Dialog for sensitive actions (v0.9.5)
+  confirmPrompt: ConfirmPromptState | null;
+  requireConfirm: (opts: ConfirmPromptState, fn: () => void | Promise<void>) => void;
+  acceptConfirm: () => void;
+  cancelConfirm: () => void;
 
   // Quick & Room Controls
   toggleQuickItem: (id: string) => void;
@@ -587,6 +604,10 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   const [wifi, setWifi] = useState<WifiState>(() => DemoData.initialWifiState());
   const [thoiTiet, setThoiTiet] = useState<ThoiTietUi>({ state: 'dang_tai' });
   const [cameraRecorder, setCameraRecorder] = useState<CameraRecorderState>(createEmptyCameraRecorderState);
+  const [chaoMatHienTai, setChaoMatHienTai] = useState<FaceGreetEvent | null>(null);
+  const chaoMatTimerRef = useRef<number | null>(null);
+  const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPromptState | null>(null);
+  const pendingConfirmActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [dangChupAnh, setDangChupAnh] = useState(false);
   const [selectedCameraIndex, setSelectedCameraIndex] = useState(0);
 
@@ -968,6 +989,30 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (topic.startsWith('camera/')) {
+        if (topic === CameraTopic.FACE_GREET) {
+          if (isLive && !retain) {
+            const ev = parseFaceGreetEvent(payload);
+            if (ev && isFaceGreetFresh(ev)) {
+              danhThucManChoTuSuKien();
+              setChaoMatHienTai(ev);
+              if (chaoMatTimerRef.current !== null) {
+                window.clearTimeout(chaoMatTimerRef.current);
+              }
+              chaoMatTimerRef.current = window.setTimeout(() => {
+                setChaoMatHienTai(null);
+                chaoMatTimerRef.current = null;
+              }, ev.isKnown ? 5000 : 10000);
+              if (!ev.silent && ev.greeting) {
+                void phatChaoGiongNoi(ev.greeting, {
+                  apiPort: cameraRecorderRef.current.apiPort,
+                  screensaverConfig: sc,
+                });
+              }
+            }
+          }
+          return;
+        }
+
         const next = gopCameraRecorder(cameraRecorderRef.current, topic, payload);
         cameraRecorderRef.current = next;
         setCameraRecorder(next);
@@ -2047,6 +2092,112 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     },
     [publishMqtt, showToast],
   );
+
+  const anPopupChaoMat = useCallback(() => {
+    if (chaoMatTimerRef.current !== null) {
+      window.clearTimeout(chaoMatTimerRef.current);
+      chaoMatTimerRef.current = null;
+    }
+    setChaoMatHienTai(null);
+  }, []);
+
+  const docThuChaoMat = useCallback(
+    (ten: string) => {
+      const clean = ten.trim() || 'Trung';
+      const cau = `Chào mừng ${clean} về nhà!`;
+      showToast(`Đang đọc thử: "${cau}"`, 'info');
+      void phatChaoGiongNoi(cau, {
+        apiPort: cameraRecorderRef.current.apiPort,
+        screensaverConfig: screensaverConfigRef.current,
+        forceTest: true,
+      }).then((r) => {
+        if (!r.ok) {
+          showToast('Trình duyệt chặn tự phát âm thanh hoặc chưa nối được dịch vụ TTS.', 'warning');
+        }
+      });
+    },
+    [showToast],
+  );
+
+  const dieuKhienPtz = useCallback(
+    async (cam: string, direction: string, speed = 0.5) => {
+      const res = await CameraPlaybackClient.dieuKhienPtzMove(
+        cam,
+        direction,
+        speed,
+        cameraRecorderRef.current.apiPort,
+      );
+      if (!res.ok) {
+        // Fallback MQTT camera/cmd
+        const payload = JSON.stringify({
+          id: `web-ptz-${Date.now().toString(36)}`,
+          action: 'PTZ_MOVE',
+          camera: cam,
+          direction,
+          speed,
+        });
+        const ack = await publishMqtt(CameraTopic.CMD, payload);
+        if (!ack.ok) {
+          showToast(res.message, 'warning');
+        }
+      }
+    },
+    [publishMqtt, showToast],
+  );
+
+  const goiPtzPreset = useCallback(
+    async (cam: string, preset: string) => {
+      const res = await CameraPlaybackClient.goiPtzPreset(
+        cam,
+        preset,
+        cameraRecorderRef.current.apiPort,
+      );
+      if (res.ok) {
+        showToast(res.message, 'success');
+      } else {
+        const payload = JSON.stringify({
+          id: `web-preset-${Date.now().toString(36)}`,
+          action: 'PTZ_PRESET',
+          camera: cam,
+          preset,
+        });
+        const ack = await publishMqtt(CameraTopic.CMD, payload);
+        showToast(ack.ok ? 'Đã gửi lệnh xoay tới góc lưu sẵn.' : res.message, ack.ok ? 'info' : 'warning');
+      }
+    },
+    [publishMqtt, showToast],
+  );
+
+  const datCheDoRiengTuCamera = useCallback(
+    async (bat: boolean) => {
+      const res = await CameraPlaybackClient.datCheDoRiengTu(
+        bat,
+        cameraRecorderRef.current.apiPort,
+      );
+      showToast(res.message, res.ok ? 'success' : 'warning');
+    },
+    [showToast],
+  );
+
+  const requireConfirm = useCallback(
+    (opts: ConfirmPromptState, fn: () => void | Promise<void>) => {
+      pendingConfirmActionRef.current = fn;
+      setConfirmPrompt(opts);
+    },
+    [],
+  );
+
+  const acceptConfirm = useCallback(() => {
+    const fn = pendingConfirmActionRef.current;
+    pendingConfirmActionRef.current = null;
+    setConfirmPrompt(null);
+    if (fn) void fn();
+  }, []);
+
+  const cancelConfirm = useCallback(() => {
+    pendingConfirmActionRef.current = null;
+    setConfirmPrompt(null);
+  }, []);
 
   // Cuktech BLE controls
   const datCongSac = useCallback(
@@ -3489,6 +3640,16 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     selectCamera,
     chupAnhCamera,
     datCanhNguoiCamera,
+    chaoMatHienTai,
+    anPopupChaoMat,
+    docThuChaoMat,
+    dieuKhienPtz,
+    goiPtzPreset,
+    datCheDoRiengTuCamera,
+    confirmPrompt,
+    requireConfirm,
+    acceptConfirm,
+    cancelConfirm,
     toggleQuickItem,
     thaoTacNhanhPhong,
     toggleRoomLight,

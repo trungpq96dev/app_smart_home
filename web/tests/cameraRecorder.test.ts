@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CameraPlaybackClient,
   CameraTopic,
+  camBiAnRiengTu,
   camDangGhi,
   congTruNgayVn,
   createEmptyCameraRecorderState,
   dinhDangGioVn,
   doanTiepTheo,
   gopCameraRecorder,
+  isFaceGreetFresh,
   mocNhaySuKien,
+  parseFaceGreetEvent,
   suKienNguoiTiep,
   suKienNguoiTruoc,
   timViTriPhat,
@@ -118,5 +122,53 @@ describe('CameraRecorder MQTT state & Timeline Imou/EZVIZ logic (v0.9.4)', () =>
     expect(suKienNguoiTiep(tl, dayStart + 260)?.id).toBe(12);
     expect(suKienNguoiTruoc(tl, dayStart + 900)?.id).toBe(10);
     expect(mocNhaySuKien(tl, tl.events[0])).toBe(dayStart + 247);
+  });
+
+  it('parse FaceGreetEvent, privacyMode, ptzCameras va proxy URL cho Khuon mat / TTS (v0.9.5-0.9.10)', () => {
+    const nowSec = 1764055000;
+    const known = parseFaceGreetEvent(
+      JSON.stringify({
+        name: 'Trung',
+        is_known: true,
+        greeting: 'Chào mừng Trung về nhà!',
+        camera: 'cua_chinh',
+        confidence: 0.87,
+        snapshot_url: '/api/face/snapshot/trung_1.jpg',
+        ts: nowSec - 5,
+      }),
+    );
+    expect(known).not.toBeNull();
+    expect(known?.isKnown).toBe(true);
+    expect(known?.greeting).toBe('Chào mừng Trung về nhà!');
+    expect(isFaceGreetFresh(known!, nowSec)).toBe(true);
+    expect(CameraPlaybackClient.urlAnhMat(known!.snapshotUrl, 1985)).toBe(
+      '/api/camera/recorder/face/snapshot/trung_1.jpg?port=1985',
+    );
+    expect(CameraPlaybackClient.urlTts('Xin chào', 1985)).toBe(
+      '/api/camera/recorder/tts?text=Xin+ch%C3%A0o&port=1985',
+    );
+
+    let st = createEmptyCameraRecorderState();
+    st = gopCameraRecorder(st, CameraTopic.TRANG_THAI, 'online');
+    st = gopCameraRecorder(
+      st,
+      CameraTopic.STATE,
+      JSON.stringify({
+        recording_enabled: true,
+        privacy_mode: true,
+        home_mode: 'home',
+        ptz_cameras: ['phong_khach'],
+        indoor_cameras: ['phong_khach'],
+        cameras: {
+          phong_khach: { recording: true, last_segment_ts: nowSec, error: null },
+          cua_chinh: { recording: true, last_segment_ts: nowSec, error: null },
+        },
+      }),
+    );
+    expect(st.ptzCameras).toEqual(['phong_khach']);
+    expect(camBiAnRiengTu(st, 'phong_khach')).toBe(true);
+    expect(camBiAnRiengTu(st, 'cua_chinh')).toBe(false);
+    expect(camDangGhi(st, 'phong_khach')).toBe(false);
+    expect(camDangGhi(st, 'cua_chinh')).toBe(true);
   });
 });

@@ -19,6 +19,8 @@ export interface ScreensaverConfig {
   nightStartHour: number;
   nightEndHour: number;
   webDimOpacity: number;
+  docChaoBat: boolean;
+  docChaoGioNgu: boolean;
   pirWakeEnabled: boolean;
   pirTopic: string;
   gasTopic: string;
@@ -42,6 +44,8 @@ export function defaultScreensaverConfig(): ScreensaverConfig {
     nightStartHour: 22,
     nightEndHour: 6,
     webDimOpacity: 0.4,
+    docChaoBat: true,
+    docChaoGioNgu: false,
     pirWakeEnabled: true,
     pirTopic: 'smarthome/sensor/pir',
     gasTopic: 'smarthome/sensor/gas',
@@ -69,6 +73,8 @@ export function loadScreensaverConfig(): ScreensaverConfig {
       webDimOpacity: typeof p.webDimOpacity === 'number' && Number.isFinite(p.webDimOpacity)
         ? Math.min(0.75, Math.max(0.1, p.webDimOpacity))
         : def.webDimOpacity,
+      docChaoBat: typeof p.docChaoBat === 'boolean' ? p.docChaoBat : def.docChaoBat,
+      docChaoGioNgu: typeof p.docChaoGioNgu === 'boolean' ? p.docChaoGioNgu : def.docChaoGioNgu,
       pirWakeEnabled: typeof p.pirWakeEnabled === 'boolean' ? p.pirWakeEnabled : def.pirWakeEnabled,
       pirTopic: typeof p.pirTopic === 'string' && p.pirTopic.trim() ? p.pirTopic.trim() : def.pirTopic,
       gasTopic: typeof p.gasTopic === 'string' && p.gasTopic.trim() ? p.gasTopic.trim() : def.gasTopic,

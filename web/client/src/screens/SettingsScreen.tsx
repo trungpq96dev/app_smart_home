@@ -1159,6 +1159,44 @@ export function SettingsScreen() {
 
               <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
                 <div>
+                  <div className="font-semibold text-[#E6EDF7]">Đọc chào khuôn mặt bằng giọng nói</div>
+                  <div className="text-[11px] text-[#8A9BB8]">
+                    Phát giọng Tiếng Việt khi camera nhận diện người quen về nhà
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={screensaverConfig.docChaoBat}
+                  onChange={(e) =>
+                    updateScreensaverConfig({
+                      ...screensaverConfig,
+                      docChaoBat: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <div>
+                  <div className="font-semibold text-[#E6EDF7]">Đọc chào khuôn mặt khung giờ ngủ (22:00 – 06:00)</div>
+                  <div className="text-[11px] text-[#8A9BB8]">
+                    Tắt để giữ yên tĩnh ban đêm; bật nếu vẫn muốn nghe câu chào sau 22h
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={screensaverConfig.docChaoGioNgu}
+                  onChange={(e) =>
+                    updateScreensaverConfig({
+                      ...screensaverConfig,
+                      docChaoGioNgu: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#0E1627] px-3 py-2 text-xs cursor-pointer">
+                <div>
                   <div className="font-semibold text-[#E6EDF7]">Đánh thức khi PIR phát hiện người</div>
                   <div className="text-[11px] text-[#8A9BB8] font-mono-num">
                     {screensaverConfig.pirTopic}

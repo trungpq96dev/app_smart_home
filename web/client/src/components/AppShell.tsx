@@ -21,6 +21,8 @@ import { AdminPinModal } from './AdminPinModal.js';
 import { AmbientScreensaver } from './AmbientScreensaver.js';
 import { BangGiongNoi } from './BangGiongNoi.js';
 import { DestIcon, FlatButton, RoundIconButton, StatusPill, ToastHost, TopBar } from './Common.js';
+import { ConfirmDialog } from './ConfirmDialog.js';
+import { PopupChaoKhuonMat } from './PopupChaoKhuonMat.js';
 import { SideNav } from './SideNav.js';
 
 const MOBILE_PRIMARY_TABS: Array<{ route: DestRoute; label: string }> = [
@@ -72,6 +74,12 @@ export function AppShell() {
     submitAdminPin,
     cancelAdminPin,
     lockAdmin,
+    cameraRecorder,
+    chaoMatHienTai,
+    anPopupChaoMat,
+    confirmPrompt,
+    acceptConfirm,
+    cancelConfirm,
   } = useSmartHome();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -312,6 +320,24 @@ export function AppShell() {
         onSubmit={(pin) => void submitAdminPin(pin)}
         onClose={cancelAdminPin}
       />
+
+      <ConfirmDialog
+        prompt={confirmPrompt}
+        onConfirm={acceptConfirm}
+        onCancel={cancelConfirm}
+      />
+
+      {chaoMatHienTai && !screensaverActive && (
+        <PopupChaoKhuonMat
+          ev={chaoMatHienTai}
+          apiPort={cameraRecorder.apiPort}
+          onMoCamera={() => {
+            anPopupChaoMat();
+            navigateDest('camera');
+          }}
+          onDong={anPopupChaoMat}
+        />
+      )}
     </div>
   );
 }

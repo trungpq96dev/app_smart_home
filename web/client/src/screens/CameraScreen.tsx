@@ -1,11 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   Bell,
   BellOff,
   Camera,
   ChevronLeft,
   ChevronRight,
   Cloud,
+  Compass,
+  Eye,
+  EyeOff,
   FastForward,
   Footprints,
   HardDrive,
@@ -17,6 +24,8 @@ import {
   Settings,
   SkipBack,
   SkipForward,
+  Square,
+  Users,
   VideoOff,
 } from 'lucide-react';
 import {
@@ -28,6 +37,7 @@ import {
   StatusPill,
   TrangThaiCameraPill,
 } from '../components/Common.js';
+import { KhungQuanLyKhuonMat } from '../components/KhungQuanLyKhuonMat.js';
 import { LuongCamera } from '../components/LuongCamera.js';
 import {
   MUC_ZOOM_TIMELINE_LIST,
@@ -37,6 +47,8 @@ import {
 import { TrinhPhatXemLai } from '../components/TrinhPhatXemLai.js';
 import {
   CameraPlaybackClient,
+  PTZ_PRESETS_MAC_DINH,
+  camBiAnRiengTu,
   camDangGhi,
   congTruNgayVn,
   dinhDangGioVn,
@@ -54,13 +66,14 @@ import {
   type DoanVideo,
   type DongThoiGianNgay,
   type NgayCoVideo,
+  type PtzPreset,
   type SuKienCamera,
 } from '../data/cameraRecorder.js';
 import type { CameraFeed } from '../data/models.js';
 import { useSmartHome, type TrangThaiCam } from '../store/SmartHomeContext.js';
 import { SH, tint } from '../theme/colors.js';
 
-type CheDoManCam = 'TRUC_TIEP' | 'XEM_LAI';
+type CheDoManCam = 'TRUC_TIEP' | 'XEM_LAI' | 'KHUON_MAT';
 
 const CHUA_NOI = 'Chưa khai báo go2rtc — vào màn Cài đặt điền địa chỉ máy chạy go2rtc.';
 
@@ -80,6 +93,10 @@ export function CameraScreen() {
     dangChupAnh,
     chupAnhCamera,
     datCanhNguoiCamera,
+    docThuChaoMat,
+    dieuKhienPtz,
+    goiPtzPreset,
+    datCheDoRiengTuCamera,
     config,
     nowMs,
     taiDanhSachCamera,
@@ -122,6 +139,18 @@ export function CameraScreen() {
               }`}
             >
               Xem lại
+            </button>
+            <button
+              type="button"
+              onClick={() => setCheDo('KHUON_MAT')}
+              className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                cheDo === 'KHUON_MAT'
+                  ? 'bg-[#4F8BFF] text-white font-bold'
+                  : 'text-[#8A9BB8] hover:text-[#E6EDF7]'
+              }`}
+            >
+              <Users size={12} />
+              <span>Khuôn mặt</span>
             </button>
           </div>
 
@@ -203,15 +232,30 @@ export function CameraScreen() {
                 datCanhNguoiCamera(!hienTai);
               }}
               onMoXemLai={() => setCheDo('XEM_LAI')}
+              onDaoRiengTu={() => void datCheDoRiengTuCamera(!cameraRecorder.privacyMode)}
+              onPtzMove={(dir) => {
+                if (luongThat) void dieuKhienPtz(luongThat, dir, 0.5);
+              }}
+              onPtzPreset={(preset) => {
+                if (luongThat) void goiPtzPreset(luongThat, preset);
+              }}
               onNotice={(m) => showToast(m, 'warning')}
             />
-          ) : (
+          ) : cheDo === 'XEM_LAI' ? (
             <KhungCheDoXemLai
               tenCamHienThi={cam?.name ?? 'Camera'}
               luongThat={luongThat}
               cameraRecorder={cameraRecorder}
               lanTai={lanTai}
               onNotice={(m) => showToast(m, 'info')}
+            />
+          ) : (
+            <KhungQuanLyKhuonMat
+              luongThat={luongThat}
+              cameraRecorder={cameraRecorder}
+              lanTai={lanTai}
+              onDocThuChao={docThuChaoMat}
+              onNotice={(m, tone) => showToast(m, tone ?? 'info')}
             />
           )}
         </div>
@@ -235,6 +279,9 @@ function KhungCheDoTrucTiep({
   onChupAnh,
   onDaoCanhNguoi,
   onMoXemLai,
+  onDaoRiengTu,
+  onPtzMove,
+  onPtzPreset,
   onNotice,
 }: {
   cam: CameraFeed | null;
@@ -249,8 +296,31 @@ function KhungCheDoTrucTiep({
   onChupAnh: () => void;
   onDaoCanhNguoi: () => void;
   onMoXemLai: () => void;
+  onDaoRiengTu: () => void;
+  onPtzMove: (dir: string) => void;
+  onPtzPreset: (preset: string) => void;
   onNotice: (msg: string) => void;
 }) {
+  const [moPtz, setMoPtz] = useState(false);
+  const [presets, setPresets] = useState<PtzPreset[]>(PTZ_PRESETS_MAC_DINH);
+  const camHoTroPtz = Boolean(
+    luongThat &&
+      (cameraRecorder.ptzCameras.includes(luongThat) ||
+        cameraRecorder.ptzCameras.includes(luongThat.replace(/_sd$/i, ''))),
+  );
+  const dangAnRiengTu = camBiAnRiengTu(cameraRecorder, luongThat);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!luongThat || (!moPtz && !camHoTroPtz)) return;
+    void CameraPlaybackClient.taiPtzPresets(luongThat, cameraRecorder.apiPort).then((list) => {
+      if (!cancelled) setPresets(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [luongThat, moPtz, camHoTroPtz, cameraRecorder.apiPort]);
+
   const dangCanhNguoi = cameraRecorder.detectPersonEnabled;
   const nhanCanhNguoi =
     dangCanhNguoi === true
@@ -271,7 +341,19 @@ function KhungCheDoTrucTiep({
   return (
     <div className="flex flex-col gap-2.5 lg:h-full">
       <div className="relative w-full aspect-video lg:aspect-auto lg:flex-1 lg:min-h-0 rounded-2xl overflow-hidden">
-        {luongThat ? (
+        {dangAnRiengTu ? (
+          <div className="flex h-full min-h-[220px] w-full flex-col items-center justify-center rounded-2xl border border-[#253459] bg-[#0B1220] p-6 text-center gap-2.5">
+            <EyeOff size={34} className="text-[#A855F7]" />
+            <div className="text-sm font-bold text-[#E6EDF7]">Chế độ Riêng tư đang bật</div>
+            <p className="text-xs text-[#8A9BB8] max-w-sm">
+              Camera trong nhà đã tạm ẩn hình ảnh và tạm dừng ghi hình. Bấm nút bên dưới để mở lại.
+            </p>
+            <FlatButton onClick={onDaoRiengTu} color={SH.Purple}>
+              <Eye size={14} />
+              <span>Tắt Chế độ Riêng tư</span>
+            </FlatButton>
+          </div>
+        ) : luongThat ? (
           <>
             <LuongCamera
               key={`${luongThat}-${lanTai}`}
@@ -313,8 +395,72 @@ function KhungCheDoTrucTiep({
         )}
       </div>
 
-      {/* 4 nút thao tác dưới khung trực tiếp (2 cột trên iPhone dọc, 4 cột trên màn ngang) */}
-      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {/* Khung điều khiển xoay Camera 360° (PTZ ONVIF) */}
+      {(moPtz || camHoTroPtz) && luongThat && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#253459] bg-[#131D33] px-3 py-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#93C5FD] mr-1">
+              <Compass size={13} />
+              <span>Xoay 360°</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => onPtzMove('left')}
+              title="Xoay trái"
+              className="rounded-lg border border-[#253459] bg-[#0E1627] p-1.5 text-[#E6EDF7] hover:border-[#4F8BFF] cursor-pointer"
+            >
+              <ArrowLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPtzMove('up')}
+              title="Xoay lên"
+              className="rounded-lg border border-[#253459] bg-[#0E1627] p-1.5 text-[#E6EDF7] hover:border-[#4F8BFF] cursor-pointer"
+            >
+              <ArrowUp size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPtzMove('stop')}
+              title="Dừng xoay"
+              className="rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/15 p-1.5 text-[#FCA5A5] hover:bg-[#EF4444]/25 cursor-pointer"
+            >
+              <Square size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPtzMove('down')}
+              title="Xoay xuống"
+              className="rounded-lg border border-[#253459] bg-[#0E1627] p-1.5 text-[#E6EDF7] hover:border-[#4F8BFF] cursor-pointer"
+            >
+              <ArrowDown size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPtzMove('right')}
+              title="Xoay phải"
+              className="rounded-lg border border-[#253459] bg-[#0E1627] p-1.5 text-[#E6EDF7] hover:border-[#4F8BFF] cursor-pointer"
+            >
+              <ArrowRight size={14} />
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onPtzPreset(p.id)}
+                className="rounded-lg border border-[#4F8BFF]/40 bg-[#4F8BFF]/15 px-2.5 py-1 text-[11px] font-semibold text-[#93C5FD] hover:bg-[#4F8BFF]/25 cursor-pointer"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Nút thao tác dưới khung trực tiếp */}
+      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         <FlatButton onClick={onChupAnh} disabled={dangChupAnh} color={SH.Blue} className="w-full">
           <Camera size={14} />
           <span>{dangChupAnh ? 'Đang chụp…' : 'Chụp ảnh'}</span>
@@ -326,6 +472,22 @@ function KhungCheDoTrucTiep({
         >
           {dangCanhNguoi === false ? <BellOff size={14} /> : <Bell size={14} />}
           <span>{nhanCanhNguoi}</span>
+        </FlatButton>
+        <FlatButton
+          onClick={onDaoRiengTu}
+          color={cameraRecorder.privacyMode ? SH.Purple : SH.TextSecondary}
+          className="w-full"
+        >
+          {cameraRecorder.privacyMode ? <EyeOff size={14} /> : <Eye size={14} />}
+          <span>{cameraRecorder.privacyMode ? 'Riêng tư: Bật' : 'Riêng tư'}</span>
+        </FlatButton>
+        <FlatButton
+          onClick={() => setMoPtz((v) => !v)}
+          color={moPtz || camHoTroPtz ? SH.Cyan : SH.TextSecondary}
+          className="w-full"
+        >
+          <Compass size={14} />
+          <span>Xoay 360°</span>
         </FlatButton>
         <FlatButton onClick={onMoXemLai} color={SH.Purple} className="w-full">
           <History size={14} />
