@@ -85,6 +85,11 @@ class MqttDien {
     private val _server = MutableStateFlow(ServerState())
     val server: StateFlow<ServerState> = _server.asStateFlow()
 
+    /** Cap nhat ngay danh sach container sau khi bat/tat qua HTTP Gateway (khong doi MQTT). */
+    fun capNhatContainersServer(list: List<vn.smarthome.data.server.ServerContainer>) {
+        _server.update { it.copy(containers = list, isRealData = true) }
+    }
+
     private val _congTac = MutableStateFlow(CongTacState())
     val congTac: StateFlow<CongTacState> = _congTac.asStateFlow()
 

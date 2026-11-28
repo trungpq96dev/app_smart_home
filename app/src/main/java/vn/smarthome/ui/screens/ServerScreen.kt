@@ -1,6 +1,9 @@
 package vn.smarthome.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,21 +21,38 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import vn.smarthome.data.server.DockerAction
+import vn.smarthome.data.server.DockerControlStatus
+import vn.smarthome.data.server.ServerContainer
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.ui.components.DemoBadge
 import vn.smarthome.ui.components.Dot
@@ -45,21 +65,48 @@ import vn.smarthome.ui.theme.SHType
 import vn.smarthome.ui.theme.tint
 
 /**
- * Man xem thong tin may chu serverubuntu.
+ * Man xem & quan tri may chu serverubuntu tren may tinh bang.
  *
- * CHI XEM (read-only): so that lay tu MQTT (server/# do script server_collector
- * tren serverubuntu publish). Khong co nut dieu khien o pha nay.
- *
- * Truong nao may chu khong cap (vi du nhiet do CPU may khong co cam bien) hien
- * "—", khong bia so.
+ * - So lieu he thong & CPU%/RAM tung container doc qua MQTT (`server/#`).
+ * - Dieu khien Start/Stop/Restart di qua HTTP Gateway (`:3080`) + PIN 4 so Admin,
+ *   KHONG bao gio ghi MQTT va chan cung 3 container loi (mosquitto, server-collector,
+ *   smarthome-web).
  */
 @Composable
 fun ServerScreen(
     server: ServerState = ServerState(),
     onBack: () -> Unit,
+    dockerControlStatus: DockerControlStatus = DockerControlStatus(),
+    dockerBusyName: String? = null,
+    dockerAdminUnlocked: Boolean = false,
+    onRefreshDocker: () -> Unit = {},
+    onToggleDockerLock: () -> Unit = {},
+    onControlContainer: (ServerContainer, DockerAction) -> Unit = { _, _ -> },
 ) {
     val info = server.info
     val m = server.metric
+    var sortByLoad by remember { mutableStateOf(false) }
+
+    val runningCount = server.containers.count { it.state.equals("running", ignoreCase = true) }
+    val totalContainerRamMb = remember(server.containers) {
+        server.containers
+            .filter { it.state.equals("running", ignoreCase = true) }
+            .mapNotNull { it.memMb }
+            .sum()
+    }
+    val hostRamMb = if (info.ramTotalGb > 0f) info.ramTotalGb * 1024f else 16384f
+
+    val displayedContainers = remember(server.containers, sortByLoad) {
+        if (!sortByLoad) {
+            server.containers
+        } else {
+            server.containers.sortedWith(
+                compareByDescending<ServerContainer> { it.state.equals("running", ignoreCase = true) }
+                    .thenByDescending { (it.cpuPercent ?: 0f) * 10f + (it.memMb ?: 0f) / 10f }
+                    .thenBy { it.name },
+            )
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
 
@@ -159,6 +206,103 @@ fun ServerScreen(
                 }
             }
 
+            // Card: Docker containers (CPU%, RAM MB + Start/Stop/Restart co khoa PIN Admin)
+            SmartCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Docker containers", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
+                        val ramSuffix = if (totalContainerRamMb > 0f) " · ${fmtMemMb(totalContainerRamMb)} RAM" else ""
+                        Text(
+                            "$runningCount/${server.containers.size} đang chạy$ramSuffix",
+                            style = SHType.Caption,
+                            color = SH.TextDim,
+                            maxLines = 1,
+                        )
+                    }
+
+                    // Nut sap xep Nang nhat / Theo ten
+                    SmallActionPill(
+                        label = if (sortByLoad) "Nặng nhất" else "Theo tên",
+                        icon = Icons.Filled.SwapVert,
+                        color = if (sortByLoad) SH.Blue else SH.TextDim,
+                        active = sortByLoad,
+                        onClick = { sortByLoad = !sortByLoad },
+                    )
+
+                    if (dockerControlStatus.enabled) {
+                        SmallActionPill(
+                            label = if (dockerAdminUnlocked) "Đã mở PIN" else "Khóa PIN",
+                            icon = if (dockerAdminUnlocked) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                            color = if (dockerAdminUnlocked) SH.Green else SH.Amber,
+                            active = true,
+                            onClick = onToggleDockerLock,
+                        )
+                        SmallActionPill(
+                            label = "Làm mới",
+                            icon = Icons.Filled.Refresh,
+                            color = SH.Teal,
+                            active = false,
+                            onClick = onRefreshDocker,
+                        )
+                    }
+                }
+
+                if (dockerControlStatus.checked && !dockerControlStatus.enabled) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SH.Bg)
+                            .border(1.dp, SH.Border, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = dockerControlStatus.error
+                                ?: "Chế độ chỉ xem · Chưa bật DOCKER_CONTROL_TOKEN trên Gateway (:3080).",
+                            style = SHType.Caption,
+                            color = SH.TextDim,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                if (displayedContainers.isEmpty()) {
+                    Text(
+                        "Chưa có container nào (hoặc chưa đọc được Docker).",
+                        style = SHType.Body,
+                        color = SH.TextOff,
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        displayedContainers.forEach { c ->
+                            val up = c.state.equals("running", ignoreCase = true)
+                            val busy = dockerBusyName == c.name
+                            val canControl = !c.isProtected &&
+                                dockerControlStatus.enabled &&
+                                (c.controllable || c.name.lowercase() in dockerControlStatus.allowedContainers)
+                            val showLimit = c.memLimitMb != null && c.memLimitMb > 0f && c.memLimitMb < hostRamMb * 0.9f
+
+                            ContainerRow(
+                                c = c,
+                                up = up,
+                                busy = busy,
+                                anyBusy = dockerBusyName != null,
+                                canControl = canControl,
+                                controlEnabled = dockerControlStatus.enabled,
+                                showLimit = showLimit,
+                                onAction = { act -> onControlContainer(c, act) },
+                            )
+                        }
+                    }
+                }
+            }
+
             // Card: Thong tin he thong
             SmartCard(Modifier.fillMaxWidth()) {
                 Text("Thông tin hệ thống", style = SHType.CardTitle, color = SH.Text)
@@ -168,45 +312,6 @@ fun ServerScreen(
                 InfoRow("Kernel", info.kernel)
                 InfoRow("CPU", "${info.cpuModel} (${info.cpuCores} nhân)")
                 InfoRow("Thời gian hoạt động", "${info.uptimeDays} ngày ${info.uptimeHours} giờ")
-            }
-
-            // Card: Docker containers
-            SmartCard(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Docker containers", style = SHType.CardTitle, color = SH.Text, maxLines = 1)
-                    Spacer(Modifier.weight(1f))
-                    val running = server.containers.count { it.state == "running" }
-                    Text("$running/${server.containers.size} đang chạy",
-                        style = SHType.Caption, color = SH.TextDim, maxLines = 1)
-                }
-                Spacer(Modifier.height(6.dp))
-                if (server.containers.isEmpty()) {
-                    Text("Chưa có container nào (hoặc chưa đọc được Docker).",
-                        style = SHType.Body, color = SH.TextOff)
-                } else {
-                    server.containers.forEach { c ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconBadge(c.icon, SH.Blue, size = 28.dp, iconSize = 16.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(c.name, style = SHType.BodyMed, color = SH.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(c.image, style = SHType.Caption, color = SH.TextOff, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            val up = c.state == "running"
-                            if (c.status.isNotBlank()) {
-                                Text(c.status, style = SHType.Caption, color = SH.TextDim, maxLines = 1)
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Dot(if (up) SH.Green else SH.TextOff, 8.dp)
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (up) "chạy" else "dừng",
-                                style = SHType.Caption, color = if (up) SH.Green else SH.TextOff, maxLines = 1)
-                        }
-                    }
-                }
             }
 
             // Card: Nhiet do (nhieu cam bien)
@@ -222,7 +327,6 @@ fun ServerScreen(
                             hang.forEach { t ->
                                 TempCell(Modifier.weight(1f), t.label, t.tempC)
                             }
-                            // Lap o trong cho du 4 cot de khong bi gian.
                             repeat(4 - hang.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
@@ -266,6 +370,240 @@ fun ServerScreen(
             }
 
             Spacer(Modifier.height(2.dp))
+        }
+    }
+}
+
+@Composable
+private fun ContainerRow(
+    c: ServerContainer,
+    up: Boolean,
+    busy: Boolean,
+    anyBusy: Boolean,
+    canControl: Boolean,
+    controlEnabled: Boolean,
+    showLimit: Boolean,
+    onAction: (DockerAction) -> Unit,
+) {
+    val cpuColor = when {
+        c.cpuPercent == null -> SH.TextDim
+        c.cpuPercent >= 70f -> SH.Red
+        c.cpuPercent >= 30f -> SH.Amber
+        else -> SH.Green
+    }
+    val ramColor = when {
+        c.memMb == null -> SH.TextDim
+        c.memMb >= 512f -> SH.Red
+        c.memMb >= 200f -> SH.Amber
+        else -> SH.Purple
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(SH.Bg)
+            .border(1.dp, SH.Border, RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconBadge(c.icon, if (up) SH.Green else SH.Red, size = 30.dp, iconSize = 16.dp)
+
+        Column(Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    c.name,
+                    style = SHType.BodyMed,
+                    color = SH.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (c.isProtected) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SH.Amber.tint(0.16f))
+                            .border(1.dp, SH.Amber.tint(0.4f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    ) {
+                        Icon(Icons.Filled.Shield, null, tint = SH.Amber, modifier = Modifier.size(11.dp))
+                        Text("Lõi", style = SHType.Caption, color = SH.Amber, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            val meta = if (c.status.isNotBlank()) "${c.image} · ${c.status}" else c.image
+            Text(
+                meta,
+                style = SHType.Caption,
+                color = SH.TextOff,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        // Chip CPU% & RAM MB
+        if (up) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                MetricChip(
+                    text = c.cpuPercent?.let { "CPU ${fmt(it)}%" } ?: "CPU —",
+                    color = cpuColor,
+                )
+                val ramText = when {
+                    c.memMb == null -> "RAM —"
+                    showLimit && c.memLimitMb != null -> "${fmtMemMb(c.memMb)} / ${fmtMemMb(c.memLimitMb)}"
+                    else -> fmtMemMb(c.memMb)
+                }
+                MetricChip(text = ramText, color = ramColor)
+            }
+        } else {
+            Text("0% · 0 MB", style = SHType.Caption, color = SH.TextOff, maxLines = 1)
+        }
+
+        // Cham trang thai
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(46.dp)) {
+            Dot(if (up) SH.Green else SH.Red, 7.dp)
+            Spacer(Modifier.width(4.dp))
+            Text(
+                if (up) "chạy" else "dừng",
+                style = SHType.Caption,
+                color = if (up) SH.Green else SH.TextOff,
+                maxLines = 1,
+            )
+        }
+
+        // Nut dieu khien Start / Stop / Restart (hoac khoa Bao ve)
+        if (canControl) {
+            if (busy) {
+                Box(Modifier.width(124.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = SH.Blue,
+                    )
+                }
+            } else if (up) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ContainerActionButton(
+                        label = "Dừng",
+                        icon = Icons.Filled.Stop,
+                        color = SH.Red,
+                        enabled = !anyBusy,
+                        onClick = { onAction(DockerAction.STOP) },
+                    )
+                    ContainerActionButton(
+                        label = "Khởi động lại",
+                        icon = Icons.Filled.Refresh,
+                        color = SH.Blue,
+                        enabled = !anyBusy,
+                        compact = true,
+                        onClick = { onAction(DockerAction.RESTART) },
+                    )
+                }
+            } else {
+                ContainerActionButton(
+                    label = "Bật",
+                    icon = Icons.Filled.PlayArrow,
+                    color = SH.Green,
+                    enabled = !anyBusy,
+                    onClick = { onAction(DockerAction.START) },
+                )
+            }
+        } else if (c.isProtected) {
+            Text(
+                "Bảo vệ",
+                style = SHType.Caption,
+                color = SH.TextOff,
+                maxLines = 1,
+            )
+        } else if (controlEnabled) {
+            Text(
+                "Chỉ xem",
+                style = SHType.Caption,
+                color = SH.TextOff,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricChip(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(color.tint(0.12f))
+            .border(1.dp, color.tint(0.32f), RoundedCornerShape(7.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(text, style = SHType.Caption, color = color, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun SmallActionPill(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (active) color.tint(0.16f) else SH.Bg,
+        border = BorderStroke(1.dp, if (active) color.tint(0.5f) else SH.Border),
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
+            Text(label, style = SHType.Caption, color = if (active) color else SH.TextDim, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun ContainerActionButton(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    enabled: Boolean,
+    compact: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = color.tint(if (enabled) 0.16f else 0.06f),
+        border = BorderStroke(1.dp, color.tint(if (enabled) 0.45f else 0.18f)),
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = if (compact) 7.dp else 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Icon(icon, contentDescription = label, tint = if (enabled) color else SH.TextOff, modifier = Modifier.size(14.dp))
+            if (!compact) {
+                Text(
+                    label,
+                    style = SHType.Caption,
+                    color = if (enabled) color else SH.TextOff,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -375,6 +713,9 @@ private fun InfoRow(key: String, value: String) {
             overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }
 }
+
+private fun fmtMemMb(mb: Float): String =
+    if (mb >= 1024f) "%.2f GB".format(mb / 1024f) else "${Math.round(mb)} MB"
 
 /** Lam tron 1 chu so thap phan, bo ".0" cho gon. */
 private fun fmt(v: Float): String {

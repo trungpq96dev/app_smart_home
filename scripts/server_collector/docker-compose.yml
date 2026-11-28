@@ -3,7 +3,7 @@ name: server-collector
 services:
   server-collector:
     build: .
-    image: server-collector:1.0
+    image: server-collector:1.1
     container_name: server-collector
     restart: unless-stopped
 
@@ -13,12 +13,16 @@ services:
     # Doc so cua HOST, khong phai cua container:
     #  - pid: host        -> thay toan bo tien trinh host (uptime, process)
     #  - network_mode host -> doc toc do mang that cua server + goi thang
-    #                         Mosquitto 127.0.0.1 tren host
+    #                         Mosquitto 127.0.0.1 tren host + mo cong 1986 noi bo
+    #                         cho SmartHome Web khi DOCKER_CONTROL_ENABLED=true
     pid: host
     network_mode: host
 
-    # Chay root de doc /sys (nhiet do) va Docker socket. Tat ca mount deu
-    # READ-ONLY; khong cap them dac quyen.
+    # Chay root de doc /sys (nhiet do) va Docker socket.
+    # Khong cap them dac quyen; lenh start/stop/restart duoc bao ve bang:
+    #   - Khong nhan lenh qua MQTT
+    #   - Bearer token (DOCKER_CONTROL_TOKEN >= 16 ky tu)
+    #   - Allowlist (DOCKER_ALLOWED_CONTAINERS) + danh sach bao ve cung
     user: "0:0"
     security_opt:
       - no-new-privileges:true
@@ -30,9 +34,10 @@ services:
       # RAPL (dien nang CPU) doc qua /rootfs/sys vi Docker che
       # /sys/devices/virtual/powercap bang tmpfs rong - xem server_collector.py.
       - /sys:/sys:ro
-      # Liet ke container (chi doc). Bo dong nay neu khong muon lo socket ->
-      # the Docker se trong, phan con lai van chay.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Docker socket: doc trang thai + CPU%/RAM tung container, va chi ghi lenh
+      # start/stop/restart khi DOCKER_CONTROL_ENABLED=true + du token + allowlist.
+      # Bo dong nay neu khong muon lo socket -> the Docker se trong.
+      - /var/run/docker.sock:/var/run/docker.sock
 
     mem_limit: 128m
     cpus: 0.5

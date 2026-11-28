@@ -92,7 +92,19 @@ describe('Sidebar grouping & status indicators', () => {
         isRealData: true,
         metric: { ...DemoData.initialServerState().metric, cpuTempC: 55 },
         containers: [
-          { name: 'mosquitto', image: 'eclipse-mosquitto', state: 'exited', status: 'Exited', icon: 'hub' },
+          {
+            name: 'mosquitto',
+            image: 'eclipse-mosquitto',
+            state: 'exited',
+            status: 'Exited',
+            icon: 'hub',
+            cpuPercent: null,
+            memMb: null,
+            memLimitMb: null,
+            memPercent: null,
+            protected: true,
+            controllable: false,
+          },
         ],
       },
     });

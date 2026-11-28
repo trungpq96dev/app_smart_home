@@ -63,6 +63,12 @@ data class ServerContainer(
     /** Vi du "Up 3 days". */
     val status: String,
     val icon: ImageVector,
+    val cpuPercent: Float? = null,
+    val memMb: Float? = null,
+    val memLimitMb: Float? = null,
+    val memPercent: Float? = null,
+    val isProtected: Boolean = false,
+    val controllable: Boolean = false,
 )
 
 /** Mot cam bien nhiet do. */
@@ -147,22 +153,7 @@ data class ServerState(
 
                     ServerTopic.DOCKER -> {
                         val arr = JSONArray(payload)
-                        val list = mutableListOf<ServerContainer>()
-                        for (i in 0 until arr.length()) {
-                            val c = arr.getJSONObject(i)
-                            val name = c.optString("name", "container")
-                            val image = c.optString("image", "")
-                            list.add(
-                                ServerContainer(
-                                    name = name,
-                                    image = image,
-                                    state = c.optString("state", "running"),
-                                    status = c.optString("status", ""),
-                                    icon = doIcon(name, image),
-                                )
-                            )
-                        }
-                        cur.copy(containers = list, isRealData = true)
+                        cur.copy(containers = parseContainersJson(arr), isRealData = true)
                     }
 
                     ServerTopic.NHIET_DO -> {
@@ -228,6 +219,33 @@ data class ServerState(
             }
         }
 
+        fun parseContainersJson(arr: JSONArray): List<ServerContainer> {
+            val list = mutableListOf<ServerContainer>()
+            for (i in 0 until arr.length()) {
+                val c = arr.optJSONObject(i) ?: continue
+                val name = c.optString("name", "container")
+                val image = c.optString("image", "")
+                val isCore = DockerControlClient.laContainerLoi(name)
+                val isProtected = c.optBoolean("protected", false) || isCore
+                list.add(
+                    ServerContainer(
+                        name = name,
+                        image = image,
+                        state = c.optString("state", "running"),
+                        status = c.optString("status", ""),
+                        icon = doIcon(name, image),
+                        cpuPercent = optFloat(c, "cpu_percent") ?: optFloat(c, "cpuPercent"),
+                        memMb = optFloat(c, "mem_mb") ?: optFloat(c, "memMb"),
+                        memLimitMb = optFloat(c, "mem_limit_mb") ?: optFloat(c, "memLimitMb"),
+                        memPercent = optFloat(c, "mem_percent") ?: optFloat(c, "memPercent"),
+                        isProtected = isProtected,
+                        controllable = !isProtected && c.optBoolean("controllable", false),
+                    )
+                )
+            }
+            return list
+        }
+
         /** Doc so thuc; null khi thieu hoac JSON null (khong bia so 0). */
         private fun optFloat(o: JSONObject, key: String): Float? =
             if (o.has(key) && !o.isNull(key)) o.optDouble(key).toFloat() else null
@@ -239,7 +257,7 @@ data class ServerState(
                 "dien" in s || "evn" in s -> Icons.Filled.ElectricBolt
                 "wifi" in s || "router" in s -> Icons.Filled.Router
                 "go2rtc" in s || "cam" in s || "rtsp" in s -> Icons.Filled.Videocam
-                "cockpit" in s -> Icons.Filled.Dns
+                "cockpit" in s || "server" in s || "beszel" in s -> Icons.Filled.Dns
                 "db" in s || "sql" in s || "postgres" in s || "mysql" in s || "redis" in s -> Icons.Filled.Storage
                 else -> Icons.Filled.Widgets
             }

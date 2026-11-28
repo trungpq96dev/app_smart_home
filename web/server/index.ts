@@ -9,6 +9,12 @@ import { ConfigStore } from './configStore.js';
 import { MqttBridge } from './mqttBridge.js';
 import { proxyCameraRecorderHttp } from './cameraRecorderProxy.js';
 import { startCockpitProxyServer } from './cockpitProxy.js';
+import {
+  executeDockerControlAction,
+  fetchDockerContainersLive,
+  fetchDockerControlStatus,
+  readDockerControlConfig,
+} from './dockerControlProxy.js';
 import { fetchStreamList, Go2rtcWsProxy, proxyGo2rtcHttp } from './go2rtcProxy.js';
 import { TelegramAlertService } from './telegramAlerts.js';
 import { TunnelWatcher } from './tunnelWatcher.js';
@@ -258,6 +264,26 @@ app.get('/api/go2rtc/streams', async (_req, res) => {
   } else {
     res.status(200).json(result);
   }
+});
+
+// ---- Safe Docker Container Control (KHONG qua MQTT; yeu cau PIN Admin + Bearer token) ----
+
+app.get('/api/server/docker/status', async (_req, res) => {
+  const cfg = readDockerControlConfig(configStore.getConfig().mqtt.host);
+  const result = await fetchDockerControlStatus(cfg);
+  res.json(result);
+});
+
+app.get('/api/server/docker/containers', async (_req, res) => {
+  const cfg = readDockerControlConfig(configStore.getConfig().mqtt.host);
+  const result = await fetchDockerContainersLive(cfg);
+  res.status(result.status).json(result);
+});
+
+app.post('/api/server/docker/action', adminAuth.requireAdmin, async (req, res) => {
+  const cfg = readDockerControlConfig(configStore.getConfig().mqtt.host);
+  const result = await executeDockerControlAction(cfg, req.body?.name, req.body?.action);
+  res.status(result.status).json(result);
 });
 
 // Phuc vu client da build o che do production (chiu duoc moi thu muc lam viec)

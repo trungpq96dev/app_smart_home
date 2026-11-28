@@ -52,6 +52,10 @@ import vn.smarthome.data.thoitiet.OpenMeteo
 import vn.smarthome.data.thoitiet.ThoiTietUi
 import vn.smarthome.data.cuktech.CongSacId
 import vn.smarthome.data.cuktech.CuktechState
+import vn.smarthome.data.server.DockerAction
+import vn.smarthome.data.server.DockerActionOutcome
+import vn.smarthome.data.server.DockerControlClient
+import vn.smarthome.data.server.DockerControlStatus
 import vn.smarthome.data.server.ServerState
 import vn.smarthome.data.wifi.WifiState
 import vn.smarthome.data.ota.OtaManager
@@ -144,8 +148,128 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Trang thai WiFi doc tu broker MQTT (serverubuntu). */
     val wifi: StateFlow<WifiState> = mqtt.wifi
 
-    /** Thong tin may chu serverubuntu doc tu broker MQTT (chi xem, khong dieu khien). */
+    /** Thong tin may chu serverubuntu doc tu broker MQTT (CPU/RAM/Docker). */
     val server: StateFlow<ServerState> = mqtt.server
+
+    // ---- Dieu khien Docker container an toan (HTTP Gateway :3080 + PIN 4 so, KHONG qua MQTT) ----
+
+    private val dockerControl = DockerControlClient()
+    private val _dockerControlStatus = MutableStateFlow(DockerControlStatus())
+    val dockerControlStatus: StateFlow<DockerControlStatus> = _dockerControlStatus.asStateFlow()
+
+    private val _dockerBusyName = MutableStateFlow<String?>(null)
+    val dockerBusyName: StateFlow<String?> = _dockerBusyName.asStateFlow()
+
+    private val _gatewayAdminUnlocked = MutableStateFlow(false)
+    val gatewayAdminUnlocked: StateFlow<Boolean> = _gatewayAdminUnlocked.asStateFlow()
+
+    private var gatewayAdminToken: String? = null
+    private var gatewayTokenExpiryMs: Long = 0L
+
+    private fun gatewayBaseUrl(): String =
+        DockerControlClient.gatewayBaseUrl(cauHinh.value.host)
+
+    fun coTokenGatewayHopLe(): Boolean {
+        val ok = !gatewayAdminToken.isNullOrBlank() && System.currentTimeMillis() < gatewayTokenExpiryMs
+        if (!ok && _gatewayAdminUnlocked.value) {
+            gatewayAdminToken = null
+            gatewayTokenExpiryMs = 0L
+            _gatewayAdminUnlocked.value = false
+        }
+        return ok
+    }
+
+    fun taiTrangThaiDockerControl() {
+        viewModelScope.launch {
+            _dockerControlStatus.value = dockerControl.layTrangThai(gatewayBaseUrl())
+        }
+    }
+
+    fun lamMoiDanhSachContainer(onDone: ((String?) -> Unit)? = null) {
+        viewModelScope.launch {
+            val base = gatewayBaseUrl()
+            val st = dockerControl.layTrangThai(base)
+            _dockerControlStatus.value = st
+            val list = dockerControl.taiDanhSachContainer(base)
+            if (list != null) {
+                mqtt.capNhatContainersServer(list)
+                onDone?.invoke("Đã cập nhật ${list.size} container từ serverubuntu.")
+            } else if (!st.error.isNullOrBlank()) {
+                onDone?.invoke(st.error)
+            }
+        }
+    }
+
+    fun xacThucPinDockerGateway(pin: String, onKetQua: (String?) -> Unit) {
+        viewModelScope.launch {
+            val (token, err) = dockerControl.xacThucPinGateway(gatewayBaseUrl(), pin)
+            if (token != null) {
+                gatewayAdminToken = token
+                gatewayTokenExpiryMs = System.currentTimeMillis() + 5 * 60_000L
+                _gatewayAdminUnlocked.value = true
+                // Neu PIN may tinh bang khop cung PIN Gateway thi mo luon phien cuc bo
+                val cfg = cauHinhBaoMat.value
+                if (vn.smarthome.data.baomat.PinHasher.kiemTra(pin, cfg.pinSalt, cfg.pinHash)) {
+                    verifyAdminPin(pin)
+                }
+                onKetQua(null)
+            } else {
+                onKetQua(err ?: "Mã PIN không đúng.")
+            }
+        }
+    }
+
+    fun khoaPinDockerGateway() {
+        val tok = gatewayAdminToken
+        gatewayAdminToken = null
+        gatewayTokenExpiryMs = 0L
+        _gatewayAdminUnlocked.value = false
+        if (!tok.isNullOrBlank()) {
+            viewModelScope.launch {
+                dockerControl.khoaTokenGateway(gatewayBaseUrl(), tok)
+            }
+        }
+    }
+
+    fun dieuKhienContainer(
+        name: String,
+        action: DockerAction,
+        onRequirePin: () -> Unit,
+        onToast: (String) -> Unit,
+    ) {
+        if (DockerControlClient.laContainerLoi(name)) {
+            onToast("Container lõi \"$name\" nằm trong danh sách bảo vệ cứng, không được phép tắt từ xa.")
+            return
+        }
+        if (_dockerBusyName.value != null) return
+
+        viewModelScope.launch {
+            _dockerBusyName.value = name
+            try {
+                val tok = if (coTokenGatewayHopLe()) gatewayAdminToken else null
+                when (val res = dockerControl.thucThiLenh(gatewayBaseUrl(), name, action, tok)) {
+                    is DockerActionOutcome.Ok -> {
+                        if (tok != null) {
+                            gatewayTokenExpiryMs = System.currentTimeMillis() + 5 * 60_000L
+                        }
+                        res.containers?.let { mqtt.capNhatContainersServer(it) }
+                        onToast(res.message)
+                    }
+                    is DockerActionOutcome.RequirePin -> {
+                        gatewayAdminToken = null
+                        gatewayTokenExpiryMs = 0L
+                        _gatewayAdminUnlocked.value = false
+                        onRequirePin()
+                    }
+                    is DockerActionOutcome.Error -> {
+                        onToast(res.message)
+                    }
+                }
+            } finally {
+                _dockerBusyName.value = null
+            }
+        }
+    }
 
     /**
      * Cu sac CUKTECH 10 Ultra doc tu `cuktech/charger/#`.
@@ -436,12 +560,24 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             delay(5 * 60_000L)
             _adminUnlocked.value = false
         }
+        // Dong bo token Gateway neu may tinh bang va Web dung cung PIN (best-effort)
+        if (!coTokenGatewayHopLe()) {
+            viewModelScope.launch {
+                val (token, _) = dockerControl.xacThucPinGateway(gatewayBaseUrl(), pin)
+                if (token != null) {
+                    gatewayAdminToken = token
+                    gatewayTokenExpiryMs = System.currentTimeMillis() + 5 * 60_000L
+                    _gatewayAdminUnlocked.value = true
+                }
+            }
+        }
         return null
     }
 
     fun lockAdminNow() {
         adminUnlockJob?.cancel()
         _adminUnlocked.value = false
+        khoaPinDockerGateway()
     }
 
     fun luuCauHinhBaoMat(c: CauHinhBaoMat) {

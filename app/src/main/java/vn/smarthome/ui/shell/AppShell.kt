@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import vn.smarthome.data.baomat.ManChoLogic
 import vn.smarthome.data.bomnuoc.CheDoBon
+import vn.smarthome.data.server.DockerAction
 import vn.smarthome.ui.components.BangCanhBaoKhanCap
 import vn.smarthome.ui.components.HopThoaiPinAdmin
 import vn.smarthome.ui.components.HopThoaiXacNhan
@@ -90,6 +91,9 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     val thoiTietCauHinh by vm.cauHinhThoiTiet.collectAsStateWithLifecycle()
     val wifi by vm.wifi.collectAsStateWithLifecycle()
     val server by vm.server.collectAsStateWithLifecycle()
+    val dockerControlStatus by vm.dockerControlStatus.collectAsStateWithLifecycle()
+    val dockerBusyName by vm.dockerBusyName.collectAsStateWithLifecycle()
+    val gatewayAdminUnlocked by vm.gatewayAdminUnlocked.collectAsStateWithLifecycle()
     val cuktech by vm.cuktech.collectAsStateWithLifecycle()
     val choCuktech by vm.choCuktech.collectAsStateWithLifecycle()
     val dangNoiLaiCuktech by vm.dangNoiLaiCuktech.collectAsStateWithLifecycle()
@@ -121,6 +125,8 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
     var dismissedAlertKey by remember { mutableStateOf<String?>(null) }
     var pendingPinAction by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
+    var pendingDockerPinAction by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    var dockerPinError by remember { mutableStateOf<String?>(null) }
     var pendingConfirm by remember { mutableStateOf<YeuCauXacNhan?>(null) }
 
     val dest = Dest.from(current)
@@ -130,6 +136,9 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
 
     LaunchedEffect(dest) {
         vm.datDangXemManBom(dest == Dest.AUTOMATION)
+        if (dest == Dest.SERVER) {
+            vm.taiTrangThaiDockerControl()
+        }
     }
 
     // ---- Tro ly giong noi ----
@@ -461,6 +470,43 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                     dest == Dest.SERVER -> ServerScreen(
                         server = server,
                         onBack = { current = Dest.HOME.route },
+                        dockerControlStatus = dockerControlStatus,
+                        dockerBusyName = dockerBusyName,
+                        dockerAdminUnlocked = gatewayAdminUnlocked,
+                        onRefreshDocker = { vm.lamMoiDanhSachContainer { msg -> if (msg != null) toast(msg) } },
+                        onToggleDockerLock = {
+                            if (gatewayAdminUnlocked) {
+                                vm.khoaPinDockerGateway()
+                                toast("Đã khóa điều khiển Docker.")
+                            } else {
+                                dockerPinError = null
+                                pendingDockerPinAction = "Mở khóa PIN điều khiển Docker" to {
+                                    toast("Đã mở khóa PIN điều khiển Docker (5 phút).")
+                                }
+                            }
+                        },
+                        onControlContainer = { container, action ->
+                            val moTa = "${action.labelVi} container ${container.name}"
+                            val thucThi: () -> Unit = {
+                                vm.dieuKhienContainer(
+                                    name = container.name,
+                                    action = action,
+                                    onRequirePin = {
+                                        dockerPinError = "Phiên PIN đã hết hạn, vui lòng nhập lại."
+                                        pendingDockerPinAction = moTa to {
+                                            vm.dieuKhienContainer(container.name, action, onRequirePin = {}, onToast = toast)
+                                        }
+                                    },
+                                    onToast = toast,
+                                )
+                            }
+                            if (vm.coTokenGatewayHopLe()) {
+                                thucThi()
+                            } else {
+                                dockerPinError = null
+                                pendingDockerPinAction = moTa to thucThi
+                            }
+                        },
                     )
 
                     dest == Dest.SENSORS -> CamBienScreen(
@@ -765,6 +811,31 @@ fun AppShell(vm: HomeViewModel = viewModel()) {
                 onDong = {
                     pendingPinAction = null
                     pinError = null
+                },
+            )
+        }
+
+        // Hop thoai nhap PIN 4 so cho dieu khien Docker qua SmartHome Gateway
+        val dockerPinReq = pendingDockerPinAction
+        if (dockerPinReq != null) {
+            HopThoaiPinAdmin(
+                moTaHanhDong = dockerPinReq.first,
+                loi = dockerPinError,
+                onXacNhan = { pin ->
+                    vm.xacThucPinDockerGateway(pin) { err ->
+                        if (err == null) {
+                            dockerPinError = null
+                            val action = dockerPinReq.second
+                            pendingDockerPinAction = null
+                            action()
+                        } else {
+                            dockerPinError = err
+                        }
+                    }
+                },
+                onDong = {
+                    pendingDockerPinAction = null
+                    dockerPinError = null
                 },
             )
         }

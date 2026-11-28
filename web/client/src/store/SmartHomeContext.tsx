@@ -97,7 +97,13 @@ import {
   type RoomMode,
   type RoomUi,
 } from '../data/models.js';
-import { gopServer, type ServerState } from '../data/server.js';
+import {
+  gopServer,
+  isCoreProtectedContainer,
+  parseServerContainers,
+  type DockerContainerAction,
+  type ServerState,
+} from '../data/server.js';
 import {
   kiemTraSuCoKhanCap,
   loadScreensaverConfig,
@@ -190,6 +196,15 @@ export interface ToastMessage {
   id: string;
   text: string;
   tone: 'info' | 'success' | 'warning' | 'error';
+}
+
+export interface DockerControlStatus {
+  checked: boolean;
+  configured: boolean;
+  enabled: boolean;
+  protectedContainers: string[];
+  allowedContainers: string[];
+  error?: string;
 }
 
 export interface GithubReleaseInfo {
@@ -529,6 +544,13 @@ interface SmartHomeContextValue {
   cancelAdminPin: () => void;
   lockAdmin: () => Promise<void>;
   updateAdminPin: (form: { currentPin: string; newPin?: string; enabled?: boolean }) => Promise<{ ok: boolean; error?: string }>;
+
+  // Safe Docker Container Control (via Gateway + server-collector :1986, NO MQTT)
+  dockerControlStatus: DockerControlStatus;
+  dockerBusyName: string | null;
+  refreshDockerControlStatus: () => Promise<void>;
+  refreshDockerContainers: () => Promise<void>;
+  controlDockerContainer: (name: string, action: DockerContainerAction) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const SmartHomeContext = createContext<SmartHomeContextValue | null>(null);
@@ -554,6 +576,14 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
   const [congtac, setCongtac] = useState<CongTacState>(createEmptyCongTacState);
   const [cuktech, setCuktech] = useState<CuktechState>(createEmptyCuktechState);
   const [server, setServer] = useState<ServerState>(() => DemoData.initialServerState());
+  const [dockerControlStatus, setDockerControlStatus] = useState<DockerControlStatus>({
+    checked: false,
+    configured: false,
+    enabled: false,
+    protectedContainers: ['mosquitto', 'server-collector', 'smarthome-web'],
+    allowedContainers: [],
+  });
+  const [dockerBusyName, setDockerBusyName] = useState<string | null>(null);
   const [wifi, setWifi] = useState<WifiState>(() => DemoData.initialWifiState());
   const [thoiTiet, setThoiTiet] = useState<ThoiTietUi>({ state: 'dang_tai' });
   const [cameraRecorder, setCameraRecorder] = useState<CameraRecorderState>(createEmptyCameraRecorderState);
@@ -2379,6 +2409,107 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     [showToast],
   );
 
+  const refreshDockerControlStatus = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/server/docker/status', { credentials: 'same-origin' });
+      const data = (await resp.json()) as {
+        ok?: boolean;
+        configured?: boolean;
+        enabled?: boolean;
+        protectedContainers?: string[];
+        allowedContainers?: string[];
+        error?: string;
+      };
+      setDockerControlStatus({
+        checked: true,
+        configured: Boolean(data.configured),
+        enabled: Boolean(data.enabled),
+        protectedContainers: Array.isArray(data.protectedContainers)
+          ? data.protectedContainers
+          : ['mosquitto', 'server-collector', 'smarthome-web'],
+        allowedContainers: Array.isArray(data.allowedContainers) ? data.allowedContainers : [],
+        error: typeof data.error === 'string' ? data.error : undefined,
+      });
+    } catch {
+      setDockerControlStatus((prev) => ({
+        ...prev,
+        checked: true,
+        enabled: false,
+        error: 'Không kiểm tra được trạng thái điều khiển Docker từ Gateway.',
+      }));
+    }
+  }, []);
+
+  const refreshDockerContainers = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/server/docker/containers', { credentials: 'same-origin' });
+      const data = (await resp.json()) as { ok?: boolean; containers?: unknown[]; error?: string };
+      if (resp.ok && data.ok && Array.isArray(data.containers)) {
+        setServer((cur) => ({
+          ...cur,
+          containers: parseServerContainers(data.containers),
+          isRealData: true,
+        }));
+      }
+    } catch {
+      // ignore transient refresh failure
+    }
+  }, []);
+
+  const controlDockerContainer = useCallback(
+    async (name: string, action: DockerContainerAction): Promise<{ ok: boolean; error?: string }> => {
+      if (isCoreProtectedContainer(name)) {
+        const msg = `Container lõi "${name}" nằm trong danh sách bảo vệ cứng, không được phép điều khiển từ xa.`;
+        showToast(msg, 'warning');
+        return { ok: false, error: msg };
+      }
+      const actionText = action === 'start' ? 'Bật' : action === 'stop' ? 'Dừng' : 'Khởi động lại';
+      setDockerBusyName(name);
+      try {
+        const resp = await fetch('/api/server/docker/action', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: adminHeaders(),
+          body: JSON.stringify({ name, action }),
+        });
+        const data = (await resp.json()) as {
+          ok?: boolean;
+          requirePin?: boolean;
+          message?: string;
+          error?: string;
+          containers?: unknown[];
+        };
+        if (resp.status === 401 && data.requirePin) {
+          handleAdminUnauthorized(`${actionText} container ${name}`, async () => {
+            await controlDockerContainer(name, action);
+          });
+          return { ok: false, error: data.error || 'Cần nhập PIN kỹ thuật (4 số).' };
+        }
+        if (resp.ok && data.ok) {
+          if (Array.isArray(data.containers)) {
+            setServer((cur) => ({
+              ...cur,
+              containers: parseServerContainers(data.containers),
+              isRealData: true,
+            }));
+          }
+          showToast(data.message || `${actionText} container ${name} thành công.`, 'success');
+          return { ok: true };
+        }
+        const errMsg = data.error || data.message || `Không thể ${actionText.toLowerCase()} container ${name}.`;
+        showToast(errMsg, 'error');
+        return { ok: false, error: errMsg };
+      } catch {
+        const errMsg = `Không kết nối được Gateway để ${actionText.toLowerCase()} container ${name}.`;
+        showToast(errMsg, 'error');
+        return { ok: false, error: errMsg };
+      } finally {
+        setDockerBusyName((cur) => (cur === name ? null : cur));
+      }
+    },
+    [adminHeaders, handleAdminUnauthorized, showToast],
+  );
+
   // Settings API calls
   const luuMqttConfig = useCallback(
     async (form: {
@@ -3458,6 +3589,11 @@ export function SmartHomeProvider({ children }: { children: React.ReactNode }) {
     cancelAdminPin,
     lockAdmin,
     updateAdminPin,
+    dockerControlStatus,
+    dockerBusyName,
+    refreshDockerControlStatus,
+    refreshDockerContainers,
+    controlDockerContainer,
   };
 
   return <SmartHomeContext.Provider value={value}>{children}</SmartHomeContext.Provider>;

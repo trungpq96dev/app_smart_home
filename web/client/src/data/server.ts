@@ -9,6 +9,22 @@ export const ServerTopic = {
   CAP_NHAT: 'server/capnhat',
 } as const;
 
+export type DockerContainerAction = 'start' | 'stop' | 'restart';
+
+const CORE_PROTECTED_SUBSTRINGS = [
+  'mosquitto',
+  'server-collector',
+  'server_collector',
+  'smarthome-web',
+  'smarthome_web',
+];
+
+export function isCoreProtectedContainer(name: string): boolean {
+  const low = name.trim().replace(/^\/+/, '').toLowerCase();
+  if (!low) return true;
+  return CORE_PROTECTED_SUBSTRINGS.some((sub) => low.includes(sub));
+}
+
 export interface ServerInfo {
   hostname: string;
   os: string;
@@ -43,6 +59,12 @@ export interface ServerContainer {
   state: string;
   status: string;
   icon: ServerContainerIconKey;
+  cpuPercent: number | null;
+  memMb: number | null;
+  memLimitMb: number | null;
+  memPercent: number | null;
+  protected: boolean;
+  controllable: boolean;
 }
 
 export interface ServerTemp {
@@ -97,11 +119,35 @@ function doContainerIcon(name: string, image: string): ServerContainerIconKey {
   if (s.includes('dien') || s.includes('evn')) return 'bolt';
   if (s.includes('wifi') || s.includes('router')) return 'router';
   if (s.includes('go2rtc') || s.includes('cam') || s.includes('rtsp')) return 'videocam';
-  if (s.includes('cockpit')) return 'dns';
+  if (s.includes('cockpit') || s.includes('server') || s.includes('beszel')) return 'dns';
   if (s.includes('db') || s.includes('sql') || s.includes('postgres') || s.includes('mysql') || s.includes('redis')) {
     return 'storage';
   }
   return 'widgets';
+}
+
+export function parseServerContainers(arr: unknown): ServerContainer[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((c): c is Record<string, unknown> => Boolean(c && typeof c === 'object'))
+    .map((c) => {
+      const name = typeof c.name === 'string' ? c.name : 'container';
+      const image = typeof c.image === 'string' ? c.image : '';
+      const isProtected = Boolean(c.protected) || isCoreProtectedContainer(name);
+      return {
+        name,
+        image,
+        state: typeof c.state === 'string' ? c.state : 'running',
+        status: typeof c.status === 'string' ? c.status : '',
+        icon: doContainerIcon(name, image),
+        cpuPercent: optNum(c, 'cpu_percent') ?? optNum(c, 'cpuPercent'),
+        memMb: optNum(c, 'mem_mb') ?? optNum(c, 'memMb'),
+        memLimitMb: optNum(c, 'mem_limit_mb') ?? optNum(c, 'memLimitMb'),
+        memPercent: optNum(c, 'mem_percent') ?? optNum(c, 'memPercent'),
+        protected: isProtected,
+        controllable: !isProtected && Boolean(c.controllable),
+      };
+    });
 }
 
 export function gopServer(cur: ServerState, topic: string, payload: string): ServerState {
@@ -149,20 +195,7 @@ export function gopServer(cur: ServerState, topic: string, payload: string): Ser
       case ServerTopic.DOCKER: {
         const arr = JSON.parse(payload);
         if (!Array.isArray(arr)) return cur;
-        const list: ServerContainer[] = arr
-          .filter((c): c is Record<string, unknown> => Boolean(c && typeof c === 'object'))
-          .map((c) => {
-            const name = typeof c.name === 'string' ? c.name : 'container';
-            const image = typeof c.image === 'string' ? c.image : '';
-            return {
-              name,
-              image,
-              state: typeof c.state === 'string' ? c.state : 'running',
-              status: typeof c.status === 'string' ? c.status : '',
-              icon: doContainerIcon(name, image),
-            };
-          });
-        return { ...cur, containers: list, isRealData: true };
+        return { ...cur, containers: parseServerContainers(arr), isRealData: true };
       }
       case ServerTopic.NHIET_DO: {
         const o = JSON.parse(payload) as Record<string, unknown>;
@@ -219,4 +252,3 @@ export function gopServer(cur: ServerState, topic: string, payload: string): Ser
     return cur;
   }
 }
-

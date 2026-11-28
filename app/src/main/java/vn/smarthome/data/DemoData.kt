@@ -309,10 +309,10 @@ object DemoData {
     fun serverMetric(): ServerMetric = ServerMetric()
 
     fun serverContainers(): List<ServerContainer> = listOf(
-        ServerContainer("mosquitto", "eclipse-mosquitto:2", "running", "Up 3 days", Icons.Filled.Hub),
-        ServerContainer("dien-evn", "dien-evn:1.0", "running", "Up 3 days", Icons.Filled.ElectricBolt),
-        ServerContainer("wifi-collector", "wifi-collector:1.0", "running", "Up 2 days", Icons.Filled.Router),
-        ServerContainer("go2rtc", "alexxit/go2rtc", "running", "Up 3 days", Icons.Filled.Videocam),
+        ServerContainer("mosquitto", "eclipse-mosquitto:2", "running", "Up 3 days", Icons.Filled.Hub, cpuPercent = 0.4f, memMb = 14.2f, isProtected = true),
+        ServerContainer("dien-evn", "dien-evn:1.0", "running", "Up 3 days", Icons.Filled.ElectricBolt, cpuPercent = 0.2f, memMb = 22.1f, controllable = true),
+        ServerContainer("wifi-collector", "wifi-collector:1.0", "running", "Up 2 days", Icons.Filled.Router, cpuPercent = 0.6f, memMb = 28.4f, memLimitMb = 96f, controllable = true),
+        ServerContainer("go2rtc", "alexxit/go2rtc", "running", "Up 3 days", Icons.Filled.Videocam, cpuPercent = 4.5f, memMb = 68.3f),
     )
 
     fun serverTemps(): List<ServerTemp> = listOf(

@@ -18,6 +18,9 @@ services:
       COCKPIT_PROXY_PORT: "3001"
       COCKPIT_HOST: "${COCKPIT_HOST:-192.168.0.50}"
       COCKPIT_PORT: "${COCKPIT_PORT:-9090}"
+      DOCKER_CONTROL_HOST: "${DOCKER_CONTROL_HOST:-192.168.0.50}"
+      DOCKER_CONTROL_PORT: "${DOCKER_CONTROL_PORT:-1986}"
+      DOCKER_CONTROL_TOKEN: "${DOCKER_CONTROL_TOKEN:-}"
       WEB_ACCESS_PASS: "${WEB_ACCESS_PASS:-}"
       WEB_AUTH_BYPASS_LAN: "${WEB_AUTH_BYPASS_LAN:-true}"
       # Các biến môi trường dưới đây làm giá trị khởi tạo nếu chưa có data/config.json
